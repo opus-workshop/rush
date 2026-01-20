@@ -1,1 +1,6 @@
 /target
+
+# Benchmark artifacts
+benchmarks/
+results/
+target/criterion/
