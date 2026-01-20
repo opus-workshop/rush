@@ -169,17 +169,17 @@ fn parse_size(size_str: &str) -> Result<SizeFilter> {
         ('G', 1024 * 1024 * 1024),
     ];
 
-    let (prefix, number_str) = if size_str.starts_with('+') {
-        ('+', &size_str[1..])
-    } else if size_str.starts_with('-') {
-        ('-', &size_str[1..])
+    let (prefix, number_str) = if let Some(stripped) = size_str.strip_prefix('+') {
+        ('+', stripped)
+    } else if let Some(stripped) = size_str.strip_prefix('-') {
+        ('-', stripped)
     } else {
         ('=', size_str)
     };
 
     let (num_part, multiplier) = if let Some(last_char) = number_str.chars().last() {
         if last_char.is_alphabetic() {
-            (&number_str[..number_str.len() - 1], last_char)
+            (number_str.strip_suffix(last_char).unwrap_or(number_str), last_char)
         } else {
             (number_str, ' ')
         }
@@ -211,10 +211,10 @@ fn parse_size(size_str: &str) -> Result<SizeFilter> {
 
 /// Parse mtime argument (e.g., "-7" = modified within 7 days, "+30" = modified before 30 days ago)
 fn parse_mtime(mtime_str: &str) -> Result<TimeFilter> {
-    let (prefix, number_str) = if mtime_str.starts_with('+') {
-        ('+', &mtime_str[1..])
-    } else if mtime_str.starts_with('-') {
-        ('-', &mtime_str[1..])
+    let (prefix, number_str) = if let Some(stripped) = mtime_str.strip_prefix('+') {
+        ('+', stripped)
+    } else if let Some(stripped) = mtime_str.strip_prefix('-') {
+        ('-', stripped)
     } else {
         return Err(anyhow!(
             "find: -mtime requires + or - prefix (e.g., -7 or +30)"
@@ -416,12 +416,10 @@ pub fn builtin_find(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
 
     let output = if options.exec_command.is_some() {
         exec_output
+    } else if !results.is_empty() {
+        results.join("\n") + "\n"
     } else {
-        if !results.is_empty() {
-            results.join("\n") + "\n"
-        } else {
-            String::new()
-        }
+        String::new()
     };
 
     Ok(ExecutionResult::success(output))

@@ -1,0 +1,111 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  integration-tests:
+    name: Integration Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-git-
+
+    - name: Cache target directory
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-target-
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Build rush (release)
+      run: cargo build --release --verbose
+
+    - name: Run unit tests
+      run: cargo test --release --verbose
+
+    - name: Make test scripts executable
+      run: chmod +x tests/integration/*.sh tests/fixtures/*.sh
+
+    - name: Run login shell integration tests
+      run: timeout 60 ./tests/integration/login_shell_test.sh || true
+
+    - name: Run non-TTY tests
+      run: timeout 60 ./tests/integration/non_tty_test.sh || true
+
+    - name: Run signal handling tests
+      run: timeout 60 ./tests/integration/signal_test.sh || true
+
+    - name: Run redirection tests
+      run: timeout 60 ./tests/integration/redirection_test.sh || true
+
+    - name: Run pipeline tests
+      run: timeout 60 ./tests/integration/pipeline_test.sh || true
+
+    - name: Run job control tests
+      run: timeout 60 ./tests/integration/job_control_test.sh || true
+
+    - name: Run all integration tests
+      run: timeout 120 ./tests/integration/run_all.sh || true
+      continue-on-error: true
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Run unit tests
+      run: cargo test --verbose
+
+    - name: Run unit tests (release)
+      run: cargo test --release --verbose

@@ -12,12 +12,20 @@ mod git_status;
 mod grep;
 mod ls;
 mod undo;
+mod jobs;
+mod set;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
 #[derive(Clone)]
 pub struct Builtins {
     commands: HashMap<String, BuiltinFn>,
+}
+
+impl Default for Builtins {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Builtins {
@@ -29,12 +37,17 @@ impl Builtins {
         commands.insert("echo".to_string(), builtin_echo);
         commands.insert("exit".to_string(), builtin_exit);
         commands.insert("export".to_string(), builtin_export);
+        commands.insert("source".to_string(), builtin_source);
         commands.insert("cat".to_string(), cat::builtin_cat);
         commands.insert("find".to_string(), find::builtin_find);
         commands.insert("ls".to_string(), ls::builtin_ls);
         commands.insert("git-status".to_string(), git_status::builtin_git_status);
         commands.insert("grep".to_string(), grep::builtin_grep);
         commands.insert("undo".to_string(), undo::builtin_undo);
+        commands.insert("jobs".to_string(), jobs::builtin_jobs);
+        commands.insert("fg".to_string(), jobs::builtin_fg);
+        commands.insert("bg".to_string(), jobs::builtin_bg);
+        commands.insert("set".to_string(), set::builtin_set);
 
         Self { commands }
     }
@@ -69,13 +82,17 @@ impl Builtins {
         stdin: Option<&[u8]>,
     ) -> Result<ExecutionResult> {
         // Special handling for cat with stdin
-        if name == "cat" && stdin.is_some() {
-            return cat::builtin_cat_with_stdin(&args, runtime, stdin.unwrap());
+        if name == "cat" {
+            if let Some(stdin_data) = stdin {
+                return cat::builtin_cat_with_stdin(&args, runtime, stdin_data);
+            }
         }
         
         // Special handling for grep with stdin
-        if name == "grep" && stdin.is_some() {
-            return grep::builtin_grep_with_stdin(&args, runtime, stdin.unwrap());
+        if name == "grep" {
+            if let Some(stdin_data) = stdin {
+                return grep::builtin_grep_with_stdin(&args, runtime, stdin_data);
+            }
         }
         
         // For other builtins, use regular execute
@@ -174,6 +191,98 @@ fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
             runtime.set_variable(key.to_string(), value.to_string());
         } else {
             return Err(anyhow!("export: invalid syntax: {}", arg));
+        }
+    }
+
+    Ok(ExecutionResult::success(String::new()))
+}
+
+// TODO: Implement builtin_source properly with executor access
+#[allow(dead_code)]
+fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        return Err(anyhow!("source: usage: source <file>"));
+    }
+
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use crate::executor::Executor;
+
+    let file_path = &args[0];
+    let path = if file_path.starts_with('~') {
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+        home.join(file_path.trim_start_matches("~/"))
+    } else {
+        PathBuf::from(file_path)
+    };
+
+    // Make path absolute if relative
+    let path = if path.is_absolute() {
+        path
+    } else {
+        runtime.get_cwd().join(path)
+    };
+
+    if !path.exists() {
+        return Err(anyhow!("source: {}: No such file or directory", file_path));
+    }
+
+    // Read and execute file
+    let file = fs::File::open(&path)
+        .map_err(|e| anyhow!("source: Failed to open '{}': {}", path.display(), e))?;
+    let reader = BufReader::new(file);
+
+    // We need an executor to run the commands, but we can't access it from here
+    // So we'll return the file contents as a special marker that main.rs can handle
+    // For now, execute line by line in a basic way
+    for (line_num, line) in reader.lines().enumerate() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Parse and execute - we need to do this carefully
+        // since we don't have access to executor here
+        match Lexer::tokenize(line) {
+            Ok(tokens) => {
+                let mut parser = Parser::new(tokens);
+                match parser.parse() {
+                    Ok(statements) => {
+                        // Create temporary executor with current runtime
+                        let mut executor = Executor::new();
+                        // Copy runtime state (this is not ideal but works for source)
+                        *executor.runtime_mut() = runtime.clone();
+                        
+                        match executor.execute(statements) {
+                            Ok(result) => {
+                                // Copy back runtime state to preserve variable changes
+                                *runtime = executor.runtime_mut().clone();
+                                // Print any output
+                                if !result.stdout.is_empty() {
+                                    print!("{}", result.stdout);
+                                }
+                                if !result.stderr.is_empty() {
+                                    eprint!("{}", result.stderr);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}:{}: Parse error: {}", path.display(), line_num + 1, e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{}:{}: Tokenize error: {}", path.display(), line_num + 1, e);
+            }
         }
     }
 

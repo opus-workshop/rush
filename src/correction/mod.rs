@@ -10,6 +10,12 @@ pub struct Corrector {
     matcher: SkimMatcherV2,
 }
 
+impl Default for Corrector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Clone for Corrector {
     fn clone(&self) -> Self {
         // SkimMatcherV2 doesn't implement Clone, so create a new instance
@@ -143,7 +149,7 @@ impl Corrector {
         }
 
         // Also check current directory if input was absolute
-        if input.is_absolute() && &search_path != current_dir {
+        if input.is_absolute() && search_path != current_dir {
             if let Ok(entries) = fs::read_dir(current_dir) {
                 for entry in entries.flatten() {
                     if let Ok(file_name) = entry.file_name().into_string() {
@@ -170,7 +176,7 @@ impl Corrector {
     pub fn similarity_percent(score: i64, text: &str) -> u8 {
         // Rough heuristic: score relative to string length
         let max_score = text.len() as i64 * 10; // Approximate max score
-        let percent = ((score as f64 / max_score as f64) * 100.0).min(100.0).max(0.0);
+        let percent = ((score as f64 / max_score as f64) * 100.0).clamp(0.0, 100.0);
         percent as u8
     }
 }

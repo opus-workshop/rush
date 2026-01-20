@@ -53,6 +53,9 @@ pub enum Token {
     #[token("&&")]
     And,
 
+    #[token("&")]
+    Ampersand,
+
     #[token("||")]
     Or,
 
@@ -113,9 +116,17 @@ pub enum Token {
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_-]*", |lex| lex.slice().to_string())]
     Identifier(String),
 
-    // Command substitution
-    #[regex(r"\$\([^)]+\)", |lex| lex.slice().to_string())]
+    // Command substitution - needs custom parsing for nested cases
+    #[regex(r"\$\(", parse_command_substitution)]
     CommandSubstitution(String),
+
+    // Backtick command substitution
+    #[regex(r"`", parse_backtick_substitution)]
+    BacktickSubstitution(String),
+
+    // Braced variables - must come before Special and Regular variables
+    #[regex(r"\$\{[^}]+\}", |lex| lex.slice().to_string())]
+    BracedVariable(String),
 
     // Special variables ($?, $!, $$, etc.)
     #[regex(r"\$[?!$#@*0-9]", |lex| lex.slice().to_string())]
@@ -126,7 +137,7 @@ pub enum Token {
     Variable(String),
 
     // File paths and arguments
-    #[regex(r"[./][^\s|;&(){}]+", |lex| lex.slice().to_string())]
+    #[regex(r"[.~/][^\s|;&(){}]+", |lex| lex.slice().to_string())]
     Path(String),
 
     // Flags
@@ -135,6 +146,10 @@ pub enum Token {
 
     #[regex(r"--[a-zA-Z0-9][a-zA-Z0-9-]*", |lex| lex.slice().to_string())]
     LongFlag(String),
+
+    // Plus flags (for unsetting shell options like +e, +u, +x)
+    #[regex(r"\+[a-zA-Z0-9]+", |lex| lex.slice().to_string())]
+    PlusFlag(String),
 
     // Redirects
     #[token(">>")]
@@ -162,6 +177,59 @@ pub enum Token {
     // Comments
     #[regex(r"#[^\n]*", logos::skip)]
     Comment,
+}
+
+// Custom parser for $(...) that handles nesting
+fn parse_command_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> {
+    let start = lex.span().start;
+    let input = lex.source();
+    let mut depth = 1;
+    let mut pos = lex.span().end;
+    
+    while pos < input.len() && depth > 0 {
+        let ch = input.as_bytes()[pos] as char;
+        if ch == '(' && pos > 0 && input.as_bytes()[pos - 1] as char == '$' {
+            depth += 1;
+        } else if ch == ')' {
+            depth -= 1;
+        }
+        pos += 1;
+    }
+    
+    if depth == 0 {
+        // Extract the command including the $() delimiters
+        let result = input[start..pos].to_string();
+        // Update the lexer position
+        lex.bump(pos - lex.span().end);
+        Some(result)
+    } else {
+        None
+    }
+}
+
+// Custom parser for backtick command substitution
+fn parse_backtick_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> {
+    let start = lex.span().start;
+    let input = lex.source();
+    let mut pos = lex.span().end;
+    
+    // Find matching backtick
+    while pos < input.len() {
+        let ch = input.as_bytes()[pos] as char;
+        if ch == '`' {
+            pos += 1;
+            let result = input[start..pos].to_string();
+            lex.bump(pos - lex.span().end);
+            return Some(result);
+        } else if ch == '\\' && pos + 1 < input.len() {
+            // Skip escaped character
+            pos += 2;
+        } else {
+            pos += 1;
+        }
+    }
+    
+    None // Unclosed backtick
 }
 
 pub struct Lexer<'a> {
@@ -259,5 +327,104 @@ mod tests {
         let tokens = Lexer::tokenize("fn deploy(env: String) {}").unwrap();
         assert_eq!(tokens[0], Token::Fn);
         assert!(matches!(tokens[1], Token::Identifier(_)));
+    }
+
+    #[test]
+    fn test_command_substitution_simple() {
+        let tokens = Lexer::tokenize("echo $(pwd)").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::CommandSubstitution(cmd) = &tokens[1] {
+            assert_eq!(cmd, "$(pwd)");
+        } else {
+            panic!("Expected CommandSubstitution token");
+        }
+    }
+
+    #[test]
+    fn test_command_substitution_nested() {
+        let tokens = Lexer::tokenize("echo $(echo $(pwd))").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::CommandSubstitution(cmd) = &tokens[1] {
+            assert_eq!(cmd, "$(echo $(pwd))");
+        } else {
+            panic!("Expected CommandSubstitution token");
+        }
+    }
+
+    #[test]
+    fn test_backtick_substitution() {
+        let tokens = Lexer::tokenize("echo `pwd`").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BacktickSubstitution(cmd) = &tokens[1] {
+            assert_eq!(cmd, "`pwd`");
+        } else {
+            panic!("Expected BacktickSubstitution token");
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_simple() {
+        let tokens = Lexer::tokenize("echo ${VAR}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_use_default() {
+        let tokens = Lexer::tokenize("echo ${VAR:-default}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR:-default}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_assign_default() {
+        let tokens = Lexer::tokenize("echo ${VAR:=default}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR:=default}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_error_if_unset() {
+        let tokens = Lexer::tokenize("echo ${VAR:?error}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR:?error}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_prefix_removal() {
+        let tokens = Lexer::tokenize("echo ${VAR#prefix}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR#prefix}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_braced_variable_suffix_removal() {
+        let tokens = Lexer::tokenize("echo ${VAR%suffix}").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::BracedVariable(var) = &tokens[1] {
+            assert_eq!(var, "${VAR%suffix}");
+        } else {
+            panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
     }
 }

@@ -13,5 +13,7 @@ pub mod output;
 pub mod git;
 pub mod undo;
 pub mod correction;
+pub mod glob_expansion;
 pub mod progress;
 pub mod signal;
+pub mod jobs;

@@ -254,7 +254,7 @@ impl Parser {
             Some(Token::BracedVariable(s)) => Ok(Argument::BracedVariable(s.clone())),
             Some(Token::CommandSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
             Some(Token::BacktickSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
-            Some(Token::ShortFlag(s)) | Some(Token::LongFlag(s)) => {
+            Some(Token::ShortFlag(s)) | Some(Token::LongFlag(s)) | Some(Token::PlusFlag(s)) => {
                 Ok(Argument::Flag(s.clone()))
             }
             Some(Token::Path(s)) => Ok(Argument::Path(s.clone())),

@@ -32,6 +32,7 @@ impl<T> CacheEntry<T> {
 /// Tab completion system with context-aware suggestions
 pub struct Completer {
     /// Reference to builtins for command completion
+    #[allow(dead_code)]
     builtins: Arc<Builtins>,
     /// Reference to runtime for functions and variables
     runtime: Arc<RwLock<Runtime>>,
@@ -293,11 +294,9 @@ impl Completer {
             let mut branches = Vec::new();
             
             if let Ok(refs) = repo.branches(Some(git2::BranchType::Local)) {
-                for branch_result in refs {
-                    if let Ok((branch, _)) = branch_result {
-                        if let Ok(Some(name)) = branch.name() {
-                            branches.push(name.to_string());
-                        }
+                for (branch, _) in refs.flatten() {
+                    if let Ok(Some(name)) = branch.name() {
+                        branches.push(name.to_string());
                     }
                 }
             }

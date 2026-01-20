@@ -13,6 +13,7 @@ pub enum Statement {
     ConditionalAnd(ConditionalAnd),
     ConditionalOr(ConditionalOr),
     Subshell(Vec<Statement>),
+    BackgroundCommand(Box<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,6 +106,33 @@ pub enum Expression {
     FunctionCall(FunctionCall),
     CommandSubstitution(String),
     MemberAccess(MemberAccess),
+    VariableExpansion(VarExpansion),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VarExpansion {
+    pub name: String,
+    pub operator: VarExpansionOp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum VarExpansionOp {
+    /// ${VAR} - Simple expansion
+    Simple,
+    /// ${VAR:-default} - Use default if unset
+    UseDefault(String),
+    /// ${VAR:=default} - Assign default if unset
+    AssignDefault(String),
+    /// ${VAR:?error} - Error if unset
+    ErrorIfUnset(String),
+    /// ${VAR#pattern} - Remove shortest prefix match
+    RemoveShortestPrefix(String),
+    /// ${VAR##pattern} - Remove longest prefix match
+    RemoveLongestPrefix(String),
+    /// ${VAR%pattern} - Remove shortest suffix match
+    RemoveShortestSuffix(String),
+    /// ${VAR%%pattern} - Remove longest suffix match
+    RemoveLongestSuffix(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -166,6 +194,8 @@ pub enum Literal {
 pub enum Argument {
     Literal(String),
     Variable(String),
+    BracedVariable(String),
+    CommandSubstitution(String),
     Flag(String),
     Path(String),
 }

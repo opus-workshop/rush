@@ -183,7 +183,7 @@ fn format_long_entry(path: &Path, metadata: &Metadata, flags: &LsFlags) -> Strin
     let modified = metadata
         .modified()
         .ok()
-        .and_then(|t| format_time(t))
+        .and_then(format_time)
         .unwrap_or_else(|| "?".to_string());
 
     let name = format_name(path, metadata, flags.color);

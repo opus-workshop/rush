@@ -4,7 +4,8 @@
       "Bash(./target/release/rush:*)",
       "Bash(./.beads/create-beads.sh:*)",
       "Bash(bash:*)",
-      "Bash(./target/debug/rush:*)"
+      "Bash(./target/debug/rush:*)",
+      "Bash(timeout 3 ./target/release/rush:*)"
     ]
   }
 }

@@ -27,7 +27,7 @@ impl SignalHandler {
 
     /// Setup signal handlers for SIGINT, SIGTERM, and SIGHUP
     pub fn setup(&self) -> Result<()> {
-        let mut signals = Signals::new(&[SIGINT, SIGTERM, SIGHUP])?;
+        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])?;
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
 
         thread::spawn(move || {

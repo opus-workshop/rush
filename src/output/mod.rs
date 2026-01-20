@@ -8,6 +8,12 @@ pub struct OutputFormatter {
     json_mode: bool,
 }
 
+impl Default for OutputFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputFormatter {
     pub fn new() -> Self {
         Self { json_mode: false }
@@ -63,9 +69,11 @@ impl JsonOutput {
         self.metadata.insert(key, value);
         self
     }
+}
 
-    pub fn to_string(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_default()
+impl std::fmt::Display for JsonOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string_pretty(self).unwrap_or_default())
     }
 }
 

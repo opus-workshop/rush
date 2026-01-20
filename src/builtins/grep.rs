@@ -34,10 +34,8 @@ pub fn builtin_grep(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
             for entry in walker {
                 match entry {
                     Ok(entry) => {
-                        if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                            if search_file(&matcher, entry.path(), &config, &mut stdout, &mut stderr)? {
-                                found_any = true;
-                            }
+                        if entry.file_type().is_some_and(|ft| ft.is_file()) && search_file(&matcher, entry.path(), &config, &mut stdout, &mut stderr)? {
+                            found_any = true;
                         }
                     }
                     Err(e) => {
@@ -134,9 +132,9 @@ fn search_stdin(
             // Write line with color highlighting if enabled
             if config.color && !config.invert_match {
                 if let Some(m) = matcher.find(line.as_bytes())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))? {
+                    .map_err(|e| std::io::Error::other(e.to_string()))? {
                     write_colored_line(stdout, line, m.start(), m.end())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                 } else {
                     write!(stdout, "{}", line)?;
                 }
@@ -187,10 +185,10 @@ fn search_file(
             if config.color && !config.invert_match {
                 // Find first match for highlighting
                 let match_result = matcher.find(line.as_bytes())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
                 if let Some(m) = match_result {
                     write_colored_line(stdout, line, m.start(), m.end())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                 } else {
                     write!(stdout, "{}", line)?;
                 }

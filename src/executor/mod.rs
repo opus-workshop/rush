@@ -2,6 +2,7 @@ pub mod pipeline;
 
 use crate::builtins::Builtins;
 use crate::correction::Corrector;
+use crate::glob_expansion;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
 use crate::progress::ProgressIndicator;
@@ -17,6 +18,7 @@ pub struct Executor {
     builtins: Builtins,
     corrector: Corrector,
     signal_handler: Option<SignalHandler>,
+    show_progress: bool,
 }
 
 impl Default for Executor {
@@ -32,6 +34,18 @@ impl Executor {
             builtins: Builtins::new(),
             corrector: Corrector::new(),
             signal_handler: None,
+            show_progress: true, // Default to true for CLI usage
+        }
+    }
+
+    /// Create executor without progress indicators (for embedded/TUI usage)
+    pub fn new_embedded() -> Self {
+        Self {
+            runtime: Runtime::new(),
+            builtins: Builtins::new(),
+            corrector: Corrector::new(),
+            signal_handler: None,
+            show_progress: false,
         }
     }
 
@@ -41,6 +55,7 @@ impl Executor {
             builtins: Builtins::new(),
             corrector: Corrector::new(),
             signal_handler: Some(signal_handler),
+            show_progress: true,
         }
     }
 
@@ -64,6 +79,15 @@ impl Executor {
             
             // Update $? after each statement
             self.runtime.set_last_exit_code(last_exit_code);
+
+            // Check errexit option: exit if command failed
+            if self.runtime.options.errexit && last_exit_code != 0 {
+                return Ok(ExecutionResult {
+                    stdout: accumulated_stdout,
+                    stderr: accumulated_stderr,
+                    exit_code: last_exit_code,
+                });
+            }
         }
 
         Ok(ExecutionResult {
@@ -86,34 +110,43 @@ impl Executor {
             Statement::ConditionalAnd(cond_and) => self.execute_conditional_and(cond_and),
             Statement::ConditionalOr(cond_or) => self.execute_conditional_or(cond_or),
             Statement::Subshell(statements) => self.execute_subshell(statements),
+            Statement::BackgroundCommand(cmd) => self.execute_background(*cmd),
         }
     }
 
     fn execute_command(&mut self, command: Command) -> Result<ExecutionResult> {
+        // Print command if xtrace is enabled
+        if self.runtime.options.xtrace {
+            let args_str = command.args.iter()
+                .map(|arg| match arg {
+                    Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | 
+                    Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) => s.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            if args_str.is_empty() {
+                eprintln!("+ {}", command.name);
+            } else {
+                eprintln!("+ {} {}", command.name, args_str);
+            }
+        }
+
         // Check if it's a user-defined function first
         if self.runtime.get_function(&command.name).is_some() {
-            let args: Vec<String> = command
-                .args
-                .iter()
-                .map(|arg| self.resolve_argument(arg))
-                .collect();
+            let args = self.expand_and_resolve_arguments(&command.args)?;
             return self.execute_user_function(&command.name, args);
         }
 
         // Check if it's a builtin command
         if self.builtins.is_builtin(&command.name) {
-            let args: Vec<String> = command
-                .args
-                .iter()
-                .map(|arg| self.resolve_argument(arg))
-                .collect();
+            let args = self.expand_and_resolve_arguments(&command.args)?;
             let mut result = self.builtins.execute(&command.name, args, &mut self.runtime)?;
-            
+
             // Handle redirects for builtins
             if !command.redirects.is_empty() {
                 result = self.apply_redirects(result, &command.redirects)?;
             }
-            
+
             self.runtime.set_last_exit_code(result.exit_code);
             return Ok(result);
         }
@@ -239,14 +272,9 @@ impl Executor {
         Ok(last_result)
     }
 
-    fn execute_external_command(&self, command: Command) -> Result<ExecutionResult> {
-        let args: Vec<String> = command
-            .args
-            .iter()
-            .map(|arg| self.resolve_argument(arg))
-            .collect();
+    fn execute_external_command(&mut self, command: Command) -> Result<ExecutionResult> {
+        let args = self.expand_and_resolve_arguments(&command.args)?;
 
-        
         // Set up command with redirects
         let mut cmd = StdCommand::new(&command.name);
         cmd.args(&args)
@@ -261,6 +289,7 @@ impl Executor {
         let mut stdout_redirect = false;
         let mut stderr_redirect = false;
         let mut stderr_to_stdout = false;
+        let mut stdin_redirect = false;
         
         // Helper to resolve paths relative to cwd
         let resolve_path = |target: &str| -> std::path::PathBuf {
@@ -301,6 +330,7 @@ impl Executor {
                         let file = File::open(&resolved)
                             .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
                         cmd.stdin(Stdio::from(file));
+                        stdin_redirect = true;
                     }
                 }
                 RedirectKind::Stderr => {
@@ -332,15 +362,36 @@ impl Executor {
             }
         }
         
+        // Set default stdin to inherit from parent if not redirected
+        if !stdin_redirect {
+            cmd.stdin(Stdio::inherit());
+        }
+        
+        // For commands with no redirects, check if we should run in full interactive mode
+        // This allows interactive programs (like editors, REPLs, claude) to work properly
+        // NEVER inherit IO in embedded mode (TUI usage) - always pipe
+        let should_inherit_io = self.show_progress && 
+                                !stdout_redirect && !stderr_redirect && 
+                                command.redirects.is_empty() &&
+                                atty::is(atty::Stream::Stdout);
+        
         // Set default piped outputs if not redirected
         if !stdout_redirect {
-            cmd.stdout(std::process::Stdio::piped());
+            if should_inherit_io {
+                cmd.stdout(Stdio::inherit());
+            } else {
+                cmd.stdout(Stdio::piped());
+            }
         }
         if !stderr_redirect && !stderr_to_stdout {
-            cmd.stderr(std::process::Stdio::piped());
+            if should_inherit_io {
+                cmd.stderr(Stdio::inherit());
+            } else {
+                cmd.stderr(Stdio::piped());
+            }
         } else if stderr_to_stdout && !stderr_redirect {
             // Redirect stderr to stdout for the process
-            cmd.stderr(std::process::Stdio::piped());
+            cmd.stderr(Stdio::piped());
         }
         
         // Spawn the command
@@ -382,63 +433,110 @@ impl Executor {
         let progress = match child.try_wait() {
             Ok(Some(_)) => None, // Command already finished
             _ => {
-                // Command still running, show progress indicator
-                Some(ProgressIndicator::new(format!("Running {}", command.name)))
+                // Command still running, show progress indicator only if enabled
+                if self.show_progress {
+                    Some(ProgressIndicator::new(format!("Running {}", command.name)))
+                } else {
+                    None
+                }
             }
         };
 
         // Wait for command to complete, checking for signals
-        let output = loop {
-            // Check for signals
-            if let Some(handler) = &self.signal_handler {
-                if handler.should_shutdown() {
-                    // Kill the child process
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    
-                    // Stop progress indicator if it was started
-                    if let Some(prog) = progress {
-                        prog.stop();
+        let (stdout_str, stderr_str, exit_code) = if should_inherit_io {
+            // Interactive mode - IO is inherited, just wait for exit status
+            loop {
+                // Check for signals
+                if let Some(handler) = &self.signal_handler {
+                    if handler.should_shutdown() {
+                        // Kill the child process
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        
+                        // Stop progress indicator if it was started
+                        if let Some(prog) = progress {
+                            prog.stop();
+                        }
+                        
+                        return Err(anyhow!("Command interrupted by signal"));
                     }
-                    
-                    return Err(anyhow!("Command interrupted by signal"));
                 }
+
+                // Try to get the status
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        // Child finished
+                        break (String::new(), String::new(), status.code().unwrap_or(1));
+                    }
+                    Ok(None) => {
+                        // Still running, sleep briefly and check again
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                    Err(e) => {
+                        return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
+                    }
+                }
+            }
+        } else {
+            // Non-interactive mode - capture output
+            let output = loop {
+                // Check for signals
+                if let Some(handler) = &self.signal_handler {
+                    if handler.should_shutdown() {
+                        // Kill the child process
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        
+                        // Stop progress indicator if it was started (for interactive mode)
+                        if let Some(prog) = progress {
+                            prog.stop();
+                        }
+                        
+                        return Err(anyhow!("Command interrupted by signal"));
+                    }
+                }
+
+                // Try to get the output
+                match child.try_wait() {
+                    Ok(Some(_)) => {
+                        // Child finished, get output
+                        break child.wait_with_output()
+                            .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
+                    }
+                    Ok(None) => {
+                        // Still running, sleep briefly and check again
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                    Err(e) => {
+                        return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
+                    }
+                }
+            };
+
+            // Stop progress indicator if it was started (for interactive mode)
+            if let Some(prog) = progress {
+                prog.stop();
             }
 
-            // Try to get the output
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    // Child finished, get output
-                    break child.wait_with_output()
-                        .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
-                }
-                Ok(None) => {
-                    // Still running, sleep briefly and check again
-                    thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
-                }
+            // Handle stderr to stdout redirection in output
+            let mut stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+            
+            if stderr_to_stdout && !stderr_str.is_empty() {
+                stdout_str.push_str(&stderr_str);
             }
+
+            (
+                stdout_str,
+                if stderr_to_stdout { String::new() } else { stderr_str },
+                output.status.code().unwrap_or(1)
+            )
         };
-
-        // Stop progress indicator if it was started
-        if let Some(prog) = progress {
-            prog.stop();
-        }
-
-        // Handle stderr to stdout redirection in output
-        let mut stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-        
-        if stderr_to_stdout && !stderr_str.is_empty() {
-            stdout_str.push_str(&stderr_str);
-        }
 
         Ok(ExecutionResult {
             stdout: stdout_str,
-            stderr: if stderr_to_stdout { String::new() } else { stderr_str },
-            exit_code: output.status.code().unwrap_or(1),
+            stderr: stderr_str,
+            exit_code,
         })
     }
 
@@ -466,11 +564,7 @@ impl Executor {
             let handle = thread::spawn(move || {
                 let result = if builtins.is_builtin(&command.name) {
                     // Execute builtin
-                    let args: Vec<String> = command
-                        .args
-                        .iter()
-                        .map(|arg| resolve_argument_static(arg, &runtime_snapshot))
-                        .collect();
+                    let args = expand_and_resolve_arguments_static(&command.args, &runtime_snapshot)?;
                     
                     // We need a mutable runtime, but we can't safely share it across threads
                     // For now, create a temporary runtime for builtins in parallel execution
@@ -478,11 +572,7 @@ impl Executor {
                     builtins.execute(&command.name, args, &mut temp_runtime)
                 } else {
                     // Execute external command
-                    let args: Vec<String> = command
-                        .args
-                        .iter()
-                        .map(|arg| resolve_argument_static(arg, &runtime_snapshot))
-                        .collect();
+                    let args = expand_and_resolve_arguments_static(&command.args, &runtime_snapshot)?;
 
                     match StdCommand::new(&command.name)
                         .args(&args)
@@ -673,6 +763,7 @@ impl Executor {
             builtins: self.builtins.clone(),
             corrector: self.corrector.clone(),
             signal_handler: None, // Subshells don't need their own signal handlers
+            show_progress: self.show_progress, // Inherit progress setting from parent
         };
 
         // Execute all statements in the subshell
@@ -683,13 +774,91 @@ impl Executor {
         Ok(result)
     }
 
+    fn execute_background(&mut self, statement: Statement) -> Result<ExecutionResult> {
+        use std::process::Stdio;
+
+        // For background jobs, we need to spawn a separate process
+        // First, let's get the command string for tracking
+        let command_str = self.statement_to_string(&statement);
+
+        // Only handle Command statements in background for now
+        match statement {
+            Statement::Command(command) => {
+                // Check if it's a builtin - builtins can't run in background
+                if self.builtins.is_builtin(&command.name) {
+                    return Err(anyhow!("Builtin commands cannot be run in background"));
+                }
+
+                // Resolve arguments
+                let args: Result<Vec<String>> = command
+                    .args
+                    .iter()
+                    .map(|arg| self.resolve_argument(arg))
+                    .collect();
+                
+                let args = args?;
+
+                // Spawn the process
+                let mut cmd = StdCommand::new(&command.name);
+                cmd.args(&args)
+                    .current_dir(self.runtime.get_cwd())
+                    .envs(self.runtime.get_env())
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+
+                let child = cmd.spawn()
+                    .map_err(|e| anyhow!("Failed to spawn background process '{}': {}", command.name, e))?;
+
+                let pid = child.id();
+
+                // Add to job manager
+                let job_id = self.runtime.job_manager().add_job(pid, command_str);
+
+                // Return success with job information
+                Ok(ExecutionResult::success(format!("[{}] {}\n", job_id, pid)))
+            }
+            _ => {
+                Err(anyhow!("Only simple commands can be run in background for now"))
+            }
+        }
+    }
+
+    fn statement_to_string(&self, statement: &Statement) -> String {
+        match statement {
+            Statement::Command(cmd) => {
+                let args_str = cmd.args.iter()
+                    .map(|arg| match arg {
+                        Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) => s.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if args_str.is_empty() {
+                    cmd.name.clone()
+                } else {
+                    format!("{} {}", cmd.name, args_str)
+                }
+            }
+            _ => "complex command".to_string(),
+        }
+    }
+
     fn evaluate_expression(&mut self, expr: Expression) -> Result<String> {
         match expr {
             Expression::Literal(lit) => Ok(self.literal_to_string(lit)),
-            Expression::Variable(name) => self
-                .runtime
-                .get_variable(&name)
-                .ok_or_else(|| anyhow!("Variable '{}' not found", name)),
+            Expression::Variable(name) => {
+                // Use get_variable_checked to respect nounset option
+                if self.runtime.options.nounset {
+                    self.runtime.get_variable_checked(&name)
+                } else {
+                    Ok(self.runtime
+                        .get_variable(&name)
+                        .unwrap_or_default())
+                }
+            }
+            Expression::VariableExpansion(expansion) => {
+                self.runtime.expand_variable(&expansion)
+            }
             Expression::CommandSubstitution(cmd) => {
                 // Strip $( and )
                 let cmd_str = cmd.trim_start_matches("$(").trim_end_matches(')');
@@ -710,19 +879,175 @@ impl Executor {
         }
     }
 
-    fn resolve_argument(&self, arg: &Argument) -> String {
+    fn resolve_argument(&mut self, arg: &Argument) -> Result<String> {
         match arg {
-            Argument::Literal(s) => s.clone(),
+            Argument::Literal(s) => Ok(s.clone()),
             Argument::Variable(var) => {
                 // Strip $ from variable name
                 let var_name = var.trim_start_matches('$');
-                self.runtime
-                    .get_variable(var_name)
-                    .unwrap_or_else(|| var.clone())
+                // Use get_variable_checked to respect nounset option
+                if self.runtime.options.nounset {
+                    self.runtime.get_variable_checked(var_name)
+                } else {
+                    Ok(self.runtime
+                        .get_variable(var_name)
+                        .unwrap_or_default())
+                }
             }
-            Argument::Flag(f) => f.clone(),
-            Argument::Path(p) => p.clone(),
+            Argument::BracedVariable(braced_var) => {
+                // Parse the braced variable expansion
+                let expansion = self.parse_braced_var_expansion(braced_var)?;
+                // Expand it using the runtime
+                self.runtime.expand_variable(&expansion)
+            }
+            Argument::CommandSubstitution(cmd) => {
+                // Execute command substitution and return output
+                Ok(self.execute_command_substitution(cmd)
+                    .unwrap_or_else(|_| String::new()))
+            }
+            Argument::Flag(f) => Ok(f.clone()),
+            Argument::Path(p) => Ok(p.clone()),
         }
+    }
+
+    fn parse_braced_var_expansion(&self, braced_var: &str) -> Result<VarExpansion> {
+        // Remove ${ and } from the string
+        let inner = braced_var.trim_start_matches("${").trim_end_matches('}');
+
+        // Check for different operators in order
+        if let Some(pos) = inner.find(":-") {
+            let (name, default) = inner.split_at(pos);
+            let default = &default[2..]; // Skip :-
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::UseDefault(default.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find(":=") {
+            let (name, default) = inner.split_at(pos);
+            let default = &default[2..]; // Skip :=
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::AssignDefault(default.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find(":?") {
+            let (name, error_msg) = inner.split_at(pos);
+            let error_msg = &error_msg[2..]; // Skip :?
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::ErrorIfUnset(error_msg.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find("##") {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[2..]; // Skip ##
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveLongestPrefix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find('#') {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[1..]; // Skip #
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveShortestPrefix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find("%%") {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[2..]; // Skip %%
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveLongestSuffix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find('%') {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[1..]; // Skip %
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveShortestSuffix(pattern.to_string()),
+            });
+        }
+
+        // No operator, just simple expansion
+        Ok(VarExpansion {
+            name: inner.to_string(),
+            operator: VarExpansionOp::Simple,
+        })
+    }
+
+    /// Expand globs and resolve arguments
+    fn expand_and_resolve_arguments(&mut self, args: &[Argument]) -> Result<Vec<String>> {
+        let mut expanded_args = Vec::new();
+
+        for arg in args {
+            // First resolve the argument (e.g., variable substitution)
+            let resolved = self.resolve_argument(arg)?;
+
+            // Then check if it's a glob pattern and expand it
+            if glob_expansion::should_expand_glob(&resolved) {
+                match glob_expansion::expand_globs(&resolved, self.runtime.get_cwd()) {
+                    Ok(matches) => {
+                        expanded_args.extend(matches);
+                    }
+                    Err(e) => {
+                        // If glob expansion fails (no matches), return the error
+                        return Err(anyhow!(e));
+                    }
+                }
+            } else {
+                // Not a glob pattern, just add the resolved value
+                expanded_args.push(resolved);
+            }
+        }
+
+        Ok(expanded_args)
+    }
+
+    /// Execute a command substitution and return its stdout, trimmed
+    fn execute_command_substitution(&self, cmd_str: &str) -> Result<String> {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+        
+        // Extract command from $(...) or `...`
+        let command = if cmd_str.starts_with("$(") && cmd_str.ends_with(')') {
+            &cmd_str[2..cmd_str.len() - 1]
+        } else if cmd_str.starts_with('`') && cmd_str.ends_with('`') {
+            &cmd_str[1..cmd_str.len() - 1]
+        } else {
+            cmd_str
+        };
+        
+        // Parse and execute the command
+        let tokens = Lexer::tokenize(command)
+            .map_err(|e| anyhow!("Failed to tokenize command substitution: {}", e))?;
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse()
+            .map_err(|e| anyhow!("Failed to parse command substitution: {}", e))?;
+        
+        // Create a new executor with the same runtime (but cloned to avoid borrow issues)
+        let mut sub_executor = Executor {
+            runtime: self.runtime.clone(),
+            builtins: self.builtins.clone(),
+            corrector: self.corrector.clone(),
+            signal_handler: None,
+            show_progress: false, // Don't show progress for substitutions
+        };
+        
+        // Execute the command and capture output
+        let result = sub_executor.execute(statements)?;
+        
+        // Return stdout with trailing newlines trimmed (bash behavior)
+        Ok(result.stdout.trim_end().to_string())
     }
 
     fn literal_to_string(&self, lit: Literal) -> String {
@@ -749,6 +1074,56 @@ impl Executor {
     pub fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
     }
+
+    /// Source a file by executing its contents line by line
+    /// Used for .rushrc and .rush_profile files
+    pub fn source_file(&mut self, path: &std::path::Path) -> Result<()> {
+        use std::fs;
+        use std::io::{BufRead, BufReader};
+        
+        // Check if file exists
+        if !path.exists() {
+            return Ok(()); // Silently ignore missing config files
+        }
+
+        // Read file
+        let file = fs::File::open(path)
+            .map_err(|e| anyhow!("Failed to open '{}': {}", path.display(), e))?;
+        let reader = BufReader::new(file);
+
+        // Execute each line
+        for (line_num, line) in reader.lines().enumerate() {
+            let line = line?;
+            let line = line.trim();
+
+            // Skip empty lines and comments
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            // Execute the line
+            match self.execute_line_internal(line) {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
+                    // Continue executing other lines even if one fails
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Internal helper to execute a single line
+    fn execute_line_internal(&mut self, line: &str) -> Result<ExecutionResult> {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+        
+        let tokens = Lexer::tokenize(line)?;
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse()?;
+        self.execute(statements)
+    }
 }
 
 // Helper function for parallel execution
@@ -761,9 +1136,74 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                 .get_variable(var_name)
                 .unwrap_or_else(|| var.clone())
         }
+        Argument::BracedVariable(var) => {
+            // Strip ${ and } from variable name
+            let var_name = var.trim_start_matches("${").trim_end_matches('}');
+            runtime
+                .get_variable(var_name)
+                .unwrap_or_else(|| var.clone())
+        }
+        Argument::CommandSubstitution(cmd) => {
+            // For parallel execution, we need to execute command substitution
+            // Create a minimal executor for this
+            use crate::lexer::Lexer;
+            use crate::parser::Parser;
+            
+            let command = if cmd.starts_with("$(") && cmd.ends_with(')') {
+                &cmd[2..cmd.len() - 1]
+            } else if cmd.starts_with('`') && cmd.ends_with('`') {
+                &cmd[1..cmd.len() - 1]
+            } else {
+                cmd.as_str()
+            };
+            
+            // Try to execute the command substitution
+            if let Ok(tokens) = Lexer::tokenize(command) {
+                let mut parser = Parser::new(tokens);
+                if let Ok(statements) = parser.parse() {
+                    let mut sub_executor = Executor {
+                        runtime: runtime.clone(),
+                        builtins: Builtins::new(),
+                        corrector: Corrector::new(),
+                        signal_handler: None,
+                        show_progress: false,
+                    };
+                    if let Ok(result) = sub_executor.execute(statements) {
+                        return result.stdout.trim_end().to_string();
+                    }
+                }
+            }
+            
+            // If execution failed, return empty string
+            String::new()
+        }
         Argument::Flag(f) => f.clone(),
         Argument::Path(p) => p.clone(),
     }
+}
+
+// Helper function for parallel execution with glob expansion
+fn expand_and_resolve_arguments_static(args: &[Argument], runtime: &Runtime) -> Result<Vec<String>> {
+    let mut expanded_args = Vec::new();
+
+    for arg in args {
+        let resolved = resolve_argument_static(arg, runtime);
+
+        if glob_expansion::should_expand_glob(&resolved) {
+            match glob_expansion::expand_globs(&resolved, runtime.get_cwd()) {
+                Ok(matches) => {
+                    expanded_args.extend(matches);
+                }
+                Err(e) => {
+                    return Err(anyhow!(e));
+                }
+            }
+        } else {
+            expanded_args.push(resolved);
+        }
+    }
+
+    Ok(expanded_args)
 }
 
 #[derive(Debug, Clone, Default)]

@@ -136,7 +136,7 @@ fn test_h_flag() {
 fn test_c_flag_find() {
     let output = Command::new(rush_binary())
         .arg("-c")
-        .arg("find . -name Cargo.toml")
+        .arg("find . -name \"Cargo.toml\"")
         .output()
         .expect("Failed to execute");
 

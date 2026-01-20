@@ -1,10 +1,25 @@
 use crate::parser::ast::FunctionDef;
+use crate::parser::ast::{VarExpansion, VarExpansionOp};
 use crate::history::History;
 use crate::undo::UndoManager;
+use crate::jobs::JobManager;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
+use anyhow::{anyhow, Result};
 
+/// Shell options that control execution behavior
+#[derive(Clone, Default)]
+pub struct ShellOptions {
+    pub errexit: bool,      // Exit on error (set -e)
+    pub pipefail: bool,     // Pipeline fails if any command fails (set -o pipefail)
+    pub nounset: bool,      // Error on undefined variable (set -u)
+    pub xtrace: bool,       // Print commands before executing (set -x)
+    pub noclobber: bool,    // Prevent overwriting files (set -C)
+    pub verbose: bool,      // Print input lines as they are read (set -v)
+}
+
+/// Runtime environment for the shell
 #[derive(Clone)]
 pub struct Runtime {
     variables: HashMap<String, String>,
@@ -15,6 +30,14 @@ pub struct Runtime {
     max_call_depth: usize,
     history: History,
     undo_manager: UndoManager,
+    job_manager: JobManager,
+    pub options: ShellOptions,
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Runtime {
@@ -35,6 +58,8 @@ impl Runtime {
             max_call_depth: 100,
             history: History::default(),
             undo_manager,
+            job_manager: JobManager::new(),
+            options: ShellOptions::default(),
         };
         
         // Initialize $? to 0
@@ -61,6 +86,20 @@ impl Runtime {
         }
         // Fall back to global variables
         self.variables.get(name).cloned()
+    }
+
+    /// Get variable with nounset option check
+    pub fn get_variable_checked(&self, name: &str) -> Result<String> {
+        match self.get_variable(name) {
+            Some(value) => Ok(value),
+            None => {
+                if self.options.nounset {
+                    Err(anyhow!("{}: unbound variable", name))
+                } else {
+                    Ok(String::new())
+                }
+            }
+        }
     }
 
     /// Set the last exit code (stored in $? variable)
@@ -95,6 +134,28 @@ impl Runtime {
 
     pub fn get_cwd(&self) -> &PathBuf {
         &self.cwd
+    }
+
+    // Shell options management
+    pub fn set_option(&mut self, option: &str, value: bool) -> Result<()> {
+        match option {
+            "e" | "errexit" => self.options.errexit = value,
+            "u" | "nounset" => self.options.nounset = value,
+            "x" | "xtrace" => self.options.xtrace = value,
+            "pipefail" => self.options.pipefail = value,
+            _ => return Err(anyhow!("Unknown option: {}", option)),
+        }
+        Ok(())
+    }
+
+    pub fn get_option(&self, option: &str) -> Result<bool> {
+        match option {
+            "e" | "errexit" => Ok(self.options.errexit),
+            "u" | "nounset" => Ok(self.options.nounset),
+            "x" | "xtrace" => Ok(self.options.xtrace),
+            "pipefail" => Ok(self.options.pipefail),
+            _ => Err(anyhow!("Unknown option: {}", option)),
+        }
     }
 
     pub fn get_env(&self) -> HashMap<String, String> {
@@ -151,5 +212,129 @@ impl Runtime {
 
     pub fn undo_manager_mut(&mut self) -> &mut UndoManager {
         &mut self.undo_manager
+    }
+
+    // Job manager access
+    pub fn job_manager(&self) -> &JobManager {
+        &self.job_manager
+    }
+
+    pub fn job_manager_mut(&mut self) -> &mut JobManager {
+        &mut self.job_manager
+    }
+
+    /// Expand a variable with operators like ${VAR:-default}
+    pub fn expand_variable(&mut self, expansion: &VarExpansion) -> Result<String> {
+        let var_value = self.get_variable(&expansion.name);
+        
+        match &expansion.operator {
+            VarExpansionOp::Simple => {
+                Ok(var_value.unwrap_or_default())
+            }
+            VarExpansionOp::UseDefault(default) => {
+                Ok(var_value.unwrap_or_else(|| default.clone()))
+            }
+            VarExpansionOp::AssignDefault(default) => {
+                if let Some(value) = var_value {
+                    Ok(value)
+                } else {
+                    self.set_variable(expansion.name.clone(), default.clone());
+                    Ok(default.clone())
+                }
+            }
+            VarExpansionOp::ErrorIfUnset(error_msg) => {
+                var_value.ok_or_else(|| {
+                    anyhow!("{}: {}", expansion.name, error_msg)
+                })
+            }
+            VarExpansionOp::RemoveShortestPrefix(pattern) => {
+                let value = var_value.unwrap_or_default();
+                Ok(Self::remove_prefix(&value, pattern, false))
+            }
+            VarExpansionOp::RemoveLongestPrefix(pattern) => {
+                let value = var_value.unwrap_or_default();
+                Ok(Self::remove_prefix(&value, pattern, true))
+            }
+            VarExpansionOp::RemoveShortestSuffix(pattern) => {
+                let value = var_value.unwrap_or_default();
+                Ok(Self::remove_suffix(&value, pattern, false))
+            }
+            VarExpansionOp::RemoveLongestSuffix(pattern) => {
+                let value = var_value.unwrap_or_default();
+                Ok(Self::remove_suffix(&value, pattern, true))
+            }
+        }
+    }
+
+    /// Remove prefix pattern from value
+    fn remove_prefix(value: &str, pattern: &str, longest: bool) -> String {
+        // Simple glob pattern matching
+        if pattern.contains('*') {
+            // Extract the literal part after the *
+            let literal_part = if pattern.ends_with('*') {
+                pattern.trim_end_matches('*')
+            } else {
+                // Pattern like "*foo/" - the part after * is the literal to match
+                pattern.split('*').next_back().unwrap_or("")
+            };
+
+            if literal_part.is_empty() {
+                return value.to_string();
+            }
+
+            if longest {
+                // ## - Remove the longest match (find last occurrence)
+                if let Some(pos) = value.rfind(literal_part) {
+                    return value[pos + literal_part.len()..].to_string();
+                }
+            } else {
+                // # - Remove the shortest match (find first occurrence)
+                if let Some(pos) = value.find(literal_part) {
+                    return value[pos + literal_part.len()..].to_string();
+                }
+            }
+        } else {
+            // Literal prefix match
+            if let Some(stripped) = value.strip_prefix(pattern) {
+                return stripped.to_string();
+            }
+        }
+        value.to_string()
+    }
+
+    /// Remove suffix pattern from value
+    fn remove_suffix(value: &str, pattern: &str, longest: bool) -> String {
+        // Simple glob pattern matching
+        if pattern.contains('*') {
+            // Extract the literal part before the *
+            let literal_part = if pattern.starts_with('*') {
+                pattern.trim_start_matches('*')
+            } else {
+                // Pattern like ".tar*" - the part before * is the literal to match
+                pattern.split('*').next().unwrap_or("")
+            };
+
+            if literal_part.is_empty() {
+                return value.to_string();
+            }
+
+            if longest {
+                // %% - Remove the longest match (find first occurrence)
+                if let Some(pos) = value.find(literal_part) {
+                    return value[..pos].to_string();
+                }
+            } else {
+                // % - Remove the shortest match (find last occurrence)
+                if let Some(pos) = value.rfind(literal_part) {
+                    return value[..pos].to_string();
+                }
+            }
+        } else {
+            // Literal suffix match
+            if let Some(stripped) = value.strip_suffix(pattern) {
+                return stripped.to_string();
+            }
+        }
+        value.to_string()
     }
 }

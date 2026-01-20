@@ -12,6 +12,8 @@ mod undo;
 mod correction;
 mod progress;
 mod signal;
+mod glob_expansion;
+mod jobs;
 
 use completion::Completer;
 use executor::Executor;
@@ -34,27 +36,58 @@ fn main() -> Result<()> {
     }
 
     let args: Vec<String> = env::args().collect();
+    
+    // Parse flags
+    let mut is_login_shell = false;
+    let mut skip_rc = false;
+    let mut filtered_args = Vec::new();
+    
+    // Check if invoked as login shell (argv[0] starts with -)
+    if let Some(arg0) = args.first() {
+        if arg0.starts_with('-') || arg0.ends_with("/-rush") {
+            is_login_shell = true;
+        }
+    }
+    
+    // Parse command-line flags
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--login" | "-l" => {
+                is_login_shell = true;
+                i += 1;
+            }
+            "--no-rc" | "--norc" => {
+                skip_rc = true;
+                i += 1;
+            }
+            _ => {
+                filtered_args.push(args[i].clone());
+                i += 1;
+            }
+        }
+    }
 
     // Check for -c flag for non-interactive command execution
-    if args.len() >= 3 && args[1] == "-c" {
-        return run_command(&args[2], signal_handler);
+    if filtered_args.len() >= 2 && filtered_args[0] == "-c" {
+        return run_command(&filtered_args[1], signal_handler);
     }
 
     // Show help for invalid usage
-    if args.len() > 1 && (args[1] == "-h" || args[1] == "--help") {
+    if !filtered_args.is_empty() && (filtered_args[0] == "-h" || filtered_args[0] == "--help") {
         print_help();
         return Ok(());
     }
 
     // Check if a script file is provided
-    if args.len() >= 2 && !args[1].starts_with('-') {
-        let script_path = &args[1];
-        let script_args = args[2..].to_vec();
+    if !filtered_args.is_empty() && !filtered_args[0].starts_with('-') {
+        let script_path = &filtered_args[0];
+        let script_args = filtered_args[1..].to_vec();
         return run_script(script_path, script_args, signal_handler);
     }
 
-    // Run interactive mode
-    run_interactive(signal_handler)
+    // Run interactive mode (possibly as login shell)
+    run_interactive_with_init(signal_handler, is_login_shell, skip_rc)
 }
 
 fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: SignalHandler) -> Result<()> {
@@ -114,7 +147,13 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
 }
 
 fn run_command(command: &str, signal_handler: SignalHandler) -> Result<()> {
+    // Initialize environment variables
+    init_environment_variables()?;
+    
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
+    
+    // Set runtime variables from environment
+    init_runtime_variables(executor.runtime_mut());
 
     match execute_line(command, &mut executor) {
         Ok(result) => {
@@ -213,6 +252,91 @@ fn run_interactive(signal_handler: SignalHandler) -> Result<()> {
     }
 }
 
+fn run_interactive_with_init(signal_handler: SignalHandler, is_login: bool, skip_rc: bool) -> Result<()> {
+    // Initialize environment variables
+    init_environment_variables()?;
+    
+    // Create executor early so we can source files
+    let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
+    
+    // Set runtime variables from environment
+    init_runtime_variables(executor.runtime_mut());
+    
+    // Source profile files based on login shell and flags
+    if is_login && !skip_rc {
+        // Login shell: source ~/.rush_profile
+        if let Some(home) = dirs::home_dir() {
+            let profile = home.join(".rush_profile");
+            if let Err(e) = executor.source_file(&profile) {
+                eprintln!("Warning: Error sourcing ~/.rush_profile: {}", e);
+            }
+        }
+    }
+    
+    // Interactive shell: source ~/.rushrc (unless --no-rc)
+    if !skip_rc {
+        if let Some(home) = dirs::home_dir() {
+            let rushrc = home.join(".rushrc");
+            if let Err(e) = executor.source_file(&rushrc) {
+                eprintln!("Warning: Error sourcing ~/.rushrc: {}", e);
+            }
+        }
+    }
+    
+    // Now run interactive mode
+    if atty::is(atty::Stream::Stdin) {
+        run_interactive_with_reedline(signal_handler)
+    } else {
+        run_non_interactive(signal_handler)
+    }
+}
+
+fn init_environment_variables() -> Result<()> {
+    // Set $SHELL to current executable
+    if let Ok(exe) = env::current_exe() {
+        env::set_var("SHELL", exe);
+    }
+    
+    // Set $TERM if not already set
+    if env::var("TERM").is_err() {
+        env::set_var("TERM", "xterm-256color");
+    }
+    
+    // Set $USER if not already set
+    if env::var("USER").is_err() {
+        if let Ok(user) = env::var("LOGNAME") {
+            env::set_var("USER", user);
+        } else if let Some(user) = whoami::username_os().to_str() {
+            env::set_var("USER", user);
+        }
+    }
+    
+    // Set $HOME if not already set
+    if env::var("HOME").is_err() {
+        if let Some(home) = dirs::home_dir() {
+            env::set_var("HOME", home);
+        }
+    }
+    
+    Ok(())
+}
+
+fn init_runtime_variables(runtime: &mut runtime::Runtime) {
+    // Set runtime variables from environment
+    if let Ok(shell) = env::var("SHELL") {
+        runtime.set_variable("SHELL".to_string(), shell);
+    }
+    if let Ok(term) = env::var("TERM") {
+        runtime.set_variable("TERM".to_string(), term);
+    }
+    if let Ok(user) = env::var("USER") {
+        runtime.set_variable("USER".to_string(), user);
+    }
+    if let Ok(home) = env::var("HOME") {
+        runtime.set_variable("HOME".to_string(), home);
+    }
+}
+
 fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
     println!("Rush v0.1.0 - A Modern Shell in Rust");
     println!("Type 'exit' to quit\n");
@@ -234,6 +358,22 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
             println!("\nExiting due to signal...");
             std::process::exit(signal_handler.exit_code());
         }
+
+        // Update job statuses and cleanup completed jobs
+        executor.runtime_mut().job_manager().update_all_jobs();
+        
+        // Print notifications for completed jobs
+        let jobs = executor.runtime_mut().job_manager().list_jobs();
+        for job in jobs {
+            if job.status == jobs::JobStatus::Done {
+                println!("[{}] Done\t\t{}", job.id, job.command);
+            } else if job.status == jobs::JobStatus::Terminated {
+                println!("[{}] Terminated\t{}", job.id, job.command);
+            }
+        }
+        
+        // Cleanup completed/terminated jobs
+        executor.runtime_mut().job_manager().cleanup_jobs();
 
         let sig = line_editor.read_line(&prompt);
 
@@ -322,6 +462,8 @@ fn print_help() {
     println!();
     println!("Usage:");
     println!("  rush                Start interactive shell");
+    println!("  rush --login        Start as login shell (sources ~/.rush_profile)");
+    println!("  rush --no-rc        Skip sourcing config files");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
     println!("  rush -h, --help     Show this help message");
@@ -332,6 +474,11 @@ fn print_help() {
     println!("  rush -c \"echo hello\"");
     println!("  rush -c \"ls -la\"");
     println!("  rush -c \"cat file.txt | grep pattern\"");
+    println!("  rush --login        # Start login shell");
+    println!();
+    println!("Config Files:");
+    println!("  ~/.rush_profile     Sourced on login shells");
+    println!("  ~/.rushrc           Sourced on interactive shells");
 }
 
 fn execute_line(line: &str, executor: &mut Executor) -> Result<executor::ExecutionResult> {
@@ -349,8 +496,8 @@ fn execute_line(line: &str, executor: &mut Executor) -> Result<executor::Executi
 fn execute_line_with_context(
     line: &str,
     executor: &mut Executor,
-    script_path: &str,
-    line_num: usize,
+    _script_path: &str,
+    _line_num: usize,
 ) -> Result<executor::ExecutionResult> {
     execute_line(line, executor).map_err(|e| {
         anyhow::anyhow!("{}", e)
