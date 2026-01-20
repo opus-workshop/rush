@@ -11,3 +11,6 @@ pub mod history;
 pub mod context;
 pub mod output;
 pub mod git;
+pub mod undo;
+pub mod correction;
+pub mod progress;

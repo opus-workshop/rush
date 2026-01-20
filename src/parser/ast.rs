@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub enum Statement {
     Command(Command),
     Pipeline(Pipeline),
+    ParallelExecution(ParallelExecution),
     Assignment(Assignment),
     FunctionDef(FunctionDef),
     IfStatement(IfStatement),
@@ -20,6 +21,11 @@ pub struct Command {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pipeline {
+    pub commands: Vec<Command>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParallelExecution {
     pub commands: Vec<Command>,
 }
 

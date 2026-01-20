@@ -43,6 +43,16 @@ pub struct UndoManager {
     enabled: bool,
 }
 
+impl Clone for UndoManager {
+    fn clone(&self) -> Self {
+        Self {
+            operations: self.operations.clone(),
+            undo_dir: self.undo_dir.clone(),
+            enabled: self.enabled,
+        }
+    }
+}
+
 impl UndoManager {
     pub fn new() -> Result<Self> {
         let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;

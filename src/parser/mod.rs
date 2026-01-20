@@ -31,6 +31,11 @@ impl Parser {
             }
 
             statements.push(self.parse_statement()?);
+            
+            // Handle && and semicolon as statement separators
+            if self.match_token(&Token::And) || self.match_token(&Token::Semicolon) {
+                self.advance();
+            }
         }
 
         Ok(statements)
@@ -51,8 +56,24 @@ impl Parser {
     fn parse_command_or_pipeline(&mut self) -> Result<Statement> {
         let first_command = self.parse_command()?;
 
+        // Check if this is a parallel execution
+        if self.match_token(&Token::ParallelPipe) {
+            self.advance();
+            let mut commands = vec![first_command];
+
+            loop {
+                commands.push(self.parse_command()?);
+
+                if !self.match_token(&Token::ParallelPipe) {
+                    break;
+                }
+                self.advance();
+            }
+
+            Ok(Statement::ParallelExecution(ParallelExecution { commands }))
+        }
         // Check if this is a pipeline
-        if self.match_token(&Token::Pipe) {
+        else if self.match_token(&Token::Pipe) {
             self.advance();
             let mut commands = vec![first_command];
 
@@ -82,8 +103,10 @@ impl Parser {
 
         while !self.is_at_end()
             && !self.match_token(&Token::Pipe)
+            && !self.match_token(&Token::ParallelPipe)
             && !self.match_token(&Token::Newline)
             && !self.match_token(&Token::Semicolon)
+            && !self.match_token(&Token::And)
         {
             match self.peek() {
                 Some(Token::AppendRedirect) => {
@@ -137,6 +160,7 @@ impl Parser {
             }
             Some(Token::Path(s)) => Ok(Argument::Path(s.clone())),
             Some(Token::Integer(n)) => Ok(Argument::Literal(n.to_string())),
+            Some(Token::Dot) => Ok(Argument::Path(".".to_string())),
             _ => Err(anyhow!("Expected argument")),
         }
     }

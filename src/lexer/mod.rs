@@ -47,6 +47,9 @@ pub enum Token {
     #[token("<=")]
     LessThanOrEqual,
 
+    #[token("|||")]
+    ParallelPipe,
+
     #[token("|")]
     Pipe,
 
