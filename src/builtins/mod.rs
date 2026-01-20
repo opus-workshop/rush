@@ -1,5 +1,6 @@
 use crate::executor::ExecutionResult;
 use crate::runtime::Runtime;
+use crate::correction::Corrector;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ mod find;
 mod git_status;
 mod grep;
 mod ls;
+mod undo;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -30,12 +32,17 @@ impl Builtins {
         commands.insert("ls".to_string(), ls::builtin_ls);
         commands.insert("git-status".to_string(), git_status::builtin_git_status);
         commands.insert("grep".to_string(), grep::builtin_grep);
+        commands.insert("undo".to_string(), undo::builtin_undo);
 
         Self { commands }
     }
 
     pub fn is_builtin(&self, name: &str) -> bool {
         self.commands.contains_key(name)
+    }
+
+    pub fn builtin_names(&self) -> Vec<String> {
+        self.commands.keys().cloned().collect()
     }
 
     pub fn execute(
@@ -49,6 +56,28 @@ impl Builtins {
         } else {
             Err(anyhow!("Builtin '{}' not found", name))
         }
+    }
+
+    /// Execute a builtin with optional stdin data
+    pub fn execute_with_stdin(
+        &self,
+        name: &str,
+        args: Vec<String>,
+        runtime: &mut Runtime,
+        stdin: Option<&[u8]>,
+    ) -> Result<ExecutionResult> {
+        // Special handling for cat with stdin
+        if name == "cat" && stdin.is_some() {
+            return cat::builtin_cat_with_stdin(&args, runtime, stdin.unwrap());
+        }
+        
+        // Special handling for grep with stdin
+        if name == "grep" && stdin.is_some() {
+            return grep::builtin_grep_with_stdin(&args, runtime, stdin.unwrap());
+        }
+        
+        // For other builtins, use regular execute
+        self.execute(name, args, runtime)
     }
 }
 
@@ -75,7 +104,26 @@ fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult>
     };
 
     if !absolute.exists() {
-        return Err(anyhow!("cd: no such file or directory: {:?}", absolute));
+        // Provide path suggestions
+        let corrector = Corrector::new();
+        let suggestions = corrector.suggest_path(&absolute, runtime.get_cwd());
+        
+        let mut error_msg = format!("cd: no such file or directory: {:?}", absolute);
+        
+        if !suggestions.is_empty() {
+            error_msg.push_str("\n\nDid you mean?");
+            for suggestion in suggestions.iter().take(3) {
+                let similarity = Corrector::similarity_percent(suggestion.score, &suggestion.text);
+                error_msg.push_str(&format!(
+                    "\n  {} ({}%, {})",
+                    suggestion.text,
+                    similarity,
+                    suggestion.kind.label()
+                ));
+            }
+        }
+        
+        return Err(anyhow!(error_msg));
     }
 
     if !absolute.is_dir() {

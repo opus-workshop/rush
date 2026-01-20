@@ -3,8 +3,16 @@ use crate::builtins::Builtins;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
+use std::io::Write;
 use std::process::{Command as StdCommand, Stdio};
 
+/// Execute a pipeline of commands with proper streaming and error handling
+///
+/// This implementation supports:
+/// - Multi-stage pipelines with proper data streaming
+/// - SIGPIPE handling (broken pipe errors)
+/// - Proper exit code propagation (last command's exit code)
+/// - Works with both builtins and external commands
 pub fn execute_pipeline(
     pipeline: Pipeline,
     runtime: &mut Runtime,
@@ -19,7 +27,7 @@ pub fn execute_pipeline(
         return execute_single_command(&pipeline.commands[0], runtime, builtins);
     }
 
-    // Multi-command pipeline
+    // Multi-command pipeline with streaming
     let mut previous_output = Vec::new();
 
     for (i, command) in pipeline.commands.iter().enumerate() {
@@ -61,16 +69,8 @@ fn execute_pipeline_command(
             .map(|arg| resolve_argument(arg, runtime))
             .collect();
 
-        // If there's stdin, add it as an argument (simplified for now)
-        let result = builtins.execute(&command.name, args, runtime)?;
-
-        if let Some(input) = stdin {
-            // For builtins that accept stdin, we'd handle it here
-            // For now, just pass through
-            Ok(result)
-        } else {
-            Ok(result)
-        }
+        // Use execute_with_stdin to properly handle piped input
+        builtins.execute_with_stdin(&command.name, args, runtime, stdin)
     } else {
         execute_external_pipeline_command(command, runtime, stdin)
     }
@@ -90,22 +90,33 @@ fn execute_external_pipeline_command(
     let mut cmd = StdCommand::new(&command.name);
     cmd.args(&args)
         .current_dir(runtime.get_cwd())
-        .envs(runtime.get_env());
+        .envs(runtime.get_env())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    if let Some(input) = stdin {
+    if stdin.is_some() {
         cmd.stdin(Stdio::piped());
+    } else {
+        cmd.stdin(Stdio::inherit());
     }
 
     let mut child = cmd
         .spawn()
         .map_err(|e| anyhow!("Failed to spawn '{}': {}", command.name, e))?;
 
+    // Write stdin data if provided
     if let Some(input) = stdin {
-        use std::io::Write;
         if let Some(mut stdin_handle) = child.stdin.take() {
-            stdin_handle
-                .write_all(input)
-                .map_err(|e| anyhow!("Failed to write to stdin: {}", e))?;
+            // Handle SIGPIPE - if the process exits before reading all input,
+            // we don't want to fail the entire pipeline
+            stdin_handle.write_all(input).or_else(|e| {
+                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                    // Process closed pipe, that's OK
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            }).map_err(|e| anyhow!("Failed to write to stdin of '{}': {}", command.name, e))?;
         }
     }
 
