@@ -10,16 +10,18 @@ mod output;
 mod git;
 mod undo;
 mod correction;
+mod progress;
 
 use completion::Completer;
 use executor::Executor;
 use lexer::Lexer;
 use parser::Parser;
-use reedline::{DefaultPrompt, Reedline, Signal};
+use reedline::{Prompt, PromptHistorySearch, PromptHistorySearchStatus, Reedline, Signal};
 use anyhow::Result;
 use std::sync::{Arc, RwLock};
 use std::env;
 use std::fs;
+use std::borrow::Cow;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -118,6 +120,71 @@ fn run_command(command: &str) -> Result<()> {
     }
 }
 
+/// Custom prompt that displays current directory with home directory shortening
+struct RushPrompt;
+
+impl RushPrompt {
+    fn new() -> Self {
+        Self
+    }
+
+    fn get_prompt_indicator(&self) -> String {
+        let cwd = if let Ok(cwd) = env::current_dir() {
+            // Shorten home directory to ~
+            if let Some(home) = dirs::home_dir() {
+                if let Ok(suffix) = cwd.strip_prefix(&home) {
+                    if suffix.as_os_str().is_empty() {
+                        "~".to_string()
+                    } else {
+                        format!("~/{}", suffix.display())
+                    }
+                } else {
+                    cwd.display().to_string()
+                }
+            } else {
+                cwd.display().to_string()
+            }
+        } else {
+            "?".to_string()
+        };
+
+        format!("{}> ", cwd)
+    }
+}
+
+impl Prompt for RushPrompt {
+    fn render_prompt_left(&self) -> Cow<str> {
+        Cow::Owned(self.get_prompt_indicator())
+    }
+
+    fn render_prompt_right(&self) -> Cow<str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _prompt_mode: reedline::PromptEditMode) -> Cow<str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_multiline_indicator(&self) -> Cow<str> {
+        Cow::Borrowed("> ")
+    }
+
+    fn render_prompt_history_search_indicator(
+        &self,
+        history_search: PromptHistorySearch,
+    ) -> Cow<str> {
+        let prefix = match history_search.status {
+            PromptHistorySearchStatus::Passing => "",
+            PromptHistorySearchStatus::Failing => "failing ",
+        };
+
+        Cow::Owned(format!(
+            "({}reverse-search: {}) ",
+            prefix, history_search.term
+        ))
+    }
+}
+
 fn run_interactive() -> Result<()> {
     println!("Rush v0.1.0 - A Modern Shell in Rust");
     println!("Type 'exit' to quit\n");
@@ -131,7 +198,7 @@ fn run_interactive() -> Result<()> {
     
     let mut line_editor = Reedline::create()
         .with_completer(completer);
-    let prompt = DefaultPrompt::default();
+    let prompt = RushPrompt::new();
 
     loop {
         let sig = line_editor.read_line(&prompt);

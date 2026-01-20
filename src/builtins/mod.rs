@@ -4,6 +4,7 @@ use crate::correction::Corrector;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::env;
 
 mod cat;
 mod find;
@@ -14,6 +15,7 @@ mod undo;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
+#[derive(Clone)]
 pub struct Builtins {
     commands: HashMap<String, BuiltinFn>,
 }
@@ -130,7 +132,12 @@ fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult>
         return Err(anyhow!("cd: not a directory: {:?}", absolute));
     }
 
-    runtime.set_cwd(absolute);
+    // Update runtime's cwd
+    runtime.set_cwd(absolute.clone());
+    
+    // Also update the process's actual current directory so other parts can see it
+    env::set_current_dir(&absolute)?;
+    
     Ok(ExecutionResult::success(String::new()))
 }
 
