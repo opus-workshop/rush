@@ -64,6 +64,12 @@ impl Parser {
             }
         }
 
+        // Check for background operator & at the end
+        if self.match_token(&Token::Ampersand) {
+            self.advance();
+            left = Statement::BackgroundCommand(Box::new(left));
+        }
+
         Ok(left)
     }
 
@@ -169,6 +175,8 @@ impl Parser {
             && !self.match_token(&Token::Newline)
             && !self.match_token(&Token::Semicolon)
             && !self.match_token(&Token::And)
+            && !self.match_token(&Token::Or)
+            && !self.match_token(&Token::Ampersand)
             && !self.match_token(&Token::RightParen)
         {
             match self.peek() {
@@ -243,6 +251,9 @@ impl Parser {
             }
             Some(Token::Identifier(s)) => Ok(Argument::Literal(s.clone())),
             Some(Token::Variable(s)) | Some(Token::SpecialVariable(s)) => Ok(Argument::Variable(s.clone())),
+            Some(Token::BracedVariable(s)) => Ok(Argument::BracedVariable(s.clone())),
+            Some(Token::CommandSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
+            Some(Token::BacktickSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
             Some(Token::ShortFlag(s)) | Some(Token::LongFlag(s)) => {
                 Ok(Argument::Flag(s.clone()))
             }
@@ -305,6 +316,17 @@ impl Parser {
                 let cmd = cmd.clone();
                 self.advance();
                 Ok(Expression::CommandSubstitution(cmd))
+            }
+            Some(Token::BacktickSubstitution(cmd)) => {
+                let cmd = cmd.clone();
+                self.advance();
+                Ok(Expression::CommandSubstitution(cmd))
+            }
+            Some(Token::BracedVariable(braced_var)) => {
+                let braced_var = braced_var.clone();
+                self.advance();
+                let expansion = self.parse_var_expansion(&braced_var)?;
+                Ok(Expression::VariableExpansion(expansion))
             }
             Some(Token::Identifier(s)) => {
                 let s = s.clone();
@@ -538,6 +560,81 @@ impl Parser {
                 self.peek()
             ))
         }
+    }
+
+    fn parse_var_expansion(&self, braced_var: &str) -> Result<VarExpansion> {
+        // Remove ${ and } from the string
+        let inner = braced_var.trim_start_matches("${").trim_end_matches('}');
+
+        // Check for different operators in order
+        if let Some(pos) = inner.find(":-") {
+            let (name, default) = inner.split_at(pos);
+            let default = &default[2..]; // Skip :-
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::UseDefault(default.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find(":=") {
+            let (name, default) = inner.split_at(pos);
+            let default = &default[2..]; // Skip :=
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::AssignDefault(default.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find(":?") {
+            let (name, error_msg) = inner.split_at(pos);
+            let error_msg = &error_msg[2..]; // Skip :?
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::ErrorIfUnset(error_msg.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find("##") {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[2..]; // Skip ##
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveLongestPrefix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find('#') {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[1..]; // Skip #
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveShortestPrefix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find("%%") {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[2..]; // Skip %%
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveLongestSuffix(pattern.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find('%') {
+            let (name, pattern) = inner.split_at(pos);
+            let pattern = &pattern[1..]; // Skip %
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::RemoveShortestSuffix(pattern.to_string()),
+            });
+        }
+
+        // No operator, just simple expansion
+        Ok(VarExpansion {
+            name: inner.to_string(),
+            operator: VarExpansionOp::Simple,
+        })
     }
 
     fn is_at_end(&self) -> bool {

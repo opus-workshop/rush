@@ -50,23 +50,47 @@ impl CatOptions {
 }
 
 pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
-    let opts = CatOptions::parse(args)?;
+    let opts = match CatOptions::parse(args) {
+        Ok(opts) => opts,
+        Err(e) => {
+            return Ok(ExecutionResult {
+                stdout: String::new(),
+                stderr: e.to_string(),
+                exit_code: 1,
+            });
+        }
+    };
+
     let mut output = String::new();
+    let mut stderr_output = String::new();
     let mut line_number = 1;
+    let mut exit_code = 0;
 
     for file_path in &opts.files {
         if file_path == "-" {
             // Read from stdin
             let stdin = io::stdin();
             let reader = stdin.lock();
-            read_with_line_numbers(reader, &mut output, &mut line_number, opts.number_lines)?;
+            if let Err(e) = read_with_line_numbers(reader, &mut output, &mut line_number, opts.number_lines) {
+                stderr_output.push_str(&e.to_string());
+                stderr_output.push('\n');
+                exit_code = 1;
+            }
         } else {
             // Read from file
-            read_file(file_path, &mut output, &mut line_number, opts.number_lines)?;
+            if let Err(e) = read_file(file_path, &mut output, &mut line_number, opts.number_lines) {
+                stderr_output.push_str(&e.to_string());
+                stderr_output.push('\n');
+                exit_code = 1;
+            }
         }
     }
 
-    Ok(ExecutionResult::success(output))
+    Ok(ExecutionResult {
+        stdout: output,
+        stderr: stderr_output,
+        exit_code,
+    })
 }
 
 /// Execute cat with provided stdin data (for pipelines)
@@ -313,10 +337,10 @@ mod tests {
     #[test]
     fn test_cat_nonexistent_file() {
         let mut runtime = Runtime::new();
-        let result = builtin_cat(&["/nonexistent/file.txt".to_string()], &mut runtime);
+        let result = builtin_cat(&["/nonexistent/file.txt".to_string()], &mut runtime).unwrap();
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No such file or directory"));
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("No such file or directory"));
     }
 
     #[test]
@@ -429,10 +453,10 @@ mod tests {
         let path = file.path().to_str().unwrap();
 
         let mut runtime = Runtime::new();
-        let result = builtin_cat(&["-x".to_string(), path.to_string()], &mut runtime);
+        let result = builtin_cat(&["-x".to_string(), path.to_string()], &mut runtime).unwrap();
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid option"));
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("invalid option"));
     }
 
     #[test]
