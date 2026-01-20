@@ -107,7 +107,13 @@ impl Executor {
                 .iter()
                 .map(|arg| self.resolve_argument(arg))
                 .collect();
-            let result = self.builtins.execute(&command.name, args, &mut self.runtime)?;
+            let mut result = self.builtins.execute(&command.name, args, &mut self.runtime)?;
+            
+            // Handle redirects for builtins
+            if !command.redirects.is_empty() {
+                result = self.apply_redirects(result, &command.redirects)?;
+            }
+            
             self.runtime.set_last_exit_code(result.exit_code);
             return Ok(result);
         }
@@ -115,6 +121,84 @@ impl Executor {
         // Execute external command
         let result = self.execute_external_command(command)?;
         self.runtime.set_last_exit_code(result.exit_code);
+        Ok(result)
+    }
+
+    fn apply_redirects(&self, mut result: ExecutionResult, redirects: &[Redirect]) -> Result<ExecutionResult> {
+        use std::fs::{File, OpenOptions};
+        use std::io::Write;
+        use std::path::Path;
+        
+        // Helper to resolve paths relative to cwd
+        let resolve_path = |target: &str| -> std::path::PathBuf {
+            let path = Path::new(target);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                self.runtime.get_cwd().join(target)
+            }
+        };
+        
+        for redirect in redirects {
+            match &redirect.kind {
+                RedirectKind::Stdout => {
+                    if let Some(target) = &redirect.target {
+                        let resolved = resolve_path(target);
+                        let mut file = File::create(&resolved)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        file.write_all(result.stdout.as_bytes())
+                            .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                        result.stdout.clear(); // Clear stdout as it's been redirected
+                    }
+                }
+                RedirectKind::StdoutAppend => {
+                    if let Some(target) = &redirect.target {
+                        let resolved = resolve_path(target);
+                        let mut file = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&resolved)
+                            .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
+                        file.write_all(result.stdout.as_bytes())
+                            .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                        result.stdout.clear(); // Clear stdout as it's been redirected
+                    }
+                }
+                RedirectKind::Stdin => {
+                    // Stdin redirect doesn't make sense for builtins that have already executed
+                    // This would need to be handled before execution
+                }
+                RedirectKind::Stderr => {
+                    if let Some(target) = &redirect.target {
+                        let resolved = resolve_path(target);
+                        let mut file = File::create(&resolved)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        file.write_all(result.stderr.as_bytes())
+                            .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                        result.stderr.clear(); // Clear stderr as it's been redirected
+                    }
+                }
+                RedirectKind::StderrToStdout => {
+                    // Merge stderr into stdout
+                    result.stdout.push_str(&result.stderr);
+                    result.stderr.clear();
+                }
+                RedirectKind::Both => {
+                    if let Some(target) = &redirect.target {
+                        let resolved = resolve_path(target);
+                        let mut file = File::create(&resolved)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        file.write_all(result.stdout.as_bytes())
+                            .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                        file.write_all(result.stderr.as_bytes())
+                            .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                        result.stdout.clear();
+                        result.stderr.clear();
+                    }
+                }
+            }
+        }
+        
         Ok(result)
     }
 
@@ -172,16 +256,28 @@ impl Executor {
         // Handle redirections
         use std::fs::{File, OpenOptions};
         use std::process::Stdio;
+        use std::path::Path;
         
         let mut stdout_redirect = false;
         let mut stderr_redirect = false;
         let mut stderr_to_stdout = false;
         
+        // Helper to resolve paths relative to cwd
+        let resolve_path = |target: &str| -> std::path::PathBuf {
+            let path = Path::new(target);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                self.runtime.get_cwd().join(target)
+            }
+        };
+        
         for redirect in &command.redirects {
             match &redirect.kind {
                 RedirectKind::Stdout => {
                     if let Some(target) = &redirect.target {
-                        let file = File::create(target)
+                        let resolved = resolve_path(target);
+                        let file = File::create(&resolved)
                             .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
                         cmd.stdout(Stdio::from(file));
                         stdout_redirect = true;
@@ -189,10 +285,11 @@ impl Executor {
                 }
                 RedirectKind::StdoutAppend => {
                     if let Some(target) = &redirect.target {
+                        let resolved = resolve_path(target);
                         let file = OpenOptions::new()
                             .create(true)
                             .append(true)
-                            .open(target)
+                            .open(&resolved)
                             .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
                         cmd.stdout(Stdio::from(file));
                         stdout_redirect = true;
@@ -200,14 +297,16 @@ impl Executor {
                 }
                 RedirectKind::Stdin => {
                     if let Some(target) = &redirect.target {
-                        let file = File::open(target)
+                        let resolved = resolve_path(target);
+                        let file = File::open(&resolved)
                             .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
                         cmd.stdin(Stdio::from(file));
                     }
                 }
                 RedirectKind::Stderr => {
                     if let Some(target) = &redirect.target {
-                        let file = File::create(target)
+                        let resolved = resolve_path(target);
+                        let file = File::create(&resolved)
                             .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
                         cmd.stderr(Stdio::from(file));
                         stderr_redirect = true;
@@ -219,7 +318,8 @@ impl Executor {
                 }
                 RedirectKind::Both => {
                     if let Some(target) = &redirect.target {
-                        let file = File::create(target)
+                        let resolved = resolve_path(target);
+                        let file = File::create(&resolved)
                             .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
                         // Clone file descriptor for both stdout and stderr
                         cmd.stdout(Stdio::from(file.try_clone()

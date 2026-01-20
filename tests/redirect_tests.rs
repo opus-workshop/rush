@@ -17,8 +17,7 @@ fn execute_command(input: &str, temp_dir: &TempDir) -> Result<String, String> {
 
     // Change to temp directory and update executor's runtime
     std::env::set_current_dir(temp_dir.path()).map_err(|e| e.to_string())?;
-    executor.runtime_mut().change_directory(temp_dir.path().to_str().unwrap())
-        .map_err(|e| e.to_string())?;
+    executor.runtime_mut().set_cwd(temp_dir.path().to_path_buf());
 
     let result = executor.execute(statements).map_err(|e| e.to_string())?;
 

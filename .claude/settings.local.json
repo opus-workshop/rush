@@ -3,7 +3,8 @@
     "allow": [
       "Bash(./target/release/rush:*)",
       "Bash(./.beads/create-beads.sh:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(./target/debug/rush:*)"
     ]
   }
 }
