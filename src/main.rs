@@ -7,6 +7,7 @@ mod completion;
 mod history;
 mod context;
 mod output;
+mod git;
 
 use executor::Executor;
 use lexer::Lexer;

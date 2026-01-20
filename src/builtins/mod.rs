@@ -4,6 +4,12 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod cat;
+mod find;
+mod git_status;
+mod grep;
+mod ls;
+
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
 pub struct Builtins {
@@ -19,6 +25,11 @@ impl Builtins {
         commands.insert("echo".to_string(), builtin_echo);
         commands.insert("exit".to_string(), builtin_exit);
         commands.insert("export".to_string(), builtin_export);
+        commands.insert("cat".to_string(), cat::builtin_cat);
+        commands.insert("find".to_string(), find::builtin_find);
+        commands.insert("ls".to_string(), ls::builtin_ls);
+        commands.insert("git-status".to_string(), git_status::builtin_git_status);
+        commands.insert("grep".to_string(), grep::builtin_grep);
 
         Self { commands }
     }

@@ -1,0 +1,355 @@
+# Rush Performance Benchmarks
+
+This document describes the performance targets, benchmarking methodology, and how to run benchmarks for the Rush shell.
+
+## Performance Targets
+
+Rush is designed to be fast and lightweight. Our key performance targets are:
+
+| Metric | Target | Rationale |
+|--------|--------|-----------|
+| **Startup Time** | < 10ms | Shell should feel instant |
+| **Memory Usage** | < 10MB | Lightweight for embedded use |
+| **Builtin Performance** | ≥ GNU utils | Builtins should not be slower than system commands |
+| **Parser Latency** | < 1ms | Interactive commands should parse instantly |
+| **Executor Init** | < 100μs | Minimal overhead for command execution |
+
+## Benchmark Suite
+
+Rush includes two types of benchmarks:
+
+### 1. Criterion Microbenchmarks
+
+Located in `benches/`, these use the [Criterion](https://github.com/bheisler/criterion.rs) framework for detailed statistical analysis.
+
+**Startup Benchmarks** (`benches/startup.rs`):
+- Cold shell startup and exit
+- Shell startup with simple command
+- Lexer initialization and tokenization
+- Parser initialization and AST creation
+- Executor initialization
+- Runtime initialization
+- Memory footprint measurements
+
+**Builtin Benchmarks** (`benches/builtins.rs`):
+- Each builtin vs GNU equivalent comparison
+- Builtin dispatch performance
+- Argument scaling tests
+- Initialization overhead
+
+### 2. Hyperfine Real-World Benchmarks
+
+Located in `scripts/benchmark.sh`, these compare Rush against other shells (bash, zsh) in real-world scenarios using [hyperfine](https://github.com/sharkdp/hyperfine).
+
+## Running Benchmarks
+
+### Prerequisites
+
+Install hyperfine for real-world benchmarks:
+```bash
+# macOS
+brew install hyperfine
+
+# Linux
+cargo install hyperfine
+
+# Or use your package manager
+apt install hyperfine  # Debian/Ubuntu
+```
+
+### Quick Start
+
+Run all benchmarks:
+```bash
+# Build optimized release binary
+cargo build --release
+
+# Run criterion microbenchmarks
+cargo bench
+
+# Run hyperfine real-world benchmarks
+./scripts/benchmark.sh
+```
+
+### Individual Benchmark Suites
+
+Run specific benchmark suites:
+```bash
+# Startup benchmarks only
+cargo bench --bench startup
+
+# Builtin benchmarks only
+cargo bench --bench builtins
+
+# Run specific benchmark function
+cargo bench --bench startup bench_lexer_init
+```
+
+### Viewing Results
+
+Criterion generates detailed HTML reports:
+```bash
+# Open the latest benchmark report
+open target/criterion/report/index.html
+```
+
+Results include:
+- Statistical analysis (mean, median, std dev)
+- Performance regressions detection
+- Historical comparison charts
+- Detailed timing distributions
+
+## Benchmark Configuration
+
+### Criterion Settings
+
+Benchmarks are configured with:
+- **Warmup**: 3-5 runs to stabilize cache
+- **Sample size**: 30-100 iterations depending on benchmark
+- **Measurement time**: 5-10 seconds for statistical significance
+- **HTML reports**: Enabled for detailed analysis
+
+### Hyperfine Settings
+
+Real-world benchmarks use:
+- **Warmup**: 3-5 runs
+- **Min runs**: 10-50 depending on variance
+- **Markdown export**: For tracking trends
+
+## Performance Profiling
+
+For deeper performance analysis:
+
+### Flamegraphs
+
+Generate flamegraphs to identify hotspots:
+```bash
+# Install flamegraph
+cargo install flamegraph
+
+# Generate flamegraph for startup
+cargo flamegraph --bench startup
+
+# Generate flamegraph for builtins
+cargo flamegraph --bench builtins
+```
+
+### Instruments (macOS)
+
+Use Xcode Instruments for detailed profiling:
+```bash
+# Install cargo-instruments
+cargo install cargo-instruments
+
+# Profile with Time Profiler
+cargo instruments -t time --bench startup
+
+# Profile with Allocations
+cargo instruments -t alloc --bench builtins
+```
+
+### Valgrind (Linux)
+
+Memory and cache analysis:
+```bash
+# Install valgrind and deps
+sudo apt install valgrind
+
+# Memory profiling
+valgrind --tool=massif target/release/rush -c exit
+
+# Cache profiling
+valgrind --tool=cachegrind target/release/rush -c "echo test"
+```
+
+## Interpreting Results
+
+### Startup Time
+
+Target: **< 10ms**
+
+Example output:
+```
+startup/cold_start_exit time: [8.234 ms 8.456 ms 8.678 ms]
+```
+
+If startup exceeds 10ms, investigate:
+- Dependency initialization (reedline, tokio runtime)
+- Module loading overhead
+- Static initialization
+
+### Memory Usage
+
+Target: **< 10MB**
+
+Check peak resident set size:
+```bash
+/usr/bin/time -l target/release/rush -c exit
+# Look for "maximum resident set size"
+```
+
+If memory exceeds 10MB, investigate:
+- Large static allocations
+- Dependency memory overhead
+- Inefficient data structures
+
+### Builtin Performance
+
+Target: **≥ GNU utilities**
+
+Example comparison:
+```
+echo/rush_builtin   time: [1.234 μs 1.456 μs 1.678 μs]
+echo/gnu_baseline   time: [2.234 μs 2.456 μs 2.678 μs]
+```
+
+Rush builtins should be faster or comparable to system commands because:
+- No process fork overhead
+- No dynamic linking
+- Direct function calls
+
+## Continuous Benchmarking
+
+### Before Committing
+
+Run benchmarks before major changes:
+```bash
+# Establish baseline
+cargo bench -- --save-baseline main
+
+# Make changes...
+
+# Compare against baseline
+cargo bench -- --baseline main
+```
+
+Criterion will highlight regressions:
+```
+Performance has regressed
+    startup/cold_start_exit
+        time:   [8.456 ms 8.678 ms 8.901 ms]
+        change: [+15.234% +18.456% +21.678%] (p = 0.00 < 0.05)
+        Performance has regressed.
+```
+
+### CI Integration
+
+Add to GitHub Actions:
+```yaml
+- name: Run benchmarks
+  run: |
+    cargo build --release
+    cargo bench --no-fail-fast
+```
+
+## Benchmark Maintenance
+
+### Adding New Benchmarks
+
+When adding new features, add corresponding benchmarks:
+
+1. **Microbenchmarks**: Add to appropriate bench file
+   ```rust
+   fn bench_new_feature(c: &mut Criterion) {
+       c.bench_function("feature_name", |b| {
+           b.iter(|| {
+               // benchmark code
+           });
+       });
+   }
+   ```
+
+2. **Real-world**: Add to `scripts/benchmark.sh`
+   ```bash
+   hyperfine \
+       --warmup 3 \
+       "$RUSH_BIN -c 'new command'" \
+       "bash -c 'new command'"
+   ```
+
+### Benchmark Best Practices
+
+1. **Use `black_box`** to prevent compiler optimizations from eliminating code
+2. **Warmup properly** to account for cache effects
+3. **Test realistic scenarios** not just synthetic cases
+4. **Compare to baselines** (bash, zsh, GNU utils)
+5. **Document expectations** in benchmark comments
+
+## Current Performance Status
+
+| Benchmark | Current | Target | Status |
+|-----------|---------|--------|--------|
+| Startup Time | TBD | < 10ms | ⏳ Pending |
+| Memory Usage | TBD | < 10MB | ⏳ Pending |
+| Echo builtin | TBD | ≤ GNU | ⏳ Pending |
+| PWD builtin | TBD | ≤ GNU | ⏳ Pending |
+| CD builtin | TBD | ≤ GNU | ⏳ Pending |
+| Parser latency | TBD | < 1ms | ⏳ Pending |
+
+*Run benchmarks and update this table with actual results*
+
+## Performance Optimization Tips
+
+### For Contributors
+
+When working on performance improvements:
+
+1. **Measure first**: Run benchmarks to establish baseline
+2. **Target hotspots**: Use profiling to find bottlenecks
+3. **Optimize iteratively**: Make small changes and measure
+4. **Avoid premature optimization**: Focus on algorithmic improvements first
+5. **Document tradeoffs**: Note any complexity vs performance decisions
+
+### Common Optimizations
+
+- **Reduce allocations**: Use stack allocation where possible
+- **Minimize cloning**: Use references and `Cow` types
+- **Efficient data structures**: Choose HashMap vs Vec appropriately
+- **Lazy initialization**: Defer work until needed
+- **Batch operations**: Process multiple items together
+- **Cache results**: Memoize expensive computations
+
+## Troubleshooting
+
+### Benchmarks Won't Build
+
+```bash
+# Ensure release build exists
+cargo build --release
+
+# Check for missing dependencies
+cargo check --benches
+```
+
+### Inconsistent Results
+
+- Close other applications
+- Run on consistent power settings
+- Use `--warmup` to stabilize measurements
+- Increase sample size for noisy benchmarks
+
+### Hyperfine Not Found
+
+```bash
+# Install hyperfine
+cargo install hyperfine
+
+# Or use package manager
+brew install hyperfine        # macOS
+apt install hyperfine          # Debian/Ubuntu
+pacman -S hyperfine           # Arch
+```
+
+## References
+
+- [Criterion.rs Documentation](https://bheisler.github.io/criterion.rs/book/)
+- [Hyperfine GitHub](https://github.com/sharkdp/hyperfine)
+- [The Rust Performance Book](https://nnethercote.github.io/perf-book/)
+- [Flamegraph](https://github.com/flamegraph-rs/flamegraph)
+
+## Questions?
+
+For questions about benchmarking or performance:
+- Open an issue on GitHub
+- Check existing benchmark results in CI
+- Review the performance optimization guide in CONTRIBUTING.md
