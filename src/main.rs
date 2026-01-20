@@ -22,6 +22,7 @@ use std::sync::{Arc, RwLock};
 use std::env;
 use std::fs;
 use std::borrow::Cow;
+use std::io::{BufRead, BufReader};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -186,16 +187,24 @@ impl Prompt for RushPrompt {
 }
 
 fn run_interactive() -> Result<()> {
+    if atty::is(atty::Stream::Stdin) {
+        run_interactive_with_reedline()
+    } else {
+        run_non_interactive()
+    }
+}
+
+fn run_interactive_with_reedline() -> Result<()> {
     println!("Rush v0.1.0 - A Modern Shell in Rust");
     println!("Type 'exit' to quit\n");
 
     let mut executor = Executor::new();
-    
+
     // Create completer with shared builtins and runtime
     let builtins = Arc::new(builtins::Builtins::new());
     let runtime = Arc::new(RwLock::new(runtime::Runtime::new()));
     let completer = Box::new(Completer::new(builtins.clone(), runtime.clone()));
-    
+
     let mut line_editor = Reedline::create()
         .with_completer(completer);
     let prompt = RushPrompt::new();
@@ -234,6 +243,39 @@ fn run_interactive() -> Result<()> {
             Err(e) => {
                 eprintln!("Error reading line: {}", e);
                 break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_non_interactive() -> Result<()> {
+    let mut executor = Executor::new();
+    let stdin = std::io::stdin();
+    let reader = BufReader::new(stdin.lock());
+
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        match execute_line(line, &mut executor) {
+            Ok(result) => {
+                if !result.stdout.is_empty() {
+                    print!("{}", result.stdout);
+                }
+                if !result.stderr.is_empty() {
+                    eprint!("{}", result.stderr);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                // Continue on error in non-interactive mode
             }
         }
     }
