@@ -80,6 +80,80 @@ pub fn builtin_grep(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     })
 }
 
+/// Execute grep with stdin data (for pipelines)
+pub fn builtin_grep_with_stdin(args: &[String], _runtime: &mut Runtime, stdin_data: &[u8]) -> Result<ExecutionResult> {
+    let config = parse_args(args)?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    // Build the regex matcher
+    let matcher = RegexMatcherBuilder::new()
+        .case_insensitive(config.ignore_case)
+        .build(&config.pattern)
+        .map_err(|e| anyhow!("Invalid regex pattern: {}", e))?;
+
+    // Search through stdin data
+    let found = search_stdin(&matcher, stdin_data, &config, &mut stdout, &mut stderr)?;
+
+    let exit_code = if found { 0 } else { 1 };
+
+    Ok(ExecutionResult {
+        stdout: String::from_utf8_lossy(&stdout).to_string(),
+        stderr: String::from_utf8_lossy(&stderr).to_string(),
+        exit_code,
+    })
+}
+
+/// Search through stdin data
+fn search_stdin(
+    matcher: &impl Matcher,
+    stdin_data: &[u8],
+    config: &GrepConfig,
+    stdout: &mut Vec<u8>,
+    _stderr: &mut Vec<u8>,
+) -> Result<bool> {
+    let found = Cell::new(false);
+
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(b'\x00'))
+        .line_number(true) // Always track line numbers so lnum is valid
+        .invert_match(config.invert_match)
+        .build();
+
+    let result = searcher.search_slice(
+        matcher,
+        stdin_data,
+        UTF8(|lnum, line| {
+            found.set(true);
+
+            if config.show_line_numbers {
+                write!(stdout, "{}:", lnum)?;
+            }
+
+            // Write line with color highlighting if enabled
+            if config.color && !config.invert_match {
+                if let Some(m) = matcher.find(line.as_bytes())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))? {
+                    write_colored_line(stdout, line, m.start(), m.end())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                } else {
+                    write!(stdout, "{}", line)?;
+                }
+            } else {
+                write!(stdout, "{}", line)?;
+            }
+
+            Ok(true)
+        }),
+    );
+
+    match result {
+        Ok(_) => Ok(found.get()),
+        Err(e) => Err(anyhow!("Error searching stdin: {}", e)),
+    }
+}
+
 fn search_file(
     matcher: &impl Matcher,
     path: &Path,
@@ -91,7 +165,7 @@ fn search_file(
 
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(b'\x00'))
-        .line_number(config.show_line_numbers)
+        .line_number(true) // Always track line numbers so lnum is valid
         .invert_match(config.invert_match)
         .build();
 

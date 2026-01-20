@@ -69,6 +69,26 @@ pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionR
     Ok(ExecutionResult::success(output))
 }
 
+/// Execute cat with provided stdin data (for pipelines)
+pub fn builtin_cat_with_stdin(args: &[String], _runtime: &mut Runtime, stdin_data: &[u8]) -> Result<ExecutionResult> {
+    let opts = CatOptions::parse(args)?;
+    let mut output = String::new();
+    let mut line_number = 1;
+
+    // If no files specified or "-" is specified, read from stdin
+    if opts.files.is_empty() || (opts.files.len() == 1 && opts.files[0] == "-") {
+        let cursor = std::io::Cursor::new(stdin_data);
+        read_with_line_numbers(cursor, &mut output, &mut line_number, opts.number_lines)?;
+    } else {
+        // Read from specified files
+        for file_path in &opts.files {
+            read_file(file_path, &mut output, &mut line_number, opts.number_lines)?;
+        }
+    }
+
+    Ok(ExecutionResult::success(output))
+}
+
 /// Read a file using either memory-mapped I/O or buffered reading
 fn read_file(
     path: &str,

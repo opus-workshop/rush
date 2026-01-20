@@ -3,7 +3,6 @@ use crate::git::GitContext;
 use crate::runtime::Runtime;
 use anyhow::Result;
 use nu_ansi_term::Color;
-use std::env;
 
 pub fn builtin_git_status(_args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     let cwd = runtime.get_cwd();

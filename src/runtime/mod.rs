@@ -26,7 +26,7 @@ impl Runtime {
             panic!("Cannot create undo manager");
         });
 
-        Self {
+        let mut runtime = Self {
             variables: HashMap::new(),
             functions: HashMap::new(),
             cwd,
@@ -35,7 +35,11 @@ impl Runtime {
             max_call_depth: 100,
             history: History::default(),
             undo_manager,
-        }
+        };
+        
+        // Initialize $? to 0
+        runtime.set_last_exit_code(0);
+        runtime
     }
 
     pub fn set_variable(&mut self, name: String, value: String) {
@@ -57,6 +61,19 @@ impl Runtime {
         }
         // Fall back to global variables
         self.variables.get(name).cloned()
+    }
+
+    /// Set the last exit code (stored in $? variable)
+    pub fn set_last_exit_code(&mut self, code: i32) {
+        self.variables.insert("?".to_string(), code.to_string());
+    }
+
+    /// Get the last exit code (from $? variable)
+    pub fn get_last_exit_code(&self) -> i32 {
+        self.variables
+            .get("?")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
     }
 
     pub fn define_function(&mut self, func: FunctionDef) {

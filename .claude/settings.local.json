@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./target/release/rush:*)",
+      "Bash(./.beads/create-beads.sh:*)",
+      "Bash(bash:*)"
+    ]
+  }
+}

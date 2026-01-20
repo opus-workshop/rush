@@ -1220,6 +1220,7 @@ dependencies = [
  "reedline",
  "serde",
  "serde_json",
+ "signal-hook",
  "strsim",
  "tempfile",
  "termcolor",

@@ -10,6 +10,9 @@ pub enum Statement {
     IfStatement(IfStatement),
     ForLoop(ForLoop),
     MatchExpression(MatchExpression),
+    ConditionalAnd(ConditionalAnd),
+    ConditionalOr(ConditionalOr),
+    Subshell(Vec<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +75,18 @@ pub struct MatchExpression {
 pub struct MatchArm {
     pub pattern: Pattern,
     pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConditionalAnd {
+    pub left: Box<Statement>,
+    pub right: Box<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConditionalOr {
+    pub left: Box<Statement>,
+    pub right: Box<Statement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,13 +173,15 @@ pub enum Argument {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Redirect {
     pub kind: RedirectKind,
-    pub target: String,
+    pub target: Option<String>, // None for special cases like 2>&1
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RedirectKind {
-    Stdout,
-    Stderr,
-    All,
-    Append,
+    Stdout,          // >
+    StdoutAppend,    // >>
+    Stdin,           // <
+    Stderr,          // 2>
+    StderrToStdout,  // 2>&1
+    Both,            // &>
 }

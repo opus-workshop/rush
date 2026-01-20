@@ -11,11 +11,13 @@ mod git;
 mod undo;
 mod correction;
 mod progress;
+mod signal;
 
 use completion::Completer;
 use executor::Executor;
 use lexer::Lexer;
 use parser::Parser;
+use signal::SignalHandler;
 use reedline::{Prompt, PromptHistorySearch, PromptHistorySearchStatus, Reedline, Signal};
 use anyhow::Result;
 use std::sync::{Arc, RwLock};
@@ -25,60 +27,72 @@ use std::borrow::Cow;
 use std::io::{BufRead, BufReader};
 
 fn main() -> Result<()> {
+    // Setup signal handlers early
+    let signal_handler = SignalHandler::new();
+    if let Err(e) = signal_handler.setup() {
+        eprintln!("Warning: Failed to setup signal handlers: {}", e);
+    }
+
     let args: Vec<String> = env::args().collect();
-    
+
     // Check for -c flag for non-interactive command execution
     if args.len() >= 3 && args[1] == "-c" {
-        return run_command(&args[2]);
+        return run_command(&args[2], signal_handler);
     }
-    
+
     // Show help for invalid usage
     if args.len() > 1 && (args[1] == "-h" || args[1] == "--help") {
         print_help();
         return Ok(());
     }
-    
+
     // Check if a script file is provided
     if args.len() >= 2 && !args[1].starts_with('-') {
         let script_path = &args[1];
         let script_args = args[2..].to_vec();
-        return run_script(script_path, script_args);
+        return run_script(script_path, script_args, signal_handler);
     }
-    
+
     // Run interactive mode
-    run_interactive()
+    run_interactive(signal_handler)
 }
 
-fn run_script(script_path: &str, script_args: Vec<String>) -> Result<()> {
+fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: SignalHandler) -> Result<()> {
     // Read the script file
     let script_content = fs::read_to_string(script_path)
         .map_err(|e| anyhow::anyhow!("Failed to read script '{}': {}", script_path, e))?;
-    
-    let mut executor = Executor::new();
-    
+
+    let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
+
     // Set up script arguments as $1, $2, etc.
     for (i, arg) in script_args.iter().enumerate() {
         executor.runtime_mut().set_variable((i + 1).to_string(), arg.clone());
     }
-    
+
     // Set $0 to script name
     executor.runtime_mut().set_variable("0".to_string(), script_path.to_string());
-    
+
     // Execute the script line by line
     let mut last_exit_code = 0;
     for (line_num, line) in script_content.lines().enumerate() {
+        // Check for signals
+        if signal_handler.should_shutdown() {
+            eprintln!("\nScript interrupted by signal");
+            std::process::exit(signal_handler.exit_code());
+        }
+
         let line = line.trim();
-        
+
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        
+
         // Skip shebang line
         if line_num == 0 && line.starts_with("#!") {
             continue;
         }
-        
+
         match execute_line_with_context(line, &mut executor, script_path, line_num + 1) {
             Ok(result) => {
                 if !result.stdout.is_empty() {
@@ -95,13 +109,13 @@ fn run_script(script_path: &str, script_args: Vec<String>) -> Result<()> {
             }
         }
     }
-    
+
     std::process::exit(last_exit_code);
 }
 
-fn run_command(command: &str) -> Result<()> {
-    let mut executor = Executor::new();
-    
+fn run_command(command: &str, signal_handler: SignalHandler) -> Result<()> {
+    let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
+
     match execute_line(command, &mut executor) {
         Ok(result) => {
             if !result.stdout.is_empty() {
@@ -110,7 +124,12 @@ fn run_command(command: &str) -> Result<()> {
             if !result.stderr.is_empty() {
                 eprint!("{}", result.stderr);
             }
-            
+
+            // Check if interrupted by signal
+            if signal_handler.should_shutdown() {
+                std::process::exit(signal_handler.exit_code());
+            }
+
             // Exit with the command's exit code
             std::process::exit(result.exit_code);
         }
@@ -186,19 +205,19 @@ impl Prompt for RushPrompt {
     }
 }
 
-fn run_interactive() -> Result<()> {
+fn run_interactive(signal_handler: SignalHandler) -> Result<()> {
     if atty::is(atty::Stream::Stdin) {
-        run_interactive_with_reedline()
+        run_interactive_with_reedline(signal_handler)
     } else {
-        run_non_interactive()
+        run_non_interactive(signal_handler)
     }
 }
 
-fn run_interactive_with_reedline() -> Result<()> {
+fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
     println!("Rush v0.1.0 - A Modern Shell in Rust");
     println!("Type 'exit' to quit\n");
 
-    let mut executor = Executor::new();
+    let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
     // Create completer with shared builtins and runtime
     let builtins = Arc::new(builtins::Builtins::new());
@@ -210,6 +229,12 @@ fn run_interactive_with_reedline() -> Result<()> {
     let prompt = RushPrompt::new();
 
     loop {
+        // Check for signals before reading next line
+        if signal_handler.should_shutdown() {
+            println!("\nExiting due to signal...");
+            std::process::exit(signal_handler.exit_code());
+        }
+
         let sig = line_editor.read_line(&prompt);
 
         match sig {
@@ -235,6 +260,9 @@ fn run_interactive_with_reedline() -> Result<()> {
                 }
             }
             Ok(Signal::CtrlC) => {
+                // Reedline handles Ctrl-C in interactive mode
+                // Reset signal handler state
+                signal_handler.reset();
                 continue;
             }
             Ok(Signal::CtrlD) => {
@@ -250,12 +278,18 @@ fn run_interactive_with_reedline() -> Result<()> {
     Ok(())
 }
 
-fn run_non_interactive() -> Result<()> {
-    let mut executor = Executor::new();
+fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
+    let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
     let stdin = std::io::stdin();
     let reader = BufReader::new(stdin.lock());
 
     for line in reader.lines() {
+        // Check for signals
+        if signal_handler.should_shutdown() {
+            eprintln!("\nInterrupted by signal");
+            std::process::exit(signal_handler.exit_code());
+        }
+
         let line = line?;
         let line = line.trim();
 

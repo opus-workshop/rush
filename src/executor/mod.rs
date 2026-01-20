@@ -5,16 +5,24 @@ use crate::correction::Corrector;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
 use crate::progress::ProgressIndicator;
+use crate::signal::SignalHandler;
 use anyhow::{anyhow, Result};
 use std::process::Command as StdCommand;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub struct Executor {
     runtime: Runtime,
     builtins: Builtins,
     corrector: Corrector,
+    signal_handler: Option<SignalHandler>,
+}
+
+impl Default for Executor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Executor {
@@ -23,6 +31,16 @@ impl Executor {
             runtime: Runtime::new(),
             builtins: Builtins::new(),
             corrector: Corrector::new(),
+            signal_handler: None,
+        }
+    }
+
+    pub fn new_with_signal_handler(signal_handler: SignalHandler) -> Self {
+        Self {
+            runtime: Runtime::new(),
+            builtins: Builtins::new(),
+            corrector: Corrector::new(),
+            signal_handler: Some(signal_handler),
         }
     }
 
@@ -32,10 +50,20 @@ impl Executor {
         let mut last_exit_code = 0;
 
         for statement in statements {
+            // Check for signals before each statement
+            if let Some(handler) = &self.signal_handler {
+                if handler.should_shutdown() {
+                    return Err(anyhow!("Interrupted by signal"));
+                }
+            }
+
             let result = self.execute_statement(statement)?;
             accumulated_stdout.push_str(&result.stdout);
             accumulated_stderr.push_str(&result.stderr);
             last_exit_code = result.exit_code;
+            
+            // Update $? after each statement
+            self.runtime.set_last_exit_code(last_exit_code);
         }
 
         Ok(ExecutionResult {
@@ -55,6 +83,9 @@ impl Executor {
             Statement::IfStatement(if_stmt) => self.execute_if_statement(if_stmt),
             Statement::ForLoop(for_loop) => self.execute_for_loop(for_loop),
             Statement::MatchExpression(match_expr) => self.execute_match(match_expr),
+            Statement::ConditionalAnd(cond_and) => self.execute_conditional_and(cond_and),
+            Statement::ConditionalOr(cond_or) => self.execute_conditional_or(cond_or),
+            Statement::Subshell(statements) => self.execute_subshell(statements),
         }
     }
 
@@ -76,11 +107,15 @@ impl Executor {
                 .iter()
                 .map(|arg| self.resolve_argument(arg))
                 .collect();
-            return self.builtins.execute(&command.name, args, &mut self.runtime);
+            let result = self.builtins.execute(&command.name, args, &mut self.runtime)?;
+            self.runtime.set_last_exit_code(result.exit_code);
+            return Ok(result);
         }
 
         // Execute external command
-        self.execute_external_command(command)
+        let result = self.execute_external_command(command)?;
+        self.runtime.set_last_exit_code(result.exit_code);
+        Ok(result)
     }
 
     fn execute_user_function(&mut self, name: &str, args: Vec<String>) -> Result<ExecutionResult> {
@@ -127,16 +162,89 @@ impl Executor {
             .map(|arg| self.resolve_argument(arg))
             .collect();
 
-        let start = Instant::now();
+        
+        // Set up command with redirects
+        let mut cmd = StdCommand::new(&command.name);
+        cmd.args(&args)
+            .current_dir(self.runtime.get_cwd())
+            .envs(self.runtime.get_env());
+
+        // Handle redirections
+        use std::fs::{File, OpenOptions};
+        use std::process::Stdio;
+        
+        let mut stdout_redirect = false;
+        let mut stderr_redirect = false;
+        let mut stderr_to_stdout = false;
+        
+        for redirect in &command.redirects {
+            match &redirect.kind {
+                RedirectKind::Stdout => {
+                    if let Some(target) = &redirect.target {
+                        let file = File::create(target)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        cmd.stdout(Stdio::from(file));
+                        stdout_redirect = true;
+                    }
+                }
+                RedirectKind::StdoutAppend => {
+                    if let Some(target) = &redirect.target {
+                        let file = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(target)
+                            .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
+                        cmd.stdout(Stdio::from(file));
+                        stdout_redirect = true;
+                    }
+                }
+                RedirectKind::Stdin => {
+                    if let Some(target) = &redirect.target {
+                        let file = File::open(target)
+                            .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
+                        cmd.stdin(Stdio::from(file));
+                    }
+                }
+                RedirectKind::Stderr => {
+                    if let Some(target) = &redirect.target {
+                        let file = File::create(target)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        cmd.stderr(Stdio::from(file));
+                        stderr_redirect = true;
+                    }
+                }
+                RedirectKind::StderrToStdout => {
+                    // Redirect stderr to stdout
+                    stderr_to_stdout = true;
+                }
+                RedirectKind::Both => {
+                    if let Some(target) = &redirect.target {
+                        let file = File::create(target)
+                            .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                        // Clone file descriptor for both stdout and stderr
+                        cmd.stdout(Stdio::from(file.try_clone()
+                            .map_err(|e| anyhow!("Failed to clone file descriptor: {}", e))?));
+                        cmd.stderr(Stdio::from(file));
+                        stdout_redirect = true;
+                        stderr_redirect = true;
+                    }
+                }
+            }
+        }
+        
+        // Set default piped outputs if not redirected
+        if !stdout_redirect {
+            cmd.stdout(std::process::Stdio::piped());
+        }
+        if !stderr_redirect && !stderr_to_stdout {
+            cmd.stderr(std::process::Stdio::piped());
+        } else if stderr_to_stdout && !stderr_redirect {
+            // Redirect stderr to stdout for the process
+            cmd.stderr(std::process::Stdio::piped());
+        }
         
         // Spawn the command
-        let mut child = StdCommand::new(&command.name)
-            .args(&args)
-            .current_dir(self.runtime.get_cwd())
-            .envs(self.runtime.get_env())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+        let mut child = cmd.spawn()
             .map_err(|e| {
                 // If command not found, provide suggestions
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -179,18 +287,57 @@ impl Executor {
             }
         };
 
-        // Wait for command to complete
-        let output = child.wait_with_output()
-            .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
+        // Wait for command to complete, checking for signals
+        let output = loop {
+            // Check for signals
+            if let Some(handler) = &self.signal_handler {
+                if handler.should_shutdown() {
+                    // Kill the child process
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    
+                    // Stop progress indicator if it was started
+                    if let Some(prog) = progress {
+                        prog.stop();
+                    }
+                    
+                    return Err(anyhow!("Command interrupted by signal"));
+                }
+            }
+
+            // Try to get the output
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    // Child finished, get output
+                    break child.wait_with_output()
+                        .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
+                }
+                Ok(None) => {
+                    // Still running, sleep briefly and check again
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
+                }
+            }
+        };
 
         // Stop progress indicator if it was started
         if let Some(prog) = progress {
             prog.stop();
         }
 
+        // Handle stderr to stdout redirection in output
+        let mut stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+        
+        if stderr_to_stdout && !stderr_str.is_empty() {
+            stdout_str.push_str(&stderr_str);
+        }
+
         Ok(ExecutionResult {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            stdout: stdout_str,
+            stderr: if stderr_to_stdout { String::new() } else { stderr_str },
             exit_code: output.status.code().unwrap_or(1),
         })
     }
@@ -372,6 +519,68 @@ impl Executor {
         }
 
         Ok(ExecutionResult::default())
+    }
+
+    fn execute_conditional_and(&mut self, cond_and: ConditionalAnd) -> Result<ExecutionResult> {
+        // Execute left side
+        let left_result = self.execute_statement(*cond_and.left)?;
+        self.runtime.set_last_exit_code(left_result.exit_code);
+        
+        // Only execute right side if left succeeded (exit code 0)
+        if left_result.exit_code == 0 {
+            let right_result = self.execute_statement(*cond_and.right)?;
+            self.runtime.set_last_exit_code(right_result.exit_code);
+            
+            Ok(ExecutionResult {
+                stdout: format!("{}{}", left_result.stdout, right_result.stdout),
+                stderr: format!("{}{}", left_result.stderr, right_result.stderr),
+                exit_code: right_result.exit_code,
+            })
+        } else {
+            // Left failed, return its result
+            Ok(left_result)
+        }
+    }
+
+    fn execute_conditional_or(&mut self, cond_or: ConditionalOr) -> Result<ExecutionResult> {
+        // Execute left side
+        let left_result = self.execute_statement(*cond_or.left)?;
+        self.runtime.set_last_exit_code(left_result.exit_code);
+        
+        // Only execute right side if left failed (exit code != 0)
+        if left_result.exit_code != 0 {
+            let right_result = self.execute_statement(*cond_or.right)?;
+            self.runtime.set_last_exit_code(right_result.exit_code);
+            
+            Ok(ExecutionResult {
+                stdout: format!("{}{}", left_result.stdout, right_result.stdout),
+                stderr: format!("{}{}", left_result.stderr, right_result.stderr),
+                exit_code: right_result.exit_code,
+            })
+        } else {
+            // Left succeeded, return its result
+            Ok(left_result)
+        }
+    }
+
+    fn execute_subshell(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
+        // Clone the runtime to create an isolated environment
+        let child_runtime = self.runtime.clone();
+
+        // Create a new executor with the cloned runtime
+        let mut child_executor = Executor {
+            runtime: child_runtime,
+            builtins: self.builtins.clone(),
+            corrector: self.corrector.clone(),
+            signal_handler: None, // Subshells don't need their own signal handlers
+        };
+
+        // Execute all statements in the subshell
+        let result = child_executor.execute(statements)?;
+
+        // The subshell's runtime changes (variables, cwd) are discarded
+        // Only the execution result (stdout, stderr, exit code) is returned
+        Ok(result)
     }
 
     fn evaluate_expression(&mut self, expr: Expression) -> Result<String> {

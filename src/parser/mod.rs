@@ -30,15 +30,41 @@ impl Parser {
                 break;
             }
 
-            statements.push(self.parse_statement()?);
+            statements.push(self.parse_conditional_statement()?);
             
-            // Handle && and semicolon as statement separators
-            if self.match_token(&Token::And) || self.match_token(&Token::Semicolon) {
+            // Handle semicolon as statement separator
+            if self.match_token(&Token::Semicolon) {
                 self.advance();
             }
         }
 
         Ok(statements)
+    }
+
+    fn parse_conditional_statement(&mut self) -> Result<Statement> {
+        let mut left = self.parse_statement()?;
+
+        loop {
+            if self.match_token(&Token::And) {
+                self.advance();
+                let right = self.parse_statement()?;
+                left = Statement::ConditionalAnd(ConditionalAnd {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            } else if self.match_token(&Token::Or) {
+                self.advance();
+                let right = self.parse_statement()?;
+                left = Statement::ConditionalOr(ConditionalOr {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            } else {
+                break;
+            }
+        }
+
+        Ok(left)
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
@@ -49,20 +75,32 @@ impl Parser {
             Some(Token::If) => self.parse_if_statement(),
             Some(Token::For) => self.parse_for_loop(),
             Some(Token::Match) => self.parse_match_expression(),
+            Some(Token::LeftParen) => self.parse_subshell(),
             _ => self.parse_command_or_pipeline(),
         }
     }
 
     fn parse_command_or_pipeline(&mut self) -> Result<Statement> {
-        let first_command = self.parse_command()?;
+        let first_statement = self.parse_pipeline_element()?;
 
         // Check if this is a parallel execution
         if self.match_token(&Token::ParallelPipe) {
+            // Only commands can be in parallel execution for now
+            let first_command = match first_statement {
+                Statement::Command(cmd) => cmd,
+                _ => return Err(anyhow!("Only commands can be used in parallel execution")),
+            };
+
             self.advance();
             let mut commands = vec![first_command];
 
             loop {
-                commands.push(self.parse_command()?);
+                let stmt = self.parse_pipeline_element()?;
+                let cmd = match stmt {
+                    Statement::Command(cmd) => cmd,
+                    _ => return Err(anyhow!("Only commands can be used in parallel execution")),
+                };
+                commands.push(cmd);
 
                 if !self.match_token(&Token::ParallelPipe) {
                     break;
@@ -74,11 +112,27 @@ impl Parser {
         }
         // Check if this is a pipeline
         else if self.match_token(&Token::Pipe) {
+            // Subshells in pipelines need to be converted to commands
+            // For now, we'll just handle Command types in pipelines
+            let first_command = match first_statement {
+                Statement::Command(cmd) => cmd,
+                Statement::Subshell(_) => {
+                    // For subshells in pipelines, we need different handling
+                    return Err(anyhow!("Subshells in pipelines require special handling - use the full statement form"));
+                },
+                _ => return Err(anyhow!("Only commands can be used in pipelines")),
+            };
+
             self.advance();
             let mut commands = vec![first_command];
 
             loop {
-                commands.push(self.parse_command()?);
+                let stmt = self.parse_pipeline_element()?;
+                let cmd = match stmt {
+                    Statement::Command(cmd) => cmd,
+                    _ => return Err(anyhow!("Only commands can be used in pipelines")),
+                };
+                commands.push(cmd);
 
                 if !self.match_token(&Token::Pipe) {
                     break;
@@ -88,7 +142,15 @@ impl Parser {
 
             Ok(Statement::Pipeline(Pipeline { commands }))
         } else {
-            Ok(Statement::Command(first_command))
+            Ok(first_statement)
+        }
+    }
+
+    fn parse_pipeline_element(&mut self) -> Result<Statement> {
+        if self.match_token(&Token::LeftParen) {
+            self.parse_subshell()
+        } else {
+            Ok(Statement::Command(self.parse_command()?))
         }
     }
 
@@ -107,30 +169,56 @@ impl Parser {
             && !self.match_token(&Token::Newline)
             && !self.match_token(&Token::Semicolon)
             && !self.match_token(&Token::And)
+            && !self.match_token(&Token::RightParen)
         {
             match self.peek() {
-                Some(Token::AppendRedirect) => {
+                Some(Token::GreaterThan) => {
                     self.advance();
                     let target = self.parse_redirect_target()?;
                     redirects.push(Redirect {
-                        kind: RedirectKind::Append,
-                        target,
+                        kind: RedirectKind::Stdout,
+                        target: Some(target),
+                    });
+                }
+                Some(Token::StdoutAppend) => {
+                    self.advance();
+                    let target = self.parse_redirect_target()?;
+                    redirects.push(Redirect {
+                        kind: RedirectKind::StdoutAppend,
+                        target: Some(target),
+                    });
+                }
+                Some(Token::StdinRedirect) => {
+                    self.advance();
+                    let target = self.parse_redirect_target()?;
+                    redirects.push(Redirect {
+                        kind: RedirectKind::Stdin,
+                        target: Some(target),
                     });
                 }
                 Some(Token::StderrRedirect) => {
                     self.advance();
+                    // Check if next token is >&1 (for 2>&1)
+                    // Note: 2>&1 is handled as a single token StderrToStdout
                     let target = self.parse_redirect_target()?;
                     redirects.push(Redirect {
                         kind: RedirectKind::Stderr,
-                        target,
+                        target: Some(target),
                     });
                 }
-                Some(Token::AllRedirect) => {
+                Some(Token::StderrToStdout) => {
+                    self.advance();
+                    redirects.push(Redirect {
+                        kind: RedirectKind::StderrToStdout,
+                        target: None,
+                    });
+                }
+                Some(Token::BothRedirect) => {
                     self.advance();
                     let target = self.parse_redirect_target()?;
                     redirects.push(Redirect {
-                        kind: RedirectKind::All,
-                        target,
+                        kind: RedirectKind::Both,
+                        target: Some(target),
                     });
                 }
                 _ => {
@@ -154,7 +242,7 @@ impl Parser {
                 Ok(Argument::Literal(unquoted.to_string()))
             }
             Some(Token::Identifier(s)) => Ok(Argument::Literal(s.clone())),
-            Some(Token::Variable(s)) => Ok(Argument::Variable(s.clone())),
+            Some(Token::Variable(s)) | Some(Token::SpecialVariable(s)) => Ok(Argument::Variable(s.clone())),
             Some(Token::ShortFlag(s)) | Some(Token::LongFlag(s)) => {
                 Ok(Argument::Flag(s.clone()))
             }
@@ -208,7 +296,7 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal::Float(f)))
             }
-            Some(Token::Variable(v)) => {
+            Some(Token::Variable(v)) | Some(Token::SpecialVariable(v)) => {
                 let v = v.clone();
                 self.advance();
                 Ok(Expression::Variable(v))
@@ -380,6 +468,40 @@ impl Parser {
             Some(Token::Integer(n)) => Ok(Pattern::Literal(Literal::Integer(*n))),
             _ => Ok(Pattern::Wildcard),
         }
+    }
+
+    fn parse_subshell(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::LeftParen)?;
+
+        let mut statements = Vec::new();
+
+        // Skip leading newlines
+        while self.match_token(&Token::Newline) || self.match_token(&Token::CrLf) {
+            self.advance();
+        }
+
+        // Parse statements until we hit a closing paren
+        while !self.match_token(&Token::RightParen) && !self.is_at_end() {
+            // Skip newlines between statements
+            while self.match_token(&Token::Newline) || self.match_token(&Token::CrLf) {
+                self.advance();
+            }
+
+            if self.match_token(&Token::RightParen) {
+                break;
+            }
+
+            statements.push(self.parse_statement()?);
+
+            // Handle statement separators (&&, semicolon)
+            if self.match_token(&Token::And) || self.match_token(&Token::Semicolon) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(&Token::RightParen)?;
+
+        Ok(Statement::Subshell(statements))
     }
 
     // Helper methods

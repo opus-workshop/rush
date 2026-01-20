@@ -35,17 +35,14 @@ pub enum Token {
     #[token("!=")]
     NotEquals,
 
-    #[token(">")]
-    GreaterThan,
-
-    #[token("<")]
-    LessThan,
-
     #[token(">=")]
     GreaterThanOrEqual,
 
     #[token("<=")]
     LessThanOrEqual,
+
+    #[token(">")]
+    GreaterThan,
 
     #[token("|||")]
     ParallelPipe,
@@ -120,6 +117,11 @@ pub enum Token {
     #[regex(r"\$\([^)]+\)", |lex| lex.slice().to_string())]
     CommandSubstitution(String),
 
+    // Special variables ($?, $!, $$, etc.)
+    #[regex(r"\$[?!$#@*0-9]", |lex| lex.slice().to_string())]
+    SpecialVariable(String),
+
+    // Regular variables
     #[regex(r"\$[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Variable(String),
 
@@ -136,13 +138,19 @@ pub enum Token {
 
     // Redirects
     #[token(">>")]
-    AppendRedirect,
+    StdoutAppend,
+
+    #[token("2>&1")]
+    StderrToStdout,
 
     #[token("2>")]
     StderrRedirect,
 
     #[token("&>")]
-    AllRedirect,
+    BothRedirect,
+
+    #[token("<")]
+    StdinRedirect,
 
     // Newline and EOF
     #[regex(r"\n")]

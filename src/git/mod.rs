@@ -1,5 +1,4 @@
 use git2::{Repository, StatusOptions};
-use anyhow::{anyhow, Result};
 use std::path::Path;
 
 pub struct GitContext {

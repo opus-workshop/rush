@@ -24,7 +24,9 @@ pub fn execute_pipeline(
 
     if pipeline.commands.len() == 1 {
         // Single command, execute normally
-        return execute_single_command(&pipeline.commands[0], runtime, builtins);
+        let result = execute_single_command(&pipeline.commands[0], runtime, builtins)?;
+        runtime.set_last_exit_code(result.exit_code);
+        return Ok(result);
     }
 
     // Multi-command pipeline with streaming
@@ -46,6 +48,8 @@ pub fn execute_pipeline(
         )?;
 
         if is_last {
+            // Set $? to the last command's exit code (pipeline exit code)
+            runtime.set_last_exit_code(result.exit_code);
             return Ok(result);
         }
 
