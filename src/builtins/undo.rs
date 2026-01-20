@@ -18,7 +18,7 @@ pub fn builtin_undo(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
                     10
                 };
                 
-                let ops = runtime.undo_manager().list_operations(limit);
+                let ops = runtime.undo_manager_mut().list_operations(limit);
                 let mut output = String::new();
                 
                 if ops.is_empty() {

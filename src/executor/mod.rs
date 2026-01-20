@@ -131,16 +131,39 @@ impl Executor {
             }
         }
 
+        // Check if it's an alias and expand it
+        let (command_name, command_args) = if let Some(alias_value) = self.runtime.get_alias(&command.name) {
+            // Split the alias value into command and args
+            let parts: Vec<&str> = alias_value.split_whitespace().collect();
+            if parts.is_empty() {
+                return Err(anyhow!("Empty alias expansion for '{}'", command.name));
+            }
+            
+            // First part is the new command name
+            let new_name = parts[0].to_string();
+            
+            // Remaining parts become additional arguments (prepended to original args)
+            let mut new_args = Vec::new();
+            for part in parts.iter().skip(1) {
+                new_args.push(Argument::Literal(part.to_string()));
+            }
+            new_args.extend(command.args.clone());
+            
+            (new_name, new_args)
+        } else {
+            (command.name.clone(), command.args.clone())
+        };
+
         // Check if it's a user-defined function first
-        if self.runtime.get_function(&command.name).is_some() {
-            let args = self.expand_and_resolve_arguments(&command.args)?;
-            return self.execute_user_function(&command.name, args);
+        if self.runtime.get_function(&command_name).is_some() {
+            let args = self.expand_and_resolve_arguments(&command_args)?;
+            return self.execute_user_function(&command_name, args);
         }
 
         // Check if it's a builtin command
-        if self.builtins.is_builtin(&command.name) {
-            let args = self.expand_and_resolve_arguments(&command.args)?;
-            let mut result = self.builtins.execute(&command.name, args, &mut self.runtime)?;
+        if self.builtins.is_builtin(&command_name) {
+            let args = self.expand_and_resolve_arguments(&command_args)?;
+            let mut result = self.builtins.execute(&command_name, args, &mut self.runtime)?;
 
             // Handle redirects for builtins
             if !command.redirects.is_empty() {
@@ -151,8 +174,11 @@ impl Executor {
             return Ok(result);
         }
 
-        // Execute external command
-        let result = self.execute_external_command(command)?;
+        // Execute external command with the potentially expanded command name and args
+        let mut expanded_command = command;
+        expanded_command.name = command_name;
+        expanded_command.args = command_args;
+        let result = self.execute_external_command(expanded_command)?;
         self.runtime.set_last_exit_code(result.exit_code);
         Ok(result)
     }
@@ -1251,6 +1277,77 @@ mod tests {
         // Both outputs should be present (order may vary due to parallel execution)
         assert!(result.stdout.contains("hello"));
         assert!(result.stdout.contains("world"));
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_alias_expansion() {
+        let mut executor = Executor::new();
+        
+        // Create an alias
+        executor.runtime.set_alias("ll".to_string(), "echo hello".to_string());
+        
+        // Execute the alias
+        let tokens = Lexer::tokenize("ll").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        
+        let result = executor.execute(statements).unwrap();
+        
+        assert_eq!(result.stdout, "hello\n");
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_alias_expansion_with_args() {
+        let mut executor = Executor::new();
+        
+        // Create an alias that takes arguments
+        executor.runtime.set_alias("greet".to_string(), "echo Hello".to_string());
+        
+        // Execute the alias with additional arguments
+        let tokens = Lexer::tokenize("greet World").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        
+        let result = executor.execute(statements).unwrap();
+        
+        assert_eq!(result.stdout, "Hello World\n");
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_alias_to_builtin() {
+        let mut executor = Executor::new();
+        
+        // Create an alias to a builtin with flags
+        executor.runtime.set_alias("ll".to_string(), "ls -la".to_string());
+        
+        // The alias should expand to the ls builtin
+        // Note: We can't easily test the actual ls output, but we can verify it doesn't error
+        let tokens = Lexer::tokenize("ll").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        
+        let result = executor.execute(statements);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_alias_chaining() {
+        let mut executor = Executor::new();
+        
+        // Create first alias
+        executor.runtime.set_alias("e".to_string(), "echo".to_string());
+        
+        // Execute command using the alias
+        let tokens = Lexer::tokenize("e test").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        
+        let result = executor.execute(statements).unwrap();
+        
+        assert_eq!(result.stdout, "test\n");
         assert_eq!(result.exit_code, 0);
     }
 }

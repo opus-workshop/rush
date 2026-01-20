@@ -24,12 +24,13 @@ pub struct ShellOptions {
 pub struct Runtime {
     variables: HashMap<String, String>,
     functions: HashMap<String, FunctionDef>,
+    aliases: HashMap<String, String>,
     cwd: PathBuf,
     scopes: Vec<HashMap<String, String>>,
     call_stack: Vec<String>,
     max_call_depth: usize,
-    history: History,
-    undo_manager: UndoManager,
+    history: Option<History>,  // Lazy initialization
+    undo_manager: Option<UndoManager>,  // Lazy initialization
     job_manager: JobManager,
     pub options: ShellOptions,
 }
@@ -43,25 +44,21 @@ impl Default for Runtime {
 impl Runtime {
     pub fn new() -> Self {
         let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-        let undo_manager = UndoManager::new().unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to initialize undo manager: {}", e);
-            // Create a disabled undo manager as fallback
-            panic!("Cannot create undo manager");
-        });
 
         let mut runtime = Self {
             variables: HashMap::new(),
             functions: HashMap::new(),
+            aliases: HashMap::new(),
             cwd,
             scopes: Vec::new(),
             call_stack: Vec::new(),
             max_call_depth: 100,
-            history: History::default(),
-            undo_manager,
+            history: None,  // Lazy initialization
+            undo_manager: None,  // Lazy initialization
             job_manager: JobManager::new(),
             options: ShellOptions::default(),
         };
-        
+
         // Initialize $? to 0
         runtime.set_last_exit_code(0);
         runtime
@@ -128,6 +125,23 @@ impl Runtime {
         self.functions.keys().cloned().collect()
     }
 
+    // Alias management
+    pub fn set_alias(&mut self, name: String, value: String) {
+        self.aliases.insert(name, value);
+    }
+
+    pub fn get_alias(&self, name: &str) -> Option<&String> {
+        self.aliases.get(name)
+    }
+
+    pub fn remove_alias(&mut self, name: &str) -> bool {
+        self.aliases.remove(name).is_some()
+    }
+
+    pub fn get_all_aliases(&self) -> &HashMap<String, String> {
+        &self.aliases
+    }
+
     pub fn set_cwd(&mut self, path: PathBuf) {
         self.cwd = path;
     }
@@ -189,29 +203,46 @@ impl Runtime {
     }
 
     // History management
-    pub fn history(&self) -> &History {
-        &self.history
+    pub fn history(&mut self) -> &History {
+        if self.history.is_none() {
+            self.history = Some(History::default());
+        }
+        self.history.as_ref().unwrap()
     }
 
     pub fn history_mut(&mut self) -> &mut History {
-        &mut self.history
+        if self.history.is_none() {
+            self.history = Some(History::default());
+        }
+        self.history.as_mut().unwrap()
     }
 
     pub fn load_history(&mut self) -> Result<(), String> {
-        self.history.load().map_err(|e| e.to_string())
+        if self.history.is_none() {
+            self.history = Some(History::default());
+        }
+        self.history.as_mut().unwrap().load().map_err(|e| e.to_string())
     }
 
     pub fn add_to_history(&mut self, command: String) -> Result<(), String> {
-        self.history.add(command).map_err(|e| e.to_string())
+        self.history_mut().add(command).map_err(|e| e.to_string())
     }
 
     // Undo manager access
-    pub fn undo_manager(&self) -> &UndoManager {
-        &self.undo_manager
+    pub fn undo_manager(&self) -> Option<&UndoManager> {
+        self.undo_manager.as_ref()
     }
 
     pub fn undo_manager_mut(&mut self) -> &mut UndoManager {
-        &mut self.undo_manager
+        if self.undo_manager.is_none() {
+            // Initialize on first use
+            let manager = UndoManager::new().unwrap_or_else(|e| {
+                eprintln!("Warning: Failed to initialize undo manager: {}", e);
+                panic!("Cannot create undo manager");
+            });
+            self.undo_manager = Some(manager);
+        }
+        self.undo_manager.as_mut().unwrap()
     }
 
     // Job manager access
