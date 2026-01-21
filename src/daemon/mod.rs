@@ -9,6 +9,7 @@
 pub mod protocol;
 pub mod server;
 pub mod worker;
+pub mod worker_pool;
 pub mod client;
 
 pub use protocol::{
@@ -16,4 +17,5 @@ pub use protocol::{
     encode_message, decode_message, write_message, read_message,
 };
 pub use server::{DaemonServer, SessionHandle, SessionId};
+pub use worker_pool::{WorkerPool, Worker, WorkerState, PoolConfig, PoolStats};
 pub use client::DaemonClient;

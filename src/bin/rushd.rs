@@ -5,6 +5,7 @@
 use anyhow::{anyhow, Result};
 use nix::libc;
 use rush::daemon::server::DaemonServer;
+use rush::daemon::worker_pool::PoolConfig;
 use std::env;
 use std::fs;
 use std::process;
@@ -52,8 +53,32 @@ fn start_daemon() -> Result<()> {
         }
     }
 
-    // Create and start the daemon
+    // Create the daemon
     let mut daemon = DaemonServer::new(socket_path.clone())?;
+
+    // Enable worker pool unless disabled via environment variable
+    // RUSH_DISABLE_POOL=1 will use fork-per-request mode
+    let use_pool = env::var("RUSH_DISABLE_POOL")
+        .map(|v| v != "1")
+        .unwrap_or(true); // Default: use pool
+
+    if use_pool {
+        // Get pool size from environment or use default
+        let pool_size = env::var("RUSH_POOL_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4); // Default: 4 workers
+
+        let config = PoolConfig {
+            pool_size,
+            max_queue_size: 100,
+        };
+
+        daemon = daemon.with_worker_pool(config)?;
+        eprintln!("Worker pool mode enabled ({} workers)", pool_size);
+    } else {
+        eprintln!("Fork-per-request mode enabled (legacy)");
+    }
 
     println!("Starting Rush daemon at {}", socket_path.display());
     println!("Use 'rush -c <command>' to execute commands via the daemon.");
