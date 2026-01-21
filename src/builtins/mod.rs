@@ -10,10 +10,15 @@ mod cat;
 mod find;
 mod git_status;
 mod grep;
+mod help;
 mod ls;
+mod mkdir;
 mod undo;
 mod jobs;
 mod set;
+mod alias;
+mod test;
+mod type_builtin;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -41,6 +46,7 @@ impl Builtins {
         commands.insert("cat".to_string(), cat::builtin_cat);
         commands.insert("find".to_string(), find::builtin_find);
         commands.insert("ls".to_string(), ls::builtin_ls);
+        commands.insert("mkdir".to_string(), mkdir::builtin_mkdir);
         commands.insert("git-status".to_string(), git_status::builtin_git_status);
         commands.insert("grep".to_string(), grep::builtin_grep);
         commands.insert("undo".to_string(), undo::builtin_undo);
@@ -48,6 +54,12 @@ impl Builtins {
         commands.insert("fg".to_string(), jobs::builtin_fg);
         commands.insert("bg".to_string(), jobs::builtin_bg);
         commands.insert("set".to_string(), set::builtin_set);
+        commands.insert("alias".to_string(), alias::builtin_alias);
+        commands.insert("unalias".to_string(), alias::builtin_unalias);
+        commands.insert("test".to_string(), test::builtin_test);
+        commands.insert("[".to_string(), test::builtin_bracket);
+        commands.insert("help".to_string(), help::builtin_help);
+        commands.insert("type".to_string(), type_builtin::builtin_type);
 
         Self { commands }
     }

@@ -163,6 +163,7 @@ impl Parser {
     fn parse_command(&mut self) -> Result<Command> {
         let name = match self.advance() {
             Some(Token::Identifier(s)) => s.clone(),
+            Some(Token::LeftBracket) => "[".to_string(),
             _ => return Err(anyhow!("Expected command name")),
         };
 
@@ -260,6 +261,15 @@ impl Parser {
             Some(Token::Path(s)) => Ok(Argument::Path(s.clone())),
             Some(Token::Integer(n)) => Ok(Argument::Literal(n.to_string())),
             Some(Token::Dot) => Ok(Argument::Path(".".to_string())),
+            Some(Token::RightBracket) => Ok(Argument::Literal("]".to_string())),
+            // Allow operators as arguments for test builtin
+            Some(Token::Equals) => Ok(Argument::Literal("=".to_string())),
+            Some(Token::DoubleEquals) => Ok(Argument::Literal("==".to_string())),
+            Some(Token::NotEquals) => Ok(Argument::Literal("!=".to_string())),
+            Some(Token::GreaterThanOrEqual) => Ok(Argument::Literal(">=".to_string())),
+            Some(Token::LessThanOrEqual) => Ok(Argument::Literal("<=".to_string())),
+            Some(Token::GreaterThan) => Ok(Argument::Literal(">".to_string())),
+            Some(Token::Bang) => Ok(Argument::Literal("!".to_string())),
             _ => Err(anyhow!("Expected argument")),
         }
     }

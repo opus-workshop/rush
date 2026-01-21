@@ -168,7 +168,11 @@ impl UndoManager {
         match entry.operation {
             FileOperation::Create { path } => {
                 if path.exists() {
-                    fs::remove_file(&path)?;
+                    if path.is_dir() {
+                        fs::remove_dir(&path)?;
+                    } else {
+                        fs::remove_file(&path)?;
+                    }
                 }
                 Ok(format!("Undone: {} (deleted {:?})", entry.description, path))
             }

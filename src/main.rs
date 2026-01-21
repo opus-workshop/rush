@@ -147,11 +147,29 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
 }
 
 fn run_command(command: &str, signal_handler: SignalHandler) -> Result<()> {
+    // Try to use daemon if available
+    if let Ok(mut client) = rush::daemon::DaemonClient::new() {
+        if client.is_daemon_running() {
+            // Use daemon for execution
+            let args = vec!["-c".to_string(), command.to_string()];
+            match client.execute_command(&args) {
+                Ok(exit_code) => {
+                    std::process::exit(exit_code);
+                }
+                Err(e) => {
+                    eprintln!("Daemon error: {}, falling back to direct execution", e);
+                    // Fall through to direct execution
+                }
+            }
+        }
+    }
+
+    // Fall back to direct execution
     // Initialize environment variables
     init_environment_variables()?;
-    
+
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
-    
+
     // Set runtime variables from environment
     init_runtime_variables(executor.runtime_mut());
 

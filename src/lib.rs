@@ -17,3 +17,4 @@ pub mod glob_expansion;
 pub mod progress;
 pub mod signal;
 pub mod jobs;
+pub mod daemon;
