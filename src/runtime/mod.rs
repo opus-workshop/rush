@@ -33,6 +33,13 @@ pub struct Runtime {
     undo_manager: Option<UndoManager>,  // Lazy initialization
     job_manager: JobManager,
     pub options: ShellOptions,
+    positional_params: Vec<String>,  // Track $1, $2, etc. for shift builtin
+    positional_stack: Vec<Vec<String>>,  // Stack for function scopes
+    function_depth: usize,  // Track function call depth for return builtin
+    // Permanent file descriptor redirections (set by exec builtin)
+    permanent_stdout: Option<i32>,
+    permanent_stderr: Option<i32>,
+    permanent_stdin: Option<i32>,
 }
 
 impl Default for Runtime {
@@ -57,6 +64,12 @@ impl Runtime {
             undo_manager: None,  // Lazy initialization
             job_manager: JobManager::new(),
             options: ShellOptions::default(),
+            positional_params: Vec::new(),
+            positional_stack: Vec::new(),
+            function_depth: 0,
+            permanent_stdout: None,
+            permanent_stderr: None,
+            permanent_stdin: None,
         };
 
         // Initialize $? to 0
@@ -83,6 +96,19 @@ impl Runtime {
         }
         // Fall back to global variables
         self.variables.get(name).cloned()
+    }
+
+    /// Remove a variable from the current scope or global scope
+    /// Returns true if the variable was found and removed
+    pub fn remove_variable(&mut self, name: &str) -> bool {
+        // If we're in a function scope, try to remove from the current scope first
+        if let Some(scope) = self.scopes.last_mut() {
+            if scope.remove(name).is_some() {
+                return true;
+            }
+        }
+        // Otherwise remove from global scope
+        self.variables.remove(name).is_some()
     }
 
     /// Get variable with nounset option check
@@ -123,6 +149,12 @@ impl Runtime {
     /// Get all user-defined function names
     pub fn get_function_names(&self) -> Vec<String> {
         self.functions.keys().cloned().collect()
+    }
+
+    /// Remove a function definition
+    /// Returns true if the function was found and removed
+    pub fn remove_function(&mut self, name: &str) -> bool {
+        self.functions.remove(name).is_some()
     }
 
     // Alias management
@@ -187,6 +219,13 @@ impl Runtime {
 
     pub fn pop_scope(&mut self) {
         self.scopes.pop();
+        // Note: local_variables field doesn't exist yet - commented out for now
+        // if let Some(scope) = self.scopes.pop() {
+        //     // Clear local variables that were in this scope
+        //     for key in scope.keys() {
+        //         self.local_variables.remove(key);
+        //     }
+        // }
     }
 
     // Call stack management
@@ -200,6 +239,37 @@ impl Runtime {
 
     pub fn pop_call(&mut self) {
         self.call_stack.pop();
+    }
+
+    // Function context tracking for return builtin
+    pub fn enter_function_context(&mut self) {
+        self.function_depth += 1;
+    }
+
+    pub fn exit_function_context(&mut self) {
+        if self.function_depth > 0 {
+            self.function_depth -= 1;
+        }
+    }
+
+    pub fn in_function_context(&self) -> bool {
+        self.function_depth > 0
+    }
+    
+    /// Alias for in_function_context (for backward compatibility with local builtin)
+    pub fn in_function(&self) -> bool {
+        self.in_function_context()
+    }
+    
+    /// Set a local variable in the current function scope
+    /// Returns an error if not in a function scope
+    pub fn set_local_variable(&mut self, name: String, value: String) -> Result<()> {
+        if !self.in_function_context() {
+            return Err(anyhow!("Cannot set local variable outside of function"));
+        }
+        // Set in the current scope (which should be a function scope)
+        self.set_variable(name, value);
+        Ok(())
     }
 
     // History management
@@ -367,5 +437,152 @@ impl Runtime {
             }
         }
         value.to_string()
+    }
+
+    // Positional parameter management
+    
+    /// Set all positional parameters ($1, $2, etc.)
+    pub fn set_positional_params(&mut self, params: Vec<String>) {
+        self.positional_params = params;
+        self.update_positional_variables();
+    }
+    
+    /// Get a specific positional parameter by index (1-based)
+    pub fn get_positional_param(&self, index: usize) -> Option<String> {
+        if index == 0 {
+            // $0 is handled separately
+            None
+        } else {
+            self.positional_params.get(index - 1).cloned()
+        }
+    }
+    
+    /// Get all positional parameters
+    pub fn get_positional_params(&self) -> &[String] {
+        &self.positional_params
+    }
+    
+    /// Shift positional parameters by n positions
+    pub fn shift_params(&mut self, n: usize) -> Result<()> {
+        if n > self.positional_params.len() {
+            return Err(anyhow!(
+                "shift: shift count ({}) exceeds number of positional parameters ({})",
+                n,
+                self.positional_params.len()
+            ));
+        }
+        
+        // Remove first n parameters
+        self.positional_params.drain(0..n);
+        
+        // Update $1, $2, $#, $@, $* variables
+        self.update_positional_variables();
+        
+        Ok(())
+    }
+    
+    /// Push positional parameters onto stack (for function calls)
+    pub fn push_positional_scope(&mut self, params: Vec<String>) {
+        self.positional_stack.push(self.positional_params.clone());
+        self.positional_params = params;
+        self.update_positional_variables();
+    }
+    
+    /// Pop positional parameters from stack (after function returns)
+    pub fn pop_positional_scope(&mut self) {
+        if let Some(params) = self.positional_stack.pop() {
+            self.positional_params = params;
+            self.update_positional_variables();
+        }
+    }
+    
+    /// Get the count of positional parameters (for $#)
+    pub fn param_count(&self) -> usize {
+        self.positional_params.len()
+    }
+    
+    /// Update $1, $2, $#, $@, $* variables based on current positional params
+    fn update_positional_variables(&mut self) {
+        // Get old count BEFORE updating $#
+        let old_count = self.variables.get("#")
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        // Update $# (parameter count)
+        self.variables.insert("#".to_string(), self.positional_params.len().to_string());
+
+        // Update $@ and $* (all parameters as space-separated string)
+        let all_params = self.positional_params.join(" ");
+        self.variables.insert("@".to_string(), all_params.clone());
+        self.variables.insert("*".to_string(), all_params);
+
+        // Clear old numbered parameters that are no longer in use
+        for i in 1..=old_count.max(self.positional_params.len()) {
+            self.variables.remove(&i.to_string());
+        }
+
+        // Set new numbered parameters
+        for (i, param) in self.positional_params.iter().enumerate() {
+            self.variables.insert((i + 1).to_string(), param.clone());
+        }
+    }
+
+    // Permanent file descriptor redirection management (for exec builtin)
+    
+    /// Set permanent stdout redirection file descriptor
+    pub fn set_permanent_stdout(&mut self, fd: Option<i32>) {
+        self.permanent_stdout = fd;
+    }
+    
+    /// Get permanent stdout redirection file descriptor
+    pub fn get_permanent_stdout(&self) -> Option<i32> {
+        self.permanent_stdout
+    }
+    
+    /// Set permanent stderr redirection file descriptor
+    pub fn set_permanent_stderr(&mut self, fd: Option<i32>) {
+        self.permanent_stderr = fd;
+    }
+    
+    /// Get permanent stderr redirection file descriptor
+    pub fn get_permanent_stderr(&self) -> Option<i32> {
+        self.permanent_stderr
+    }
+    
+    /// Set permanent stdin redirection file descriptor
+    pub fn set_permanent_stdin(&mut self, fd: Option<i32>) {
+        self.permanent_stdin = fd;
+    }
+    
+    /// Get permanent stdin redirection file descriptor
+    pub fn get_permanent_stdin(&self) -> Option<i32> {
+        self.permanent_stdin
+    }
+
+    // Trap handler management
+    
+    /// Set a trap handler for a signal
+    pub fn set_trap(&mut self, signal: TrapSignal, command: String) {
+        self.trap_handlers.set(signal, command);
+    }
+    
+    /// Remove a trap handler for a signal
+    pub fn remove_trap(&mut self, signal: TrapSignal) {
+        self.trap_handlers.remove(signal);
+    }
+    
+    /// Get the trap handler for a signal
+    pub fn get_trap(&self, signal: TrapSignal) -> Option<&String> {
+        self.trap_handlers.get(signal)
+    }
+    
+    /// Get all trap handlers
+    pub fn get_all_traps(&self) -> &HashMap<TrapSignal, String> {
+        self.trap_handlers.all()
+    }
+    
+    /// Check if a signal has a trap handler
+    pub fn has_trap(&self, signal: TrapSignal) -> bool {
+        self.trap_handlers.has_handler(signal)
     }
 }
