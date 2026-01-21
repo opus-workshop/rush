@@ -19,6 +19,15 @@ mod set;
 mod alias;
 mod test;
 mod type_builtin;
+mod shift;
+mod local;
+pub mod return_builtin;  // Public so executor can access ReturnSignal
+mod read;
+pub mod trap;  // Public so runtime and executor can access TrapSignal
+mod unset;
+mod printf;
+mod eval;
+mod exec;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -47,7 +56,7 @@ impl Builtins {
         commands.insert("find".to_string(), find::builtin_find);
         commands.insert("ls".to_string(), ls::builtin_ls);
         commands.insert("mkdir".to_string(), mkdir::builtin_mkdir);
-        commands.insert("git-status".to_string(), git_status::builtin_git_status);
+        commands.insert("git".to_string(), builtin_git);
         commands.insert("grep".to_string(), grep::builtin_grep);
         commands.insert("undo".to_string(), undo::builtin_undo);
         commands.insert("jobs".to_string(), jobs::builtin_jobs);
@@ -60,10 +69,22 @@ impl Builtins {
         commands.insert("[".to_string(), test::builtin_bracket);
         commands.insert("help".to_string(), help::builtin_help);
         commands.insert("type".to_string(), type_builtin::builtin_type);
+        commands.insert("shift".to_string(), shift::builtin_shift);
+        commands.insert("local".to_string(), local::builtin_local);
+        commands.insert("true".to_string(), builtin_true);
+        commands.insert("false".to_string(), builtin_false);
+        commands.insert("return".to_string(), return_builtin::builtin_return);
+        commands.insert("read".to_string(), read::builtin_read);
+        commands.insert("trap".to_string(), trap::builtin_trap);
+        commands.insert("unset".to_string(), unset::builtin_unset);
+        commands.insert("printf".to_string(), printf::builtin_printf);
+        commands.insert("eval".to_string(), eval::builtin_eval);
+        commands.insert("exec".to_string(), exec::builtin_exec);
 
         Self { commands }
     }
 
+    #[inline]
     pub fn is_builtin(&self, name: &str) -> bool {
         self.commands.contains_key(name)
     }
@@ -72,6 +93,7 @@ impl Builtins {
         self.commands.keys().cloned().collect()
     }
 
+    #[inline]
     pub fn execute(
         &self,
         name: &str,
@@ -104,6 +126,13 @@ impl Builtins {
         if name == "grep" {
             if let Some(stdin_data) = stdin {
                 return grep::builtin_grep_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+
+        // Special handling for read with stdin
+        if name == "read" {
+            if let Some(stdin_data) = stdin {
+                return read::builtin_read_with_stdin(&args, runtime, stdin_data);
             }
         }
         
@@ -209,6 +238,56 @@ fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     Ok(ExecutionResult::success(String::new()))
 }
 
+fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        // No subcommand provided - let external git handle it
+        return Err(anyhow!("git: missing subcommand"));
+    }
+
+    match args[0].as_str() {
+        "status" => {
+            // Call the optimized git status builtin
+            git_status::builtin_git_status(&args[1..], runtime)
+        }
+        _ => {
+            // For other git subcommands, spawn external git
+            use std::process::Command;
+
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(runtime.get_cwd())
+                .output()
+                .map_err(|e| anyhow!("Failed to execute git: {}", e))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let exit_code = output.status.code().unwrap_or(1);
+
+            Ok(ExecutionResult {
+                stdout,
+                stderr,
+                exit_code,
+            })
+        }
+    }
+}
+
+fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    Ok(ExecutionResult {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    })
+}
+
+fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    Ok(ExecutionResult {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 1,
+    })
+}
+
 // TODO: Implement builtin_source properly with executor access
 #[allow(dead_code)]
 fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
@@ -246,6 +325,9 @@ fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
         .map_err(|e| anyhow!("source: Failed to open '{}': {}", path.display(), e))?;
     let reader = BufReader::new(file);
 
+    // Enter function context for sourced scripts (allows return)
+    runtime.enter_function_context();
+    
     // We need an executor to run the commands, but we can't access it from here
     // So we'll return the file contents as a special marker that main.rs can handle
     // For now, execute line by line in a basic way
@@ -283,6 +365,16 @@ fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                                 }
                             }
                             Err(e) => {
+                                // Check if this is a return signal from sourced script
+                                if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
+                                    // Early return from sourced script
+                                    runtime.exit_function_context();
+                                    return Ok(ExecutionResult {
+                                        stdout: String::new(),
+                                        stderr: String::new(),
+                                        exit_code: return_signal.exit_code,
+                                    });
+                                }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
                             }
                         }
@@ -297,6 +389,9 @@ fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
             }
         }
     }
+
+    // Exit function context after sourced script completes
+    runtime.exit_function_context();
 
     Ok(ExecutionResult::success(String::new()))
 }
@@ -318,5 +413,39 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_pwd(&[], &mut runtime).unwrap();
         assert!(!result.stdout.is_empty());
+    }
+
+    #[test]
+    fn test_true_exit_code() {
+        let mut runtime = Runtime::new();
+        let result = builtin_true(&[], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout, "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_false_exit_code() {
+        let mut runtime = Runtime::new();
+        let result = builtin_false(&[], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 1);
+        assert_eq!(result.stdout, "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_true_ignores_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
+        let result = builtin_true(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_false_ignores_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
+        let result = builtin_false(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 1);
     }
 }
