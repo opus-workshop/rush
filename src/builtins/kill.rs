@@ -86,6 +86,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
             output: Output::Text(String::new()),
             stderr: "kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]\n".to_string(),
             exit_code: 1,
+            error: None,
         });
     }
 
@@ -116,6 +117,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
                             output: Output::Text(String::new()),
                             stderr: format!("{}\n", e),
                             exit_code: 1,
+        error: None,            
                         });
                     }
                 }
@@ -142,6 +144,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
                         output: Output::Text(String::new()),
                         stderr: format!("kill: {}: invalid process ID\n", arg),
                         exit_code: 1,
+                        error: None,
                     });
                 }
                 pids.push(pid);
@@ -151,6 +154,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
                     output: Output::Text(String::new()),
                     stderr: format!("kill: {}: arguments must be process or job IDs\n", arg),
                     exit_code: 1,
+                    error: None,
                 });
             }
         }
@@ -162,6 +166,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
             output: Output::Text(String::new()),
             stderr: "kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]\n".to_string(),
             exit_code: 1,
+            error: None,
         });
     }
 
@@ -200,6 +205,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
         output: Output::Text(String::new()),
         stderr: stderr_output,
         exit_code,
+        error: None,
     })
 }
 
@@ -209,6 +215,7 @@ pub fn builtin_kill(_args: &[String], _runtime: &mut Runtime) -> Result<Executio
         output: Output::Text(String::new()),
         stderr: "kill: not supported on this platform\n".to_string(),
         exit_code: 1,
+        error: None,            
     })
 }
 

@@ -58,6 +58,7 @@ pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionR
                 output: Output::Text(String::new()),
                 stderr: e.to_string(),
                 exit_code: 1,
+                error: None,
             });
         }
     };
@@ -91,6 +92,7 @@ pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionR
         output: Output::Text(output),
         stderr: stderr_output,
         exit_code,
+        error: None,
     })
 }
 

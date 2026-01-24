@@ -19,3 +19,4 @@ pub mod progress;
 pub mod signal;
 pub mod jobs;
 pub mod daemon;
+pub mod error;

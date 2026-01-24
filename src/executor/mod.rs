@@ -90,6 +90,7 @@ impl Executor {
                     output: Output::Text(accumulated_stdout),
                     stderr: accumulated_stderr,
                     exit_code: last_exit_code,
+                    error: None,
                 });
             }
         }
@@ -98,6 +99,7 @@ impl Executor {
             output: Output::Text(accumulated_stdout),
             stderr: accumulated_stderr,
             exit_code: last_exit_code,
+            error: None,
         })
     }
 
@@ -594,6 +596,7 @@ impl Executor {
             output: Output::Text(stdout_str),
             stderr: stderr_str,
             exit_code,
+            error: None,
         })
     }
 
@@ -641,6 +644,7 @@ impl Executor {
                             output: Output::Text(String::from_utf8_lossy(&output.stdout).to_string()),
                             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                             exit_code: output.status.code().unwrap_or(1),
+                            error: None,
                         }),
                         Err(e) => {
                             if e.kind() == std::io::ErrorKind::NotFound {
@@ -706,6 +710,7 @@ impl Executor {
             output: Output::Text(combined_stdout),
             stderr: combined_stderr,
             exit_code: max_exit_code,
+            error: None,
         })
     }
 
@@ -773,6 +778,7 @@ impl Executor {
                                         output: Output::Text(accumulated_stdout),
                                         stderr: accumulated_stderr,
                                         exit_code: last_exit_code,
+                                        error: None,
                                     });
                                 } else {
                                     // Propagate to outer loop with decreased level and accumulated output
@@ -813,6 +819,7 @@ impl Executor {
                 output: Output::Text(accumulated_stdout),
                 stderr: accumulated_stderr,
                 exit_code: last_exit_code,
+                error: None,
             })
         })();
 
@@ -846,11 +853,12 @@ impl Executor {
         if left_result.exit_code == 0 {
             let right_result = self.execute_statement(*cond_and.right)?;
             self.runtime.set_last_exit_code(right_result.exit_code);
-            
+
             Ok(ExecutionResult {
                 output: Output::Text(format!("{}{}", left_result.stdout(), right_result.stdout())),
                 stderr: format!("{}{}", left_result.stderr, right_result.stderr),
                 exit_code: right_result.exit_code,
+                error: right_result.error,
             })
         } else {
             // Left failed, return its result
@@ -867,11 +875,12 @@ impl Executor {
         if left_result.exit_code != 0 {
             let right_result = self.execute_statement(*cond_or.right)?;
             self.runtime.set_last_exit_code(right_result.exit_code);
-            
+
             Ok(ExecutionResult {
                 output: Output::Text(format!("{}{}", left_result.stdout(), right_result.stdout())),
                 stderr: format!("{}{}", left_result.stderr, right_result.stderr),
                 exit_code: right_result.exit_code,
+                error: right_result.error,
             })
         } else {
             // Left succeeded, return its result
@@ -1336,6 +1345,8 @@ pub struct ExecutionResult {
     pub output: Output,
     pub stderr: String,
     pub exit_code: i32,
+    /// Optional typed error information
+    pub error: Option<String>,
 }
 
 /// Output can be either traditional text or structured data
@@ -1351,6 +1362,7 @@ impl Default for ExecutionResult {
             output: Output::Text(String::new()),
             stderr: String::new(),
             exit_code: 0,
+            error: None,
         }
     }
 }
@@ -1374,6 +1386,7 @@ impl ExecutionResult {
             output: Output::Text(text),
             stderr: String::new(),
             exit_code: 0,
+            error: None,
         }
     }
 
@@ -1382,8 +1395,25 @@ impl ExecutionResult {
             output: Output::Text(String::new()),
             stderr,
             exit_code: 1,
+            error: None,
         }
     }
+
+    // /// Create an error result from a typed RushError
+    // pub fn error_typed(error: crate::error::RushError) -> Self {
+    //     let stderr = if crate::error::should_output_json_errors() {
+    //         error.to_json()
+    //     } else {
+    //         error.to_text()
+    //     };
+    //
+    //     Self {
+    //         output: Output::Text(String::new()),
+    //         stderr,
+    //         exit_code: error.exit_code,
+    //         error: Some(error),
+    //     }
+    // }
 
     pub fn stdout(&self) -> String {
         self.output.as_text()

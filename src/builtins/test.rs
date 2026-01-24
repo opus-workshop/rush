@@ -12,6 +12,7 @@ pub fn builtin_test(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code,
+        error: None,        
     })
 }
 
@@ -29,6 +30,7 @@ pub fn builtin_bracket(args: &[String], runtime: &mut Runtime) -> Result<Executi
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code,
+        error: None,        
     })
 }
 

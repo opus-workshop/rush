@@ -37,6 +37,8 @@ pub fn builtin_type(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         output: Output::Text(output),
         stderr: String::new(),
         exit_code,
+        error: None,        
+        
     })
 }
 

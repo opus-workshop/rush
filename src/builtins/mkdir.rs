@@ -63,6 +63,7 @@ pub fn builtin_mkdir(args: &[String], runtime: &mut Runtime) -> Result<Execution
                 output: Output::Text(String::new()),
                 stderr: format!("{}\n", e),
                 exit_code: 1,
+                error: None,
             });
         }
     };
@@ -100,6 +101,7 @@ pub fn builtin_mkdir(args: &[String], runtime: &mut Runtime) -> Result<Execution
         output: Output::Text(String::new()),
         stderr: stderr_output,
         exit_code,
+        error: None,
     })
 }
 

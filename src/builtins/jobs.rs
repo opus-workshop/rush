@@ -117,6 +117,7 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                 output: Output::Text(String::new()),
                 stderr: String::new(),
                 exit_code,
+                error: None,
             })
         }
         Err(e) => Err(anyhow!("fg: failed to wait for job: {}", e)),
