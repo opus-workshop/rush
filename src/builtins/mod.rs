@@ -29,7 +29,7 @@ mod printf;
 mod eval;
 mod exec;
 mod builtin;
-// mod kill;
+mod kill;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -83,7 +83,7 @@ impl Builtins {
         commands.insert("eval".to_string(), eval::builtin_eval);
         commands.insert("exec".to_string(), exec::builtin_exec);
         commands.insert("builtin".to_string(), builtin::builtin_builtin);
-        // commands.insert("kill".to_string(), kill::builtin_kill);
+        commands.insert("kill".to_string(), kill::builtin_kill);
 
         Self { commands }
     }

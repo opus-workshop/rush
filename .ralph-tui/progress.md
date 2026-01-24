@@ -437,3 +437,85 @@ All 26 eval tests passing:
 ase mode\n6. **Committed** with standard format\n7. **Closed bead** and documented learnings\n\n### Key insights:\n\nFollowing the established pattern from previous builtins (return, shift, local, trap), the eval implementation was already complete - just needed activation through uncommenting and proper testing. The eval builtin enables powerful dynamic command construction by concatenating arguments, parsing them as shell commands, and executing them while preserving runtime state changes.\n\n
 
 ---
+
+## 2026-01-24 - rush-dgr.7: POSIX-007: Re-enable and test exec builtin
+
+### Status: COMPLETE ✓
+
+### What was implemented
+- Uncommented exec module in src/builtins/mod.rs (line 30)
+- Uncommented exec builtin registration (line 84)
+- Created 7 comprehensive integration tests in tests/exec_builtin_tests.rs
+- Verified existing unit tests (8 tests) in src/builtins/exec.rs
+- Verified Runtime permanent FD support already exists
+
+### Files changed
+- src/builtins/mod.rs: Uncommented exec module and registration (2 lines)
+- tests/exec_builtin_tests.rs: Created new file with 7 integration tests (~140 lines)
+
+### Test Results
+All 15 exec tests passing:
+**Unit tests (8) in src/builtins/exec.rs:**
+- test_exec_no_args
+- test_exec_builtin_error
+- test_exec_nonexistent_command
+- test_find_in_path
+- test_find_in_path_nonexistent
+- test_exec_redirect_stdout_to_file
+- test_redirect_target_file
+- test_redirect_target_fd
+
+**Integration tests (7) in tests/exec_builtin_tests.rs:**
+- test_exec_no_arguments
+- test_exec_builtin_error
+- test_exec_nonexistent_command
+- test_exec_absolute_path_not_found
+- test_exec_echo_builtin_error
+- test_exec_true_builtin_error
+- test_exec_false_builtin_error
+
+### **Learnings:**
+
+**Pattern: Exec builtin implementation was already complete**
+- The exec.rs implementation was fully functional with comprehensive unit tests
+- Runtime already had permanent FD fields (permanent_stdout, permanent_stderr, permanent_stdin)
+- Runtime already had getter/setter methods for permanent FDs
+- Process replacement using Command::exec() already implemented for Unix
+- Windows support returns clear error (process replacement not supported)
+- Only needed to uncomment module and registration lines
+
+**Pattern: Exec has two distinct modes**
+- Command replacement: `exec command args...` - replaces shell process (Unix only)
+- FD redirection: `exec > file`, `exec 2>&1` - permanent redirections (portable)
+- Implementation includes RedirectTarget enum for file/fd redirections
+- exec_redirect() function handles permanent FD setup
+
+**Gotcha: Cannot test process replacement in integration tests**
+- Running `exec ls` or `exec echo hello` would replace the test process itself
+- Test runner would exit/crash if we actually called exec
+- Can only test error conditions (builtin error, command not found)
+- Unit tests verify the implementation logic without actually calling libc::exec
+- Real process replacement must be tested manually or in isolated end-to-end tests
+
+**Gotcha: Command struct has name field**
+- Unlike older test patterns, Command now has separate `name` field from `args`
+- Must specify: `Command { name: "exec".to_string(), args: vec![...], redirects: vec![] }`
+- This matches the eval and other recent builtin test patterns
+
+**Impact: Exec builtin enables process replacement and permanent redirections**
+- Users can now replace shell with external commands (exec ./server)
+- Permanent FD redirections affect all subsequent commands in shell
+- Essential for shell scripts that need to chain to other programs
+- Supports POSIX semantics: command replacement on Unix, FD redirection everywhere
+- Cannot exec builtins (they run in-process, can't replace process image)
+
+---
+## ✓ Iteration 6 - rush-dgr.7: POSIX-007: Re-enable and test exec builtin
+*2026-01-24T20:05:41.463Z (242s)*
+
+**Status:** Completed
+
+**Notes:**
+frastructure via RedirectTarget enum\n- Comprehensive error handling (builtin detection, command not found)\n\n**Testing limitations discovered:**\n- Cannot test actual process replacement in integration tests (would replace test runner)\n- Can only safely test error conditions and validation logic\n- Real exec behavior must be tested manually or in isolated end-to-end tests\n\nThis completes the pattern established across all 6 POSIX builtins: return, shift, local, trap, eval, and now exec!\n\n
+
+---

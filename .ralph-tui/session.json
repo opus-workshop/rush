@@ -3,10 +3,10 @@
   "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
   "status": "running",
   "startedAt": "2026-01-24T19:17:05.631Z",
-  "updatedAt": "2026-01-24T20:01:39.540Z",
-  "currentIteration": 5,
+  "updatedAt": "2026-01-24T20:05:42.823Z",
+  "currentIteration": 6,
   "maxIterations": 10,
-  "tasksCompleted": 5,
+  "tasksCompleted": 6,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -95,8 +95,8 @@
       {
         "id": "rush-dgr.7",
         "title": "POSIX-007: Re-enable and test exec builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.6",
@@ -240,12 +240,22 @@
       "durationMs": 403202,
       "startedAt": "2026-01-24T19:54:54.771Z",
       "endedAt": "2026-01-24T20:01:37.973Z"
+    },
+    {
+      "iteration": 6,
+      "status": "completed",
+      "taskId": "rush-dgr.7",
+      "taskTitle": "POSIX-007: Re-enable and test exec builtin",
+      "taskCompleted": true,
+      "durationMs": 241890,
+      "startedAt": "2026-01-24T20:01:39.376Z",
+      "endedAt": "2026-01-24T20:05:41.266Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/asher/tt/rush",
   "activeTaskIds": [
-    "rush-dgr.7"
+    "rush-dgr.8"
   ],
   "subagentPanelVisible": false
 }
