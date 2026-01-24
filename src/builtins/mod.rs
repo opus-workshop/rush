@@ -9,6 +9,8 @@ use std::env;
 mod cat;
 mod find;
 mod git_status;
+mod git_log;
+// mod git_diff;  // Temporarily disabled due to compilation errors
 mod grep;
 mod help;
 mod ls;
@@ -32,6 +34,7 @@ mod builtin;
 mod kill;
 pub mod break_builtin;  // Public so executor can access BreakSignal
 pub mod continue_builtin;  // Public so executor can access ContinueSignal
+mod json;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -89,6 +92,9 @@ impl Builtins {
         commands.insert("break".to_string(), break_builtin::builtin_break);
         commands.insert("continue".to_string(), continue_builtin::builtin_continue);
         commands.insert(":".to_string(), builtin_colon);
+        commands.insert("json_get".to_string(), json::builtin_json_get);
+        commands.insert("json_set".to_string(), json::builtin_json_set);
+        commands.insert("json_query".to_string(), json::builtin_json_query);
 
         Self { commands }
     }
@@ -144,7 +150,26 @@ impl Builtins {
                 return read::builtin_read_with_stdin(&args, runtime, stdin_data);
             }
         }
-        
+
+        // Special handling for JSON builtins with stdin
+        if name == "json_get" {
+            if let Some(stdin_data) = stdin {
+                return json::builtin_json_get_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+
+        if name == "json_set" {
+            if let Some(stdin_data) = stdin {
+                return json::builtin_json_set_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+
+        if name == "json_query" {
+            if let Some(stdin_data) = stdin {
+                return json::builtin_json_query_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+
         // For other builtins, use regular execute
         self.execute(name, args, runtime)
     }
@@ -258,6 +283,14 @@ pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<Exec
             // Call the optimized git status builtin
             git_status::builtin_git_status(&args[1..], runtime)
         }
+        "log" => {
+            // Call the optimized git log builtin
+            git_log::builtin_git_log(&args[1..], runtime)
+        }
+        // "diff" => {
+        //     // Call the optimized git diff builtin
+        //     git_diff::builtin_git_diff(&args[1..], runtime)
+        // }
         _ => {
             // For other git subcommands, spawn external git
             use std::process::Command;
@@ -276,6 +309,7 @@ pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<Exec
                 output: Output::Text(stdout),
                 stderr,
                 exit_code,
+                error: None,
             })
         }
     }
@@ -286,6 +320,8 @@ pub(crate) fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<E
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 0,
+        error: None,
+        error: None,
     })
 }
 
@@ -294,6 +330,8 @@ pub(crate) fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 1,
+        error: None,
+        error: None,
     })
 }
 
@@ -302,6 +340,8 @@ pub(crate) fn builtin_colon(_args: &[String], _runtime: &mut Runtime) -> Result<
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 0,
+        error: None,
+        error: None,
     })
 }
 
@@ -390,6 +430,8 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
                                         output: Output::Text(String::new()),
                                         stderr: String::new(),
                                         exit_code: return_signal.exit_code,
+        error: None,
+                                        error: None,
                                     });
                                 }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
