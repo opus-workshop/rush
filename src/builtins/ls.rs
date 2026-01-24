@@ -4,10 +4,35 @@ use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;
 use nu_ansi_term::{Color, Style};
+use serde::{Serialize, Deserialize};
 use std::fs::{self, Metadata};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+enum FileType {
+    File,
+    Directory,
+    Symlink,
+    Other,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct FileEntry {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    file_type: FileType,
+    size: u64,
+    modified: String,
+    modified_timestamp: i64,
+    permissions: String,
+    mode: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symlink_target: Option<String>,
+}
 
 #[derive(Default)]
 struct LsFlags {
@@ -15,6 +40,7 @@ struct LsFlags {
     all: bool,         // -a: show hidden files
     human: bool,       // -h: human-readable sizes
     color: bool,       // default: color output
+    json: bool,        // --json: JSON output
 }
 
 pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
@@ -35,33 +61,59 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
             .collect()
     };
 
-    let mut output = String::new();
-    let mut had_error = false;
+    if flags.json {
+        // JSON output mode
+        let mut all_entries: Vec<FileEntry> = Vec::new();
+        let mut had_error = false;
 
-    for (idx, target) in targets.iter().enumerate() {
-        match list_path(target, &flags) {
-            Ok(result) => {
-                if targets.len() > 1 {
-                    if idx > 0 {
-                        output.push('\n');
-                    }
-                    output.push_str(&format!("{}:\n", target.display()));
+        for target in targets.iter() {
+            match collect_entries(target, &flags) {
+                Ok(entries) => all_entries.extend(entries),
+                Err(e) => {
+                    eprintln!("ls: {}: {}", target.display(), e);
+                    had_error = true;
                 }
-                output.push_str(&result);
-            }
-            Err(e) => {
-                output.push_str(&format!("ls: {}: {}\n", target.display(), e));
-                had_error = true;
             }
         }
-    }
 
-    Ok(ExecutionResult {
-        output: Output::Text(output),
-        stderr: String::new(),
-        exit_code: if had_error { 1 } else { 0 },
-        error: None,
-    })
+        let json_output = serde_json::to_string_pretty(&all_entries)?;
+
+        Ok(ExecutionResult {
+            output: Output::Text(json_output + "\n"),
+            stderr: String::new(),
+            exit_code: if had_error { 1 } else { 0 },
+            error: None,
+        })
+    } else {
+        // Text output mode (existing behavior)
+        let mut output = String::new();
+        let mut had_error = false;
+
+        for (idx, target) in targets.iter().enumerate() {
+            match list_path(target, &flags) {
+                Ok(result) => {
+                    if targets.len() > 1 {
+                        if idx > 0 {
+                            output.push('\n');
+                        }
+                        output.push_str(&format!("{}:\n", target.display()));
+                    }
+                    output.push_str(&result);
+                }
+                Err(e) => {
+                    output.push_str(&format!("ls: {}: {}\n", target.display(), e));
+                    had_error = true;
+                }
+            }
+        }
+
+        Ok(ExecutionResult {
+            output: Output::Text(output),
+            stderr: String::new(),
+            exit_code: if had_error { 1 } else { 0 },
+            error: None,
+        })
+    }
 }
 
 fn parse_args(args: &[String]) -> Result<(LsFlags, Vec<String>)> {
@@ -72,7 +124,9 @@ fn parse_args(args: &[String]) -> Result<(LsFlags, Vec<String>)> {
     let mut paths = Vec::new();
 
     for arg in args {
-        if arg.starts_with('-') && arg != "-" {
+        if arg == "--json" {
+            flags.json = true;
+        } else if arg.starts_with('-') && arg != "-" {
             // Parse flags
             for ch in arg.chars().skip(1) {
                 match ch {
@@ -88,6 +142,170 @@ fn parse_args(args: &[String]) -> Result<(LsFlags, Vec<String>)> {
     }
 
     Ok((flags, paths))
+}
+
+fn collect_entries(path: &Path, flags: &LsFlags) -> Result<Vec<FileEntry>> {
+    if !path.exists() {
+        return Err(anyhow!("cannot access '{}': No such file or directory", path.display()));
+    }
+
+    if path.is_file() {
+        // Return single file entry
+        let metadata = fs::metadata(path)?;
+        return Ok(vec![metadata_to_file_entry(path, &metadata)?]);
+    }
+
+    // Collect directory contents
+    let mut entries: Vec<FileEntry> = Vec::new();
+
+    let walker = WalkBuilder::new(path)
+        .max_depth(Some(1))
+        .hidden(!flags.all)
+        .git_ignore(false)
+        .build();
+
+    for result in walker {
+        match result {
+            Ok(entry) => {
+                let entry_path = entry.path();
+
+                // Skip the root directory itself
+                if entry_path == path {
+                    continue;
+                }
+
+                // Skip hidden files if -a not specified
+                if !flags.all {
+                    if let Some(name) = entry_path.file_name() {
+                        if name.to_string_lossy().starts_with('.') {
+                            continue;
+                        }
+                    }
+                }
+
+                if let Ok(metadata) = entry.metadata() {
+                    if let Ok(file_entry) = metadata_to_file_entry(entry_path, &metadata) {
+                        entries.push(file_entry);
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    // Sort entries by name
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(entries)
+}
+
+fn metadata_to_file_entry(path: &Path, metadata: &Metadata) -> Result<FileEntry> {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+    let file_type = if metadata.is_dir() {
+        FileType::Directory
+    } else if metadata.is_symlink() {
+        FileType::Symlink
+    } else if metadata.is_file() {
+        FileType::File
+    } else {
+        FileType::Other
+    };
+
+    let (modified, modified_timestamp) = metadata
+        .modified()
+        .ok()
+        .and_then(|time| {
+            time.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| {
+                    let timestamp = d.as_secs() as i64;
+                    let iso_time = format_iso8601(timestamp);
+                    (iso_time, timestamp)
+                })
+        })
+        .unwrap_or_else(|| ("1970-01-01T00:00:00Z".to_string(), 0));
+
+    let permissions = format_permissions(metadata);
+    let mode = metadata.permissions().mode();
+
+    let symlink_target = if metadata.is_symlink() {
+        fs::read_link(path)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    Ok(FileEntry {
+        name,
+        path: path.to_string_lossy().to_string(),
+        file_type,
+        size: metadata.len(),
+        modified,
+        modified_timestamp,
+        permissions,
+        mode,
+        symlink_target,
+    })
+}
+
+fn format_iso8601(timestamp: i64) -> String {
+    // Simple ISO 8601 formatting
+    // For production use, consider using chrono crate
+    let seconds_in_day = 86400;
+    let seconds_in_hour = 3600;
+    let seconds_in_minute = 60;
+
+    let days_since_epoch = timestamp / seconds_in_day;
+    let seconds_today = timestamp % seconds_in_day;
+
+    // Calculate year (rough approximation)
+    let mut year = 1970;
+    let mut days_left = days_since_epoch;
+    
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if days_left < days_in_year {
+            break;
+        }
+        days_left -= days_in_year;
+        year += 1;
+    }
+
+    // Calculate month and day
+    let days_in_months = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 1;
+    let mut day_of_month = days_left + 1;
+
+    for days in days_in_months.iter() {
+        if day_of_month <= *days {
+            break;
+        }
+        day_of_month -= days;
+        month += 1;
+    }
+
+    let hour = seconds_today / seconds_in_hour;
+    let minute = (seconds_today % seconds_in_hour) / seconds_in_minute;
+    let second = seconds_today % seconds_in_minute;
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day_of_month, hour, minute, second
+    )
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 fn list_path(path: &Path, flags: &LsFlags) -> Result<String> {
@@ -493,5 +711,194 @@ mod tests {
 
         let metadata = fs::metadata(&file_path).unwrap();
         assert!(is_executable(&metadata));
+    }
+
+    #[test]
+    fn test_parse_args_json_flag() {
+        let args = vec!["--json".to_string()];
+        let (flags, paths) = parse_args(&args).unwrap();
+        assert!(flags.json);
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn test_parse_args_json_with_other_flags() {
+        let args = vec!["--json".to_string(), "-la".to_string(), "dir".to_string()];
+        let (flags, paths) = parse_args(&args).unwrap();
+        assert!(flags.json);
+        assert!(flags.long);
+        assert!(flags.all);
+        assert_eq!(paths, vec!["dir"]);
+    }
+
+    #[test]
+    fn test_ls_json_empty_directory() {
+        let dir = TempDir::new().unwrap();
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+
+        // Parse JSON output
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 0);
+    }
+
+    #[test]
+    fn test_ls_json_with_files() {
+        let dir = TempDir::new().unwrap();
+
+        // Create test files
+        File::create(dir.path().join("file1.txt")).unwrap();
+        File::create(dir.path().join("file2.txt")).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+
+        // Parse JSON output
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 2);
+
+        // Verify file entries
+        let names: Vec<&str> = json_output.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"file1.txt"));
+        assert!(names.contains(&"file2.txt"));
+
+        // Check file types
+        for entry in &json_output {
+            assert!(matches!(entry.file_type, FileType::File));
+        }
+    }
+
+    #[test]
+    fn test_ls_json_with_metadata() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("test.txt");
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"Hello, Rush!").unwrap();
+        drop(file);
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 1);
+
+        let entry = &json_output[0];
+        assert_eq!(entry.name, "test.txt");
+        assert_eq!(entry.size, 12); // "Hello, Rush!" is 12 bytes
+        assert!(matches!(entry.file_type, FileType::File));
+        assert!(!entry.permissions.is_empty());
+        assert!(entry.modified_timestamp > 0);
+        assert!(!entry.modified.is_empty());
+    }
+
+    #[test]
+    fn test_ls_json_directory_type() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir(dir.path().join("subdir")).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 1);
+
+        let entry = &json_output[0];
+        assert_eq!(entry.name, "subdir");
+        assert!(matches!(entry.file_type, FileType::Directory));
+    }
+
+    #[test]
+    fn test_ls_json_hidden_files() {
+        let dir = TempDir::new().unwrap();
+        File::create(dir.path().join("visible.txt")).unwrap();
+        File::create(dir.path().join(".hidden.txt")).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        // Without -a flag
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 1);
+        assert_eq!(json_output[0].name, "visible.txt");
+
+        // With -a flag
+        let result = builtin_ls(&["--json".to_string(), "-a".to_string()], &mut runtime).unwrap();
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 2);
+
+        let names: Vec<&str> = json_output.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"visible.txt"));
+        assert!(names.contains(&".hidden.txt"));
+    }
+
+    #[test]
+    fn test_ls_json_specific_file() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("specific.txt");
+        File::create(&file_path).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string(), "specific.txt".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+        assert_eq!(json_output.len(), 1);
+        assert_eq!(json_output[0].name, "specific.txt");
+    }
+
+    #[test]
+    fn test_ls_json_permissions_format() {
+        let dir = TempDir::new().unwrap();
+        let file_path = dir.path().join("test.txt");
+        File::create(&file_path).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(dir.path().to_path_buf());
+
+        let result = builtin_ls(&["--json".to_string()], &mut runtime).unwrap();
+        let json_output: Vec<FileEntry> = serde_json::from_str(result.stdout().trim()).unwrap();
+
+        let entry = &json_output[0];
+        // Permissions should be in format like "-rw-r--r--"
+        assert_eq!(entry.permissions.len(), 10);
+        assert!(entry.permissions.starts_with('-') || entry.permissions.starts_with('d'));
+        // Mode should be a valid Unix mode
+        assert!(entry.mode > 0);
+    }
+
+    #[test]
+    fn test_format_iso8601() {
+        // Test epoch time
+        assert_eq!(format_iso8601(0), "1970-01-01T00:00:00Z");
+        
+        // Test a known timestamp: 2024-01-15 12:30:45 UTC (1705322445)
+        let result = format_iso8601(1705322445);
+        assert!(result.starts_with("2024-01-"));
+        assert!(result.contains("T"));
+        assert!(result.ends_with("Z"));
+    }
+
+    #[test]
+    fn test_is_leap_year() {
+        assert!(!is_leap_year(1970));
+        assert!(!is_leap_year(2023));
+        assert!(is_leap_year(2024));
+        assert!(is_leap_year(2000));
+        assert!(!is_leap_year(1900));
     }
 }
