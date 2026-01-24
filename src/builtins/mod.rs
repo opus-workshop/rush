@@ -35,6 +35,7 @@ mod kill;
 pub mod break_builtin;  // Public so executor can access BreakSignal
 pub mod continue_builtin;  // Public so executor can access ContinueSignal
 mod json;
+mod command;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -92,6 +93,7 @@ impl Builtins {
         commands.insert("break".to_string(), break_builtin::builtin_break);
         commands.insert("continue".to_string(), continue_builtin::builtin_continue);
         commands.insert(":".to_string(), builtin_colon);
+        commands.insert("command".to_string(), command::builtin_command);
         commands.insert("json_get".to_string(), json::builtin_json_get);
         commands.insert("json_set".to_string(), json::builtin_json_set);
         commands.insert("json_query".to_string(), json::builtin_json_query);
@@ -321,7 +323,6 @@ pub(crate) fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<E
         stderr: String::new(),
         exit_code: 0,
         error: None,
-        error: None,
     })
 }
 
@@ -331,7 +332,6 @@ pub(crate) fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<
         stderr: String::new(),
         exit_code: 1,
         error: None,
-        error: None,
     })
 }
 
@@ -340,7 +340,6 @@ pub(crate) fn builtin_colon(_args: &[String], _runtime: &mut Runtime) -> Result<
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 0,
-        error: None,
         error: None,
     })
 }
@@ -431,7 +430,6 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
                                         stderr: String::new(),
                                         exit_code: return_signal.exit_code,
         error: None,
-                                        error: None,
                                     });
                                 }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
