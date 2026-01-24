@@ -1,0 +1,63 @@
+#!/usr/bin/env rush
+# Generate intelligent commit messages from git diff
+# Usage: ./commit_message_generator.rush
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+# Check if in git repository
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+# Get staged changes
+status=$(git_status --json)
+staged_count=$(echo "$status" | json_get '.summary.staged_count')
+
+if [ "$staged_count" = "0" ]; then
+  echo "No staged changes. Stage files with 'git add' first."
+  exit 1
+fi
+
+# Get diff of staged changes
+diff=$(git_diff --json --staged)
+
+# Extract summary information
+files_changed=$(echo "$diff" | json_get '.summary.files_changed')
+insertions=$(echo "$diff" | json_get '.summary.insertions')
+deletions=$(echo "$diff" | json_get '.summary.deletions')
+
+# Get file paths
+files=$(echo "$diff" | json_get '.files[].path' | head -5)
+
+# Determine commit type based on changes
+first_file=$(echo "$files" | head -1)
+commit_type="chore"
+
+if echo "$first_file" | grep -q "test"; then
+  commit_type="test"
+elif echo "$first_file" | grep -q "doc"; then
+  commit_type="docs"
+elif [ "$insertions" -gt "$((deletions * 3))" ]; then
+  commit_type="feat"
+elif [ "$deletions" -gt "$((insertions * 2))" ]; then
+  commit_type="refactor"
+else
+  commit_type="fix"
+fi
+
+# Generate commit message
+echo "# Generated Commit Message"
+echo ""
+echo "$commit_type: Update $files_changed file(s)"
+echo ""
+echo "Changes:"
+echo "$files" | while read -r file; do
+  echo "- $file"
+done
+echo ""
+echo "Stats: +$insertions -$deletions lines"
+echo ""
+echo "# Copy the message above, edit as needed, and use:"
+echo "# git commit -m \"<message>\""

@@ -1,0 +1,79 @@
+#!/usr/bin/env rush
+# Generate changelog from git commits
+# Usage: ./changelog_generator.rush [since_tag]
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+# Check if in git repo
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+# Get version from last tag or use provided
+since="${1:-}"
+
+if [ -z "$since" ]; then
+  # Get last tag
+  since=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+fi
+
+echo "# Changelog"
+echo ""
+
+if [ -n "$since" ]; then
+  echo "## Changes since $since"
+  echo ""
+  # Get commits since tag
+  commits=$(git log --oneline "$since..HEAD" 2>/dev/null || git_log --json -n 50)
+else
+  echo "## Recent Changes"
+  echo ""
+  commits=$(git_log --json -n 50)
+fi
+
+# Parse commits into categories
+echo "### Features"
+echo ""
+echo "$commits" | json_get '.[].message' | grep "^feat:" | sed 's/^feat: /- /' || echo "No new features"
+
+echo ""
+echo "### Bug Fixes"
+echo ""
+echo "$commits" | json_get '.[].message' | grep "^fix:" | sed 's/^fix: /- /' || echo "No bug fixes"
+
+echo ""
+echo "### Documentation"
+echo ""
+echo "$commits" | json_get '.[].message' | grep "^docs:" | sed 's/^docs: /- /' || echo "No documentation changes"
+
+echo ""
+echo "### Performance"
+echo ""
+echo "$commits" | json_get '.[].message' | grep "^perf:" | sed 's/^perf: /- /' || echo "No performance improvements"
+
+echo ""
+echo "### Refactoring"
+echo ""
+echo "$commits" | json_get '.[].message' | grep "^refactor:" | sed 's/^refactor: /- /' || echo "No refactoring"
+
+echo ""
+echo "### Other Changes"
+echo ""
+echo "$commits" | json_get '.[].message' | grep -v "^feat:\\|^fix:\\|^docs:\\|^perf:\\|^refactor:" | sed 's/^/- /' | head -10
+
+echo ""
+echo "### Statistics"
+echo ""
+total=$(echo "$commits" | json_query 'length')
+echo "- Total commits: $total"
+
+if [ "$total" -gt 0 ]; then
+  files=$(echo "$commits" | json_query '[.[].files_changed] | add')
+  insertions=$(echo "$commits" | json_query '[.[].insertions] | add')
+  deletions=$(echo "$commits" | json_query '[.[].deletions] | add')
+  echo "- Files changed: $files"
+  echo "- Lines added: +$insertions"
+  echo "- Lines deleted: -$deletions"
+fi

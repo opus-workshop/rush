@@ -1,0 +1,97 @@
+#!/usr/bin/env rush
+# Prepare code review summary
+# Usage: ./code_review_prep.rush [base_branch]
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+# Check if in git repository
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+# Get current branch
+status=$(git_status --json)
+current_branch=$(echo "$status" | json_get '.branch')
+
+if [ -z "$current_branch" ]; then
+  echo "Error: Not on a branch (detached HEAD)"
+  exit 1
+fi
+
+# Base branch (default to main/master)
+base_branch="${1:-main}"
+
+echo "# Code Review: $current_branch"
+echo ""
+echo "**Base branch:** $base_branch"
+echo "**Review date:** $(date '+%Y-%m-%d')"
+echo ""
+
+# Get commits in this branch
+echo "## Commits"
+echo ""
+commits=$(git_log --json "$base_branch..$current_branch" 2>/dev/null || git_log --json -n 10)
+commit_count=$(echo "$commits" | json_query 'length')
+
+if [ "$commit_count" -gt 0 ]; then
+  echo "$commits" | json_get '.[].message' | while read -r msg; do
+    # Get first line of commit message
+    first_line=$(echo "$msg" | head -1)
+    echo "- $first_line"
+  done
+else
+  echo "No commits found."
+fi
+
+echo ""
+echo "**Total commits:** $commit_count"
+echo ""
+
+# Get overall diff stats
+echo "## Changes Summary"
+echo ""
+diff=$(git_diff --json "$base_branch..HEAD" 2>/dev/null || git_diff --json --staged)
+files_changed=$(echo "$diff" | json_get '.summary.files_changed')
+insertions=$(echo "$diff" | json_get '.summary.insertions')
+deletions=$(echo "$diff" | json_get '.summary.deletions')
+
+echo "- **Files changed:** $files_changed"
+echo "- **Lines added:** +$insertions"
+echo "- **Lines deleted:** -$deletions"
+echo "- **Net change:** $((insertions - deletions))"
+echo ""
+
+# List changed files
+echo "## Files Changed"
+echo ""
+echo "$diff" | json_get '.files[] | "\(.path): +\(.additions) -\(.deletions)"' | while read -r line; do
+  echo "- $line"
+done
+
+echo ""
+echo "## TODOs Introduced"
+echo ""
+
+# Find TODOs in the diff (added lines only)
+todos=$(echo "$diff" | json_query '.files[].hunks[].changes[] | select(.type == "add" and (.line | contains("TODO") or contains("FIXME")))' 2>/dev/null || echo "[]")
+todo_count=$(echo "$todos" | json_query 'length')
+
+if [ "$todo_count" -gt 0 ]; then
+  echo "$todos" | json_get '.line' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No new TODOs introduced."
+fi
+
+echo ""
+echo "---"
+echo ""
+echo "**Review checklist:**"
+echo "- [ ] Code follows project style guidelines"
+echo "- [ ] Tests are included and passing"
+echo "- [ ] Documentation is updated"
+echo "- [ ] No sensitive data in commits"
+echo "- [ ] Breaking changes are documented"

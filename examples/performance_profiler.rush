@@ -1,0 +1,78 @@
+#!/usr/bin/env rush
+# Profile git operations performance
+# Usage: ./performance_profiler.rush
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+echo "# Git Operations Performance Profile"
+echo ""
+
+# Check if in git repo
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+# Measure git_status
+echo "## git_status Performance"
+echo ""
+echo "Running git_status 10 times..."
+start=$(date +%s%N)
+for i in $(seq 1 10); do
+  git_status --json > /dev/null
+done
+end=$(date +%s%N)
+duration=$(( (end - start) / 10000000 ))  # Convert to ms
+echo "- **Average time:** ${duration}ms"
+echo ""
+
+# Measure git_log
+echo "## git_log Performance"
+echo ""
+echo "Running git_log -n 100 (10 times)..."
+start=$(date +%s%N)
+for i in $(seq 1 10); do
+  git_log --json -n 100 > /dev/null
+done
+end=$(date +%s%N)
+duration=$(( (end - start) / 10000000 ))
+echo "- **Average time:** ${duration}ms"
+echo ""
+
+# Measure git_diff
+echo "## git_diff Performance"
+echo ""
+echo "Running git_diff (10 times)..."
+start=$(date +%s%N)
+for i in $(seq 1 10); do
+  git_diff --json > /dev/null 2>&1 || true
+done
+end=$(date +%s%N)
+duration=$(( (end - start) / 10000000 ))
+echo "- **Average time:** ${duration}ms"
+echo ""
+
+# Get repository stats
+echo "## Repository Statistics"
+echo ""
+commits=$(git_log --json -n 1000 2>/dev/null || echo "[]")
+commit_count=$(echo "$commits" | json_query 'length')
+echo "- **Commits analyzed:** $commit_count"
+
+if [ "$commit_count" -gt 0 ]; then
+  total_insertions=$(echo "$commits" | json_query '[.[].insertions] | add' 2>/dev/null || echo "0")
+  total_deletions=$(echo "$commits" | json_query '[.[].deletions] | add' 2>/dev/null || echo "0")
+  echo "- **Total insertions:** $total_insertions"
+  echo "- **Total deletions:** $total_deletions"
+  echo "- **Net change:** $((total_insertions - total_deletions))"
+fi
+
+status=$(git_status --json)
+echo "- **Current branch:** $(echo "$status" | json_get '.branch')"
+echo "- **Uncommitted changes:** $(echo "$status" | json_get '.summary.staged_count + .summary.unstaged_count')"
+echo ""
+
+echo "## Performance Summary"
+echo "Rush provides native Rust implementations that are typically 4-10x faster"
+echo "than equivalent bash + external tools."

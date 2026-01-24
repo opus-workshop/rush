@@ -1,0 +1,52 @@
+#!/usr/bin/env rush
+# Find all TODO/FIXME comments in codebase with context
+# Usage: ./find_todos.rush [directory]
+
+set -e
+
+# Default to src/ or current directory
+search_dir="${1:-.}"
+
+if [ ! -d "$search_dir" ]; then
+  echo "Error: Directory '$search_dir' does not exist"
+  exit 1
+fi
+
+echo "# TODO/FIXME Report for $search_dir"
+echo ""
+
+# Find TODO comments
+echo "## TODO Comments"
+echo ""
+todos=$(grep --json -r "TODO" "$search_dir" 2>/dev/null || echo "[]")
+todo_count=$(echo "$todos" | json_query 'length')
+
+if [ "$todo_count" -gt 0 ]; then
+  echo "$todos" | json_get '.[] | "\(.file):\(.line_number) - \(.full_line)"' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No TODO comments found."
+fi
+
+echo ""
+echo "## FIXME Comments"
+echo ""
+
+# Find FIXME comments
+fixmes=$(grep --json -r "FIXME" "$search_dir" 2>/dev/null || echo "[]")
+fixme_count=$(echo "$fixmes" | json_query 'length')
+
+if [ "$fixme_count" -gt 0 ]; then
+  echo "$fixmes" | json_get '.[] | "\(.file):\(.line_number) - \(.full_line)"' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No FIXME comments found."
+fi
+
+echo ""
+echo "## Summary"
+echo "- TODO: $todo_count"
+echo "- FIXME: $fixme_count"
+echo "- Total: $((todo_count + fixme_count))"

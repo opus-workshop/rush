@@ -1,0 +1,84 @@
+#!/usr/bin/env rush
+# Analyze file statistics in a directory
+# Usage: ./file_stats.rush [directory]
+
+set -e
+
+target_dir="${1:-.}"
+
+if [ ! -d "$target_dir" ]; then
+  echo "Error: Directory '$target_dir' does not exist"
+  exit 1
+fi
+
+echo "# File Statistics for $target_dir"
+echo ""
+
+# Get all files
+files=$(find --json "$target_dir" -type f 2>/dev/null || echo "[]")
+file_count=$(echo "$files" | json_query 'length')
+
+echo "## Overview"
+echo "- **Total files:** $file_count"
+echo ""
+
+if [ "$file_count" -eq 0 ]; then
+  echo "No files found."
+  exit 0
+fi
+
+# Calculate total size
+total_size=$(echo "$files" | json_query '[.[].size] | add')
+echo "- **Total size:** $total_size bytes"
+
+# Calculate average size
+if [ "$file_count" -gt 0 ]; then
+  avg_size=$((total_size / file_count))
+  echo "- **Average size:** $avg_size bytes"
+fi
+
+echo ""
+
+# Find largest files
+echo "## Largest Files"
+echo ""
+echo "$files" | json_query 'sort_by(.size) | reverse | .[0:10]' | \
+  json_get '.[] | "\(.size)\t\(.path)"' | while read -r size path; do
+  # Format size in human readable
+  if [ "$size" -gt 1048576 ]; then
+    size_mb=$((size / 1048576))
+    echo "- $path (${size_mb}MB)"
+  elif [ "$size" -gt 1024 ]; then
+    size_kb=$((size / 1024))
+    echo "- $path (${size_kb}KB)"
+  else
+    echo "- $path (${size}B)"
+  fi
+done
+
+echo ""
+
+# File types distribution
+echo "## File Types"
+echo ""
+echo "$files" | json_get '.[].path' | while read -r path; do
+  # Get extension
+  ext="${path##*.}"
+  if [ "$ext" = "$path" ]; then
+    echo "no-extension"
+  else
+    echo "$ext"
+  fi
+done | sort | uniq -c | sort -rn | head -10 | while read -r count ext; do
+  echo "- **.$ext:** $count files"
+done
+
+echo ""
+
+# Recently modified
+echo "## Recently Modified"
+echo ""
+echo "$files" | json_query 'sort_by(.modified) | reverse | .[0:5]' | \
+  json_get '.[] | "\(.modified)\t\(.path)"' | while read -r modified path; do
+  echo "- $path (modified: $modified)"
+done

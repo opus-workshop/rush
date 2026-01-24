@@ -1,0 +1,70 @@
+#!/usr/bin/env rush
+# Analyze git commit statistics by author
+# Usage: ./git_author_stats.rush [commit_count]
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+# Check if in git repo
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+commit_count="${1:-100}"
+
+echo "# Git Author Statistics"
+echo ""
+echo "**Analyzing last $commit_count commits**"
+echo ""
+
+# Get commits
+commits=$(git_log --json -n "$commit_count")
+
+# Count commits by author
+echo "## Commits by Author"
+echo ""
+echo "$commits" | json_get '.[].author' | sort | uniq -c | sort -rn | while read -r count author; do
+  echo "- **$author:** $count commits"
+done
+
+echo ""
+
+# Calculate contributions (insertions + deletions)
+echo "## Code Contributions"
+echo ""
+
+# Group by author and sum changes
+authors=$(echo "$commits" | json_get '.[].author' | sort | uniq)
+
+echo "$authors" | while read -r author; do
+  if [ -z "$author" ]; then
+    continue
+  fi
+
+  # Filter commits by this author
+  author_commits=$(echo "$commits" | json_query ".[] | select(.author == \"$author\")")
+
+  # Sum insertions and deletions
+  insertions=$(echo "$author_commits" | json_query '[.insertions] | add' 2>/dev/null || echo "0")
+  deletions=$(echo "$author_commits" | json_query '[.deletions] | add' 2>/dev/null || echo "0")
+  total=$((insertions + deletions))
+
+  echo "- **$author:** +$insertions -$deletions (total: $total lines)"
+done | sort -t: -k2 -rn
+
+echo ""
+
+# Recent activity
+echo "## Recent Activity"
+echo ""
+echo "$commits" | json_query '.[0:10]' | \
+  json_get '.[] | "\(.author)\t\(.date)\t\(.message)"' | while IFS=$'\t' read -r author date message; do
+  first_line=$(echo "$message" | head -1)
+  short_date=$(echo "$date" | cut -d'T' -f1)
+  echo "- **$short_date** - $author: $first_line"
+done
+
+echo ""
+echo "---"
+echo "Generated with Rush"

@@ -1,0 +1,70 @@
+#!/usr/bin/env rush
+# Find and list branches that have been merged
+# Usage: ./branch_cleaner.rush
+
+set -e
+export RUSH_ERROR_FORMAT=json
+
+# Check if in git repo
+if ! git_status --json > /dev/null 2>&1; then
+  echo "Error: Not in a git repository"
+  exit 1
+fi
+
+echo "# Branch Cleanup Report"
+echo ""
+
+# Get current branch
+status=$(git_status --json)
+current_branch=$(echo "$status" | json_get '.branch')
+
+echo "**Current branch:** $current_branch"
+echo ""
+
+# Get all local branches
+# Note: This uses external git command since rush doesn't have git branch builtin yet
+branches=$(git branch --format='%(refname:short)' 2>/dev/null)
+
+echo "## Local Branches"
+echo ""
+
+echo "$branches" | while read -r branch; do
+  if [ -z "$branch" ]; then
+    continue
+  fi
+
+  # Skip current branch
+  if [ "$branch" = "$current_branch" ]; then
+    continue
+  fi
+
+  # Check if branch has commits not in current branch
+  # Note: Using external git for now
+  ahead=$(git rev-list --count "$current_branch..$branch" 2>/dev/null || echo "0")
+  behind=$(git rev-list --count "$branch..$current_branch" 2>/dev/null || echo "0")
+
+  if [ "$ahead" = "0" ]; then
+    echo "- **$branch** (merged, can be deleted)"
+  else
+    echo "- **$branch** (ahead: $ahead, behind: $behind)"
+  fi
+done
+
+echo ""
+echo "## Cleanup Commands"
+echo ""
+echo "To delete merged branches, run:"
+echo "\`\`\`bash"
+echo "$branches" | while read -r branch; do
+  if [ -z "$branch" ] || [ "$branch" = "$current_branch" ]; then
+    continue
+  fi
+
+  ahead=$(git rev-list --count "$current_branch..$branch" 2>/dev/null || echo "0")
+  if [ "$ahead" = "0" ]; then
+    echo "git branch -d $branch"
+  fi
+done
+echo "\`\`\`"
+echo ""
+echo "**Note:** Always verify branches before deleting!"

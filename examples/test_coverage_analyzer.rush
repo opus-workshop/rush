@@ -1,0 +1,102 @@
+#!/usr/bin/env rush
+# Analyze test coverage by finding source files without corresponding tests
+# Usage: ./test_coverage_analyzer.rush [src_dir] [test_dir]
+
+set -e
+
+src_dir="${1:-src}"
+test_dir="${2:-tests}"
+
+if [ ! -d "$src_dir" ]; then
+  echo "Error: Source directory '$src_dir' does not exist"
+  exit 1
+fi
+
+echo "# Test Coverage Analysis"
+echo ""
+echo "**Source directory:** $src_dir"
+echo "**Test directory:** $test_dir"
+echo ""
+
+# Find all source files
+src_files=$(find --json "$src_dir" -name "*.rs" 2>/dev/null || echo "[]")
+src_count=$(echo "$src_files" | json_query 'length')
+
+echo "## Statistics"
+echo "- **Source files:** $src_count"
+
+# Count test files if test directory exists
+if [ -d "$test_dir" ]; then
+  test_files=$(find --json "$test_dir" -name "*.rs" 2>/dev/null || echo "[]")
+  test_count=$(echo "$test_files" | json_query 'length')
+  echo "- **Test files:** $test_count"
+else
+  echo "- **Test files:** 0 (directory not found)"
+  test_count=0
+fi
+
+echo ""
+echo "## Files Without Tests"
+echo ""
+
+# Check each source file for corresponding test
+missing_tests=0
+echo "$src_files" | json_get '.[].path' | while read -r src_file; do
+  # Get basename without extension
+  basename=$(basename "$src_file" .rs)
+
+  # Skip main.rs and lib.rs
+  if [ "$basename" = "main" ] || [ "$basename" = "lib" ]; then
+    continue
+  fi
+
+  # Look for test file
+  if [ -d "$test_dir" ]; then
+    # Check if test file exists
+    test_file="$test_dir/${basename}_test.rs"
+    alt_test_file="$test_dir/test_${basename}.rs"
+
+    if [ ! -f "$test_file" ] && [ ! -f "$alt_test_file" ]; then
+      echo "- $src_file (no test found)"
+      missing_tests=$((missing_tests + 1))
+    fi
+  else
+    echo "- $src_file (no test directory)"
+    missing_tests=$((missing_tests + 1))
+  fi
+done
+
+if [ "$missing_tests" -eq 0 ]; then
+  echo "All source files have corresponding tests!"
+fi
+
+echo ""
+echo "## Functions Without Tests"
+echo ""
+
+# Find all public functions in source files
+echo "$src_files" | json_get '.[].path' | while read -r src_file; do
+  # Search for pub fn declarations
+  pub_fns=$(grep --json "pub fn" "$src_file" 2>/dev/null || echo "[]")
+  fn_count=$(echo "$pub_fns" | json_query 'length')
+
+  if [ "$fn_count" -gt 0 ]; then
+    echo "**$src_file:**"
+    echo "$pub_fns" | json_get '.[].full_line' | while read -r line; do
+      # Extract function name
+      fn_name=$(echo "$line" | sed 's/.*pub fn \([a-zA-Z0-9_]*\).*/\1/')
+      echo "- $fn_name"
+    done
+    echo ""
+  fi
+done
+
+echo ""
+echo "## Recommendations"
+echo "- Add tests for files without coverage"
+echo "- Ensure public functions have test cases"
+echo "- Consider integration tests in addition to unit tests"
+if [ "$src_count" -gt 0 ]; then
+  coverage_pct=$((test_count * 100 / src_count))
+  echo "- Current test file ratio: ${coverage_pct}%"
+fi

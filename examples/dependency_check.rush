@@ -1,0 +1,52 @@
+#!/usr/bin/env rush
+# Check for dependency updates (Cargo.toml)
+# Usage: ./dependency_check.rush
+
+set -e
+
+if [ ! -f "Cargo.toml" ]; then
+  echo "Error: Cargo.toml not found in current directory"
+  exit 1
+fi
+
+echo "# Dependency Check"
+echo ""
+echo "**Note:** This example demonstrates Rush's fetch and JSON capabilities."
+echo "For real dependency checking, use \`cargo outdated\`."
+echo ""
+
+# Check if crates.io API is accessible
+echo "Checking crates.io API..."
+api_status=$(fetch --json https://crates.io/api/v1/crates 2>/dev/null | json_get '.status' || echo "0")
+
+if [ "$api_status" != "200" ]; then
+  echo "Warning: Unable to reach crates.io API"
+  exit 1
+fi
+
+echo "API accessible."
+echo ""
+
+# Example: Check a few common crates
+# In a real implementation, you'd parse Cargo.toml
+echo "## Common Crate Versions"
+echo ""
+
+for crate in "serde" "tokio" "anyhow"; do
+  echo "Checking $crate..."
+  info=$(fetch --json "https://crates.io/api/v1/crates/$crate" 2>/dev/null || echo "{}")
+
+  if [ "$(echo "$info" | json_get '.status')" = "200" ]; then
+    latest=$(echo "$info" | json_get '.body.crate.max_version')
+    downloads=$(echo "$info" | json_get '.body.crate.downloads')
+    echo "- **$crate:** $latest (downloads: $downloads)"
+  else
+    echo "- **$crate:** Unable to fetch version"
+  fi
+done
+
+echo ""
+echo "## Recommendations"
+echo "- Run \`cargo outdated\` for complete dependency analysis"
+echo "- Run \`cargo audit\` to check for security vulnerabilities"
+echo "- Keep dependencies updated to get bug fixes and improvements"

@@ -1,0 +1,107 @@
+#!/usr/bin/env rush
+# Basic security audit - find potential security issues
+# Usage: ./security_audit.rush [directory]
+
+set -e
+
+search_dir="${1:-.}"
+
+if [ ! -d "$search_dir" ]; then
+  echo "Error: Directory '$search_dir' does not exist"
+  exit 1
+fi
+
+echo "# Security Audit Report"
+echo ""
+echo "**Directory:** $search_dir"
+echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S')"
+echo ""
+
+# Find hardcoded secrets/passwords
+echo "## Potential Hardcoded Secrets"
+echo ""
+
+secrets=$(grep --json -ri "password.*=.*\"" "$search_dir" 2>/dev/null || echo "[]")
+secret_count=$(echo "$secrets" | json_query 'length')
+
+if [ "$secret_count" -gt 0 ]; then
+  echo "$secrets" | json_get '.[] | "\(.file):\(.line_number) - \(.full_line)"' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No obvious hardcoded passwords found."
+fi
+
+echo ""
+echo "## API Keys/Tokens"
+echo ""
+
+tokens=$(grep --json -ri "api.*key\\|token.*=" "$search_dir" 2>/dev/null || echo "[]")
+token_count=$(echo "$tokens" | json_query 'length')
+
+if [ "$token_count" -gt 0 ]; then
+  echo "$tokens" | json_get '.[] | "\(.file):\(.line_number)"' | head -10 | while read -r line; do
+    echo "- $line"
+  done
+  if [ "$token_count" -gt 10 ]; then
+    echo "- ... and $((token_count - 10)) more"
+  fi
+else
+  echo "No obvious API keys/tokens found."
+fi
+
+echo ""
+echo "## Unsafe Code Blocks"
+echo ""
+
+unsafe_blocks=$(grep --json -r "unsafe" "$search_dir" 2>/dev/null || echo "[]")
+unsafe_count=$(echo "$unsafe_blocks" | json_query 'length')
+
+if [ "$unsafe_count" -gt 0 ]; then
+  echo "$unsafe_blocks" | json_get '.[] | "\(.file):\(.line_number) - \(.full_line)"' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No unsafe blocks found."
+fi
+
+echo ""
+echo "## Unwrap/Panic Usage"
+echo ""
+
+unwraps=$(grep --json -r "\\.unwrap()" "$search_dir" 2>/dev/null || echo "[]")
+unwrap_count=$(echo "$unwraps" | json_query 'length')
+
+panics=$(grep --json -r "panic!" "$search_dir" 2>/dev/null || echo "[]")
+panic_count=$(echo "$panics" | json_query 'length')
+
+echo "- **unwrap() calls:** $unwrap_count"
+echo "- **panic!() calls:** $panic_count"
+
+if [ "$unwrap_count" -gt 0 ] || [ "$panic_count" -gt 0 ]; then
+  echo ""
+  echo "Consider using proper error handling with Result<T, E> instead."
+fi
+
+echo ""
+echo "## TODO/FIXME Security Notes"
+echo ""
+
+security_todos=$(grep --json -ri "TODO.*secur\\|FIXME.*secur\\|XXX.*secur" "$search_dir" 2>/dev/null || echo "[]")
+security_todo_count=$(echo "$security_todos" | json_query 'length')
+
+if [ "$security_todo_count" -gt 0 ]; then
+  echo "$security_todos" | json_get '.[] | "\(.file):\(.line_number) - \(.full_line)"' | while read -r line; do
+    echo "- $line"
+  done
+else
+  echo "No security-related TODOs found."
+fi
+
+echo ""
+echo "## Recommendations"
+echo "1. Review any hardcoded credentials and move to environment variables"
+echo "2. Audit unsafe blocks for memory safety issues"
+echo "3. Replace unwrap() with proper error handling"
+echo "4. Address security-related TODOs"
+echo "5. Run \`cargo audit\` for known vulnerabilities in dependencies"

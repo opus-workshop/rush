@@ -1,0 +1,82 @@
+#!/usr/bin/env rush
+# Find potentially unused code (functions/types not referenced elsewhere)
+# Usage: ./dead_code_finder.rush [directory]
+
+set -e
+
+search_dir="${1:-src}"
+
+if [ ! -d "$search_dir" ]; then
+  echo "Error: Directory '$search_dir' does not exist"
+  exit 1
+fi
+
+echo "# Dead Code Analysis for $search_dir"
+echo ""
+
+# Find all Rust source files
+src_files=$(find --json "$search_dir" -name "*.rs")
+
+echo "## Potentially Unused Functions"
+echo ""
+
+# Find all function definitions
+echo "$src_files" | json_get '.[].path' | while read -r file; do
+  # Find function definitions (pub fn and fn)
+  fns=$(grep --json "fn [a-zA-Z]" "$file" 2>/dev/null || echo "[]")
+  fn_count=$(echo "$fns" | json_query 'length')
+
+  if [ "$fn_count" -gt 0 ]; then
+    echo "$fns" | json_get '.[].full_line' | while read -r line; do
+      # Extract function name
+      fn_name=$(echo "$line" | sed 's/.*fn \([a-zA-Z0-9_]*\).*/\1/')
+
+      # Skip special functions
+      if [ "$fn_name" = "main" ] || [ "$fn_name" = "new" ] || [ "$fn_name" = "default" ]; then
+        continue
+      fi
+
+      # Search for references to this function in all files
+      refs=$(grep --json -r "$fn_name" "$search_dir" 2>/dev/null || echo "[]")
+      ref_count=$(echo "$refs" | json_query 'length')
+
+      # If only one reference (the definition itself), might be dead code
+      if [ "$ref_count" -le 1 ]; then
+        echo "- **$fn_name** in $file (no references found)"
+      fi
+    done
+  fi
+done
+
+echo ""
+echo "## Potentially Unused Structs/Enums"
+echo ""
+
+# Find struct and enum definitions
+echo "$src_files" | json_get '.[].path' | while read -r file; do
+  # Find struct definitions
+  structs=$(grep --json "^pub struct\\|^struct" "$file" 2>/dev/null || echo "[]")
+
+  if [ "$(echo "$structs" | json_query 'length')" -gt 0 ]; then
+    echo "$structs" | json_get '.[].full_line' | while read -r line; do
+      # Extract struct name
+      struct_name=$(echo "$line" | sed 's/.*struct \([a-zA-Z0-9_]*\).*/\1/')
+
+      # Search for references
+      refs=$(grep --json -r "$struct_name" "$search_dir" 2>/dev/null || echo "[]")
+      ref_count=$(echo "$refs" | json_query 'length')
+
+      # If only one reference, might be dead code
+      if [ "$ref_count" -le 1 ]; then
+        echo "- **$struct_name** in $file (no references found)"
+      fi
+    done
+  fi
+done
+
+echo ""
+echo "## Notes"
+echo "- This is a simple heuristic analysis and may have false positives"
+echo "- Functions used via traits or macros may not be detected"
+echo "- Public API functions should be kept even if unused internally"
+echo "- Run \`cargo build\` with \`#![warn(dead_code)]\` for compiler analysis"
