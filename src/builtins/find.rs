@@ -6,12 +6,25 @@
 //! - Automatically excludes common build directories (.git, node_modules, target)
 //! - Uses efficient pattern matching with glob patterns
 
-use crate::executor::{ExecutionResult, Output};
+use crate::executor::ExecutionResult;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use ignore::WalkBuilder;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
+
+#[derive(Debug, Serialize)]
+struct FindResult {
+    path: String,
+    #[serde(rename = "type")]
+    file_type: String,
+    size: u64,
+    modified: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    permissions: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 enum FileType {
@@ -53,6 +66,8 @@ struct FindOptions {
     max_depth: Option<usize>,
     /// Follow symbolic links
     follow_links: bool,
+    /// Output results in JSON format
+    json_output: bool,
 }
 
 impl Default for FindOptions {
@@ -67,6 +82,7 @@ impl Default for FindOptions {
             exec_command: None,
             max_depth: None,
             follow_links: false,
+            json_output: false,
         }
     }
 }
@@ -135,6 +151,9 @@ fn parse_args(args: &[String], runtime: &Runtime) -> Result<FindOptions> {
                     return Err(anyhow!("find: -exec must be terminated with ';'"));
                 }
                 options.exec_command = Some(exec_cmd);
+            }
+            "--json" => {
+                options.json_output = true;
             }
             "--no-ignore" => {
                 options.respect_gitignore = false;
@@ -384,7 +403,8 @@ pub fn builtin_find(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     }
 
     // Collect results
-    let mut results = Vec::new();
+    let mut text_results = Vec::new();
+    let mut json_results = Vec::new();
     let mut exec_output = String::new();
 
     for result in builder.build() {
@@ -401,9 +421,43 @@ pub fn builtin_find(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
                     if let Some(exec_cmd) = &options.exec_command {
                         // Execute command on this file
                         exec_output.push_str(&execute_command(exec_cmd, path)?);
+                    } else if options.json_output {
+                        // Collect JSON metadata
+                        if let Ok(metadata) = path.metadata() {
+                            let file_type = if metadata.is_dir() {
+                                "directory"
+                            } else if metadata.is_symlink() {
+                                "symlink"
+                            } else {
+                                "file"
+                            };
+
+                            let modified = metadata
+                                .modified()
+                                .ok()
+                                .and_then(|t| DateTime::<Utc>::from(t).format("%Y-%m-%dT%H:%M:%SZ").to_string().into())
+                                .unwrap_or_else(|| "unknown".to_string());
+
+                            #[cfg(unix)]
+                            let permissions = {
+                                use std::os::unix::fs::PermissionsExt;
+                                Some(format!("{:o}", metadata.permissions().mode() & 0o777))
+                            };
+
+                            #[cfg(not(unix))]
+                            let permissions = None;
+
+                            json_results.push(FindResult {
+                                path: path.to_string_lossy().to_string(),
+                                file_type: file_type.to_string(),
+                                size: metadata.len(),
+                                modified,
+                                permissions,
+                            });
+                        }
                     } else {
                         // Just collect the path
-                        results.push(path.to_string_lossy().to_string());
+                        text_results.push(path.to_string_lossy().to_string());
                     }
                 }
             }
@@ -416,8 +470,12 @@ pub fn builtin_find(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
 
     let output = if options.exec_command.is_some() {
         exec_output
-    } else if !results.is_empty() {
-        results.join("\n") + "\n"
+    } else if options.json_output {
+        serde_json::to_string_pretty(&json_results)
+            .map_err(|e| anyhow!("Failed to serialize JSON: {}", e))?
+            + "\n"
+    } else if !text_results.is_empty() {
+        text_results.join("\n") + "\n"
     } else {
         String::new()
     };
@@ -559,5 +617,127 @@ mod tests {
         assert!(result.stdout().contains("root.txt"));
         assert!(!result.stdout().contains("file1.txt"));
         assert!(!result.stdout().contains("file2.txt"));
+    }
+
+    #[test]
+    fn test_find_json_output() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_file(temp_dir.path(), "test1.rs", "content1");
+        create_test_file(temp_dir.path(), "test2.txt", "content2");
+        fs::create_dir(temp_dir.path().join("subdir")).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(temp_dir.path().to_path_buf());
+
+        let result = builtin_find(&vec!["--json".to_string()], &mut runtime).unwrap();
+        let output = result.stdout();
+
+        // Should be valid JSON
+        let json: serde_json::Value = serde_json::from_str(&output).expect("Valid JSON");
+        assert!(json.is_array());
+
+        let array = json.as_array().unwrap();
+        assert!(array.len() >= 3); // At least 3 entries
+
+        // Check that each entry has required fields
+        for item in array {
+            assert!(item.get("path").is_some());
+            assert!(item.get("type").is_some());
+            assert!(item.get("size").is_some());
+            assert!(item.get("modified").is_some());
+        }
+    }
+
+    #[test]
+    fn test_find_json_with_type_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_file(temp_dir.path(), "file.txt", "content");
+        fs::create_dir(temp_dir.path().join("subdir")).unwrap();
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(temp_dir.path().to_path_buf());
+
+        // Find only files
+        let result = builtin_find(
+            &vec!["--json".to_string(), "-type".to_string(), "f".to_string()],
+            &mut runtime,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&result.stdout()).unwrap();
+        let array = json.as_array().unwrap();
+
+        // All entries should be files
+        for item in array {
+            assert_eq!(item.get("type").unwrap().as_str().unwrap(), "file");
+        }
+
+        // Find only directories
+        let result = builtin_find(
+            &vec!["--json".to_string(), "-type".to_string(), "d".to_string()],
+            &mut runtime,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&result.stdout()).unwrap();
+        let array = json.as_array().unwrap();
+
+        // All entries should be directories
+        for item in array {
+            assert_eq!(item.get("type").unwrap().as_str().unwrap(), "directory");
+        }
+    }
+
+    #[test]
+    fn test_find_json_with_name_pattern() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_file(temp_dir.path(), "test1.rs", "content");
+        create_test_file(temp_dir.path(), "test2.txt", "content");
+        create_test_file(temp_dir.path(), "test3.rs", "content");
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(temp_dir.path().to_path_buf());
+
+        let result = builtin_find(
+            &vec!["--json".to_string(), "-name".to_string(), "*.rs".to_string()],
+            &mut runtime,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&result.stdout()).unwrap();
+        let array = json.as_array().unwrap();
+
+        // Should only have .rs files
+        for item in array {
+            let path = item.get("path").unwrap().as_str().unwrap();
+            assert!(path.ends_with(".rs"));
+        }
+    }
+
+    #[test]
+    fn test_find_json_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        create_test_file(temp_dir.path(), "test.txt", "hello world");
+
+        let mut runtime = Runtime::new();
+        runtime.set_cwd(temp_dir.path().to_path_buf());
+
+        let result = builtin_find(
+            &vec!["--json".to_string(), "-name".to_string(), "test.txt".to_string()],
+            &mut runtime,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&result.stdout()).unwrap();
+        let array = json.as_array().unwrap();
+
+        assert_eq!(array.len(), 1);
+        let item = &array[0];
+
+        // Check metadata fields
+        assert!(item.get("path").unwrap().as_str().unwrap().contains("test.txt"));
+        assert_eq!(item.get("type").unwrap().as_str().unwrap(), "file");
+        assert_eq!(item.get("size").unwrap().as_u64().unwrap(), 11); // "hello world" is 11 bytes
+        assert!(item.get("modified").is_some());
+
+        // On Unix systems, permissions should be present
+        #[cfg(unix)]
+        assert!(item.get("permissions").is_some());
     }
 }
