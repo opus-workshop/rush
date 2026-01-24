@@ -742,15 +742,64 @@ impl Executor {
         // For now, simple iteration over strings split by lines
         let items: Vec<String> = iterable.lines().map(|s| s.to_string()).collect();
 
-        for item in items {
-            self.runtime
-                .set_variable(for_loop.variable.clone(), item);
-            for statement in &for_loop.body {
-                self.execute_statement(statement.clone())?;
-            }
-        }
+        // Enter loop context for break/continue
+        self.runtime.enter_loop();
 
-        Ok(ExecutionResult::default())
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut last_exit_code = 0;
+
+        let result = (|| -> Result<ExecutionResult> {
+            for item in items {
+                self.runtime
+                    .set_variable(for_loop.variable.clone(), item);
+                for statement in &for_loop.body {
+                    match self.execute_statement(statement.clone()) {
+                        Ok(result) => {
+                            accumulated_stdout.push_str(&result.stdout());
+                            accumulated_stderr.push_str(&result.stderr);
+                            last_exit_code = result.exit_code;
+                        }
+                        Err(e) => {
+                            // Check if this is a break signal
+                            if let Some(break_signal) = e.downcast_ref::<crate::builtins::break_builtin::BreakSignal>() {
+                                // First, add any accumulated output from the break signal itself
+                                accumulated_stdout.push_str(&break_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&break_signal.accumulated_stderr);
+
+                                if break_signal.levels == 1 {
+                                    // Break from this loop, return accumulated output
+                                    return Ok(ExecutionResult {
+                                        output: Output::Text(accumulated_stdout),
+                                        stderr: accumulated_stderr,
+                                        exit_code: last_exit_code,
+                                    });
+                                } else {
+                                    // Propagate to outer loop with decreased level and accumulated output
+                                    return Err(anyhow::Error::new(crate::builtins::break_builtin::BreakSignal {
+                                        levels: break_signal.levels - 1,
+                                        accumulated_stdout: accumulated_stdout.clone(),
+                                        accumulated_stderr: accumulated_stderr.clone(),
+                                    }));
+                                }
+                            }
+                            // Not a break signal, propagate the error
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+            Ok(ExecutionResult {
+                output: Output::Text(accumulated_stdout),
+                stderr: accumulated_stderr,
+                exit_code: last_exit_code,
+            })
+        })();
+
+        // Exit loop context
+        self.runtime.exit_loop();
+
+        result
     }
 
     fn execute_match(&mut self, match_expr: MatchExpression) -> Result<ExecutionResult> {

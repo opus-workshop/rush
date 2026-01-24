@@ -37,6 +37,7 @@ pub struct Runtime {
     positional_params: Vec<String>,  // Track $1, $2, etc. for shift builtin
     positional_stack: Vec<Vec<String>>,  // Stack for function scopes
     function_depth: usize,  // Track function call depth for return builtin
+    loop_depth: usize,  // Track loop nesting depth for break/continue builtins
     trap_handlers: TrapHandlers,  // Signal trap handlers
     // Permanent file descriptor redirections (set by exec builtin)
     permanent_stdout: Option<i32>,
@@ -69,6 +70,7 @@ impl Runtime {
             positional_params: Vec::new(),
             positional_stack: Vec::new(),
             function_depth: 0,
+            loop_depth: 0,
             trap_handlers: TrapHandlers::new(),
             permanent_stdout: None,
             permanent_stderr: None,
@@ -263,7 +265,22 @@ impl Runtime {
     pub fn in_function(&self) -> bool {
         self.in_function_context()
     }
-    
+
+    // Loop context tracking (for break/continue builtins)
+    pub fn enter_loop(&mut self) {
+        self.loop_depth += 1;
+    }
+
+    pub fn exit_loop(&mut self) {
+        if self.loop_depth > 0 {
+            self.loop_depth -= 1;
+        }
+    }
+
+    pub fn get_loop_depth(&self) -> usize {
+        self.loop_depth
+    }
+
     /// Set a local variable in the current function scope
     /// Returns an error if not in a function scope
     pub fn set_local_variable(&mut self, name: String, value: String) -> Result<()> {

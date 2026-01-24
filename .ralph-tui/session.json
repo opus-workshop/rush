@@ -3,10 +3,10 @@
   "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
   "status": "running",
   "startedAt": "2026-01-24T19:17:05.631Z",
-  "updatedAt": "2026-01-24T20:05:42.823Z",
-  "currentIteration": 6,
+  "updatedAt": "2026-01-24T20:08:59.713Z",
+  "currentIteration": 7,
   "maxIterations": 10,
-  "tasksCompleted": 6,
+  "tasksCompleted": 7,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -89,8 +89,8 @@
       {
         "id": "rush-dgr.8",
         "title": "POSIX-008: Re-enable and test kill builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.7",
@@ -250,12 +250,22 @@
       "durationMs": 241890,
       "startedAt": "2026-01-24T20:01:39.376Z",
       "endedAt": "2026-01-24T20:05:41.266Z"
+    },
+    {
+      "iteration": 7,
+      "status": "completed",
+      "taskId": "rush-dgr.8",
+      "taskTitle": "POSIX-008: Re-enable and test kill builtin",
+      "taskCompleted": true,
+      "durationMs": 195500,
+      "startedAt": "2026-01-24T20:05:42.665Z",
+      "endedAt": "2026-01-24T20:08:58.165Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/asher/tt/rush",
   "activeTaskIds": [
-    "rush-dgr.8"
+    "rush-dgr.9"
   ],
   "subagentPanelVisible": false
 }
