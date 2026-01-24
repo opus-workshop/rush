@@ -1,8 +1,23 @@
-use git2::{Repository, StatusOptions};
-use std::path::Path;
+use git2::{Repository, StatusOptions, Status};
+use std::path::{Path, PathBuf};
 
 pub struct GitContext {
     repo: Option<Repository>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileStatus {
+    pub path: PathBuf,
+    pub status: FileStatusType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileStatusType {
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Typechange,
 }
 
 impl GitContext {
@@ -60,6 +75,135 @@ impl GitContext {
             dirty,
             ahead_behind,
         }
+    }
+
+    pub fn staged_files(&self) -> Vec<FileStatus> {
+        let repo = match &self.repo {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
+        let mut staged = Vec::new();
+        if let Ok(statuses) = repo.statuses(Some(StatusOptions::new().include_untracked(false))) {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                let path = entry.path().unwrap_or("").to_string();
+
+                if status.is_index_new() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Added,
+                    });
+                } else if status.is_index_modified() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Modified,
+                    });
+                } else if status.is_index_deleted() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Deleted,
+                    });
+                } else if status.is_index_renamed() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Renamed,
+                    });
+                } else if status.is_index_typechange() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Typechange,
+                    });
+                }
+            }
+        }
+        staged
+    }
+
+    pub fn unstaged_files(&self) -> Vec<FileStatus> {
+        let repo = match &self.repo {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
+        let mut unstaged = Vec::new();
+        if let Ok(statuses) = repo.statuses(Some(StatusOptions::new().include_untracked(false))) {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                let path = entry.path().unwrap_or("").to_string();
+
+                if status.is_wt_modified() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Modified,
+                    });
+                } else if status.is_wt_deleted() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Deleted,
+                    });
+                } else if status.is_wt_typechange() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Typechange,
+                    });
+                } else if status.is_wt_renamed() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(&path),
+                        status: FileStatusType::Renamed,
+                    });
+                }
+            }
+        }
+        unstaged
+    }
+
+    pub fn untracked_files(&self) -> Vec<PathBuf> {
+        let repo = match &self.repo {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
+        let mut untracked = Vec::new();
+        if let Ok(statuses) = repo.statuses(Some(StatusOptions::new().include_untracked(true))) {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                if status.is_wt_new() {
+                    if let Some(path) = entry.path() {
+                        untracked.push(PathBuf::from(path));
+                    }
+                }
+            }
+        }
+        untracked
+    }
+
+    pub fn conflicted_files(&self) -> Vec<PathBuf> {
+        let repo = match &self.repo {
+            Some(r) => r,
+            None => return Vec::new(),
+        };
+
+        let mut conflicted = Vec::new();
+        if let Ok(statuses) = repo.statuses(Some(StatusOptions::new().include_untracked(false))) {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                if status.is_conflicted() {
+                    if let Some(path) = entry.path() {
+                        conflicted.push(PathBuf::from(path));
+                    }
+                }
+            }
+        }
+        conflicted
+    }
+
+    pub fn tracking_branch(&self) -> Option<String> {
+        let repo = self.repo.as_ref()?;
+        let head = repo.head().ok()?;
+        let branch = repo.find_branch(head.shorthand()?, git2::BranchType::Local).ok()?;
+        let upstream = branch.upstream().ok()?;
+        upstream.name().ok()?.map(|s| s.to_string())
     }
 }
 
