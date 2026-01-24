@@ -12,7 +12,7 @@ fn test_basic_command_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "hello");
+    assert_eq!(result.stdout().trim(), "hello");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -26,7 +26,7 @@ fn test_backtick_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "world");
+    assert_eq!(result.stdout().trim(), "world");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -40,7 +40,7 @@ fn test_nested_command_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "nested");
+    assert_eq!(result.stdout().trim(), "nested");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -57,7 +57,7 @@ fn test_command_substitution_in_string() {
     let result = executor.execute(statements).unwrap();
 
     // Each part should be a separate argument, so output will have spaces
-    assert!(result.stdout.contains("prefix-test-suffix") || result.stdout.contains("test"));
+    assert!(result.stdout().contains("prefix-test-suffix") || result.stdout().contains("test"));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn test_command_substitution_with_pwd() {
     let result = executor.execute(statements).unwrap();
 
     // Result should contain the current working directory path
-    assert!(!result.stdout.trim().is_empty());
+    assert!(!result.stdout().trim().is_empty());
     assert_eq!(result.exit_code, 0);
 }
 
@@ -104,7 +104,7 @@ line2")"#).unwrap();
     let result = executor.execute(statements).unwrap();
 
     // Should trim trailing newline but preserve internal ones
-    let output = result.stdout.trim();
+    let output = result.stdout().trim();
     assert!(output.contains("line1"));
     assert!(output.contains("line2"));
 }
@@ -119,7 +119,7 @@ fn test_command_substitution_with_multiple_args() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    let output = result.stdout.trim();
+    let output = result.stdout().trim();
     assert!(output.contains("first"));
     assert!(output.contains("middle"));
     assert!(output.contains("last"));
@@ -136,7 +136,7 @@ fn test_command_substitution_in_pipeline() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "hello");
+    assert_eq!(result.stdout().trim(), "hello");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -151,7 +151,7 @@ fn test_command_substitution_exit_code() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "success");
+    assert_eq!(result.stdout().trim(), "success");
     // The echo command should succeed even if inner command had different exit code
     assert_eq!(result.exit_code, 0);
 }
@@ -181,7 +181,7 @@ fn test_command_substitution_with_flags() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "-v");
+    assert_eq!(result.stdout().trim(), "-v");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -195,7 +195,7 @@ fn test_double_nested_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "deep");
+    assert_eq!(result.stdout().trim(), "deep");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -242,7 +242,7 @@ fn test_command_substitution_with_semicolon() {
     let result = executor.execute(statements).unwrap();
 
     // Should contain output from both commands
-    let output = result.stdout.trim();
+    let output = result.stdout().trim();
     assert!(output.contains('a'));
     assert!(output.contains('b'));
 }
@@ -258,7 +258,7 @@ fn test_mixed_arguments_with_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    let output = result.stdout.trim();
+    let output = result.stdout().trim();
     assert!(output.contains("literal"));
     assert!(output.contains("substituted"));
     assert!(output.contains("another"));

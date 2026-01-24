@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Native OS - Agent Coordination</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            padding: 20px 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-subtitle {
+            font-size: 14px;
+            color: #a0a0a0;
+        }
+
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: rgba(15, 15, 25, 0.9);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 30px 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .agent-list-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .agent-list-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+
+        .agent-list-item.active {
+            background: rgba(102, 126, 234, 0.2);
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+
+        .agent-avatar-small {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .agent-list-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .agent-list-name {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .agent-list-status {
+            font-size: 11px;
+            color: #a0a0a0;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-active {
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        }
+
+        .status-idle {
+            background: #6b7280;
+        }
+
+        .status-working {
+            background: #fbbf24;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .canvas-area {
+            background: radial-gradient(ellipse at center, rgba(30, 30, 50, 0.3) 0%, rgba(10, 10, 15, 0.9) 100%);
+            position: relative;
+            padding: 40px;
+            overflow: hidden;
+        }
+
+        .connection-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .agent-node {
+            position: absolute;
+            width: 180px;
+            background: rgba(30, 30, 50, 0.9);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(102, 126, 234, 0.5);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            cursor: move;
+            transition: all 0.3s;
+        }
+
+        .agent-node:hover {
+            border-color: rgba(102, 126, 234, 0.8);
+            box-shadow: 0 12px 48px rgba(102, 126, 234, 0.3);
+            transform: scale(1.05);
+        }
+
+        .agent-node-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .agent-node-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        .agent-node-info {
+            flex: 1;
+        }
+
+        .agent-node-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+
+        .agent-node-role {
+            font-size: 11px;
+            color: #a0a0a0;
+        }
+
+        .agent-node-status {
+            font-size: 12px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .agent-node-metrics {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #a0a0a0;
+        }
+
+        .detail-panel {
+            background: rgba(15, 15, 25, 0.9);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .detail-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 24px;
+        }
+
+        .detail-info h2 {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .detail-info p {
+            font-size: 13px;
+            color: #a0a0a0;
+        }
+
+        .detail-section {
+            margin-bottom: 30px;
+        }
+
+        .detail-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .log-entry {
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .log-time {
+            color: #a0a0a0;
+            font-size: 10px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .task-item {
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .task-name {
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .task-badge {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .badge-complete {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .badge-active {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .badge-pending {
+            background: rgba(107, 114, 128, 0.2);
+            color: #9ca3af;
+        }
+
+        .task-description {
+            font-size: 12px;
+            color: #a0a0a0;
+            line-height: 1.4;
+        }
+
+        /* SVG Connection Lines */
+        .connection-line {
+            stroke: rgba(102, 126, 234, 0.5);
+            stroke-width: 2;
+            fill: none;
+            stroke-dasharray: 5, 5;
+            animation: dash 20s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -100;
+            }
+        }
+
+        .connection-label {
+            font-size: 11px;
+            fill: #a0a0a0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-title">🤝 Agent Coordination</div>
+            <div class="header-subtitle">Multi-agent orchestration • Session: parser-optimization</div>
+        </div>
+
+        <div class="main-content">
+            <!-- Left Sidebar: Agent List -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="section-title">Active Agents</div>
+                    <div class="agent-list-item active">
+                        <div class="agent-avatar-small">O</div>
+                        <div class="agent-list-info">
+                            <div class="agent-list-name">Optimizer</div>
+                            <div class="agent-list-status">Analyzing hotspots</div>
+                        </div>
+                        <div class="status-dot status-working"></div>
+                    </div>
+                    <div class="agent-list-item">
+                        <div class="agent-avatar-small">T</div>
+                        <div class="agent-list-info">
+                            <div class="agent-list-name">Tester</div>
+                            <div class="agent-list-status">Running benchmarks</div>
+                        </div>
+                        <div class="status-dot status-working"></div>
+                    </div>
+                    <div class="agent-list-item">
+                        <div class="agent-avatar-small">R</div>
+                        <div class="agent-list-info">
+                            <div class="agent-list-name">Reviewer</div>
+                            <div class="agent-list-status">Waiting for approval</div>
+                        </div>
+                        <div class="status-dot status-idle"></div>
+                    </div>
+                    <div class="agent-list-item">
+                        <div class="agent-avatar-small">M</div>
+                        <div class="agent-list-info">
+                            <div class="agent-list-name">Monitor</div>
+                            <div class="agent-list-status">Watching metrics</div>
+                        </div>
+                        <div class="status-dot status-active"></div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="section-title">Resource Claims</div>
+                    <div style="font-size: 12px; color: #a0a0a0; line-height: 1.6;">
+                        <div style="margin-bottom: 8px;">
+                            📁 <strong>src/parser/</strong><br>
+                            <span style="margin-left: 20px;">Claimed by Optimizer</span>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            📁 <strong>tests/</strong><br>
+                            <span style="margin-left: 20px;">Claimed by Tester</span>
+                        </div>
+                        <div>
+                            📁 <strong>benches/</strong><br>
+                            <span style="margin-left: 20px;">Available</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="section-title">Coordination Events</div>
+                    <div class="log-entry">
+                        <span class="log-time">2 mins ago</span>
+                        Optimizer → Tester: "SIMD changes ready for benchmark"
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">5 mins ago</span>
+                        Tester → Optimizer: "Baseline established: 145μs"
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">12 mins ago</span>
+                        Monitor → ALL: "No regressions detected"
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center: Coordination Graph -->
+            <div class="canvas-area">
+                <svg class="connection-canvas">
+                    <!-- Optimizer → Tester -->
+                    <path class="connection-line" d="M 300,200 Q 450,150 600,200" />
+                    <text class="connection-label" x="450" y="140">shares results</text>
+
+                    <!-- Optimizer → Reviewer -->
+                    <path class="connection-line" d="M 300,200 Q 450,350 600,400" />
+                    <text class="connection-label" x="450" y="370">requests review</text>
+
+                    <!-- Tester → Monitor -->
+                    <path class="connection-line" d="M 600,200 Q 650,300 600,400" />
+                    <text class="connection-label" x="660" y="300">reports metrics</text>
+
+                    <!-- Monitor → Optimizer -->
+                    <path class="connection-line" d="M 600,500 Q 450,550 300,500" />
+                    <text class="connection-label" x="450" y="570">alerts on issues</text>
+                </svg>
+
+                <!-- Agent Nodes -->
+                <div class="agent-node" style="left: 200px; top: 150px;">
+                    <div class="agent-node-header">
+                        <div class="agent-node-avatar">O</div>
+                        <div class="agent-node-info">
+                            <div class="agent-node-name">Optimizer</div>
+                            <div class="agent-node-role">Performance</div>
+                        </div>
+                    </div>
+                    <div class="agent-node-status">
+                        Analyzing SIMD opportunities in lexer
+                    </div>
+                    <div class="agent-node-metrics">
+                        <span>⚡ 73%</span>
+                        <span>💰 $0.45</span>
+                        <span>⏱️ 8m</span>
+                    </div>
+                </div>
+
+                <div class="agent-node" style="left: 500px; top: 150px;">
+                    <div class="agent-node-header">
+                        <div class="agent-node-avatar">T</div>
+                        <div class="agent-node-info">
+                            <div class="agent-node-name">Tester</div>
+                            <div class="agent-node-role">Validation</div>
+                        </div>
+                    </div>
+                    <div class="agent-node-status">
+                        Running benchmark suite (Run 12/20)
+                    </div>
+                    <div class="agent-node-metrics">
+                        <span>⚡ 60%</span>
+                        <span>💰 $0.12</span>
+                        <span>⏱️ 15m</span>
+                    </div>
+                </div>
+
+                <div class="agent-node" style="left: 500px; top: 350px;">
+                    <div class="agent-node-header">
+                        <div class="agent-node-avatar">R</div>
+                        <div class="agent-node-info">
+                            <div class="agent-node-name">Reviewer</div>
+                            <div class="agent-node-role">Quality</div>
+                        </div>
+                    </div>
+                    <div class="agent-node-status">
+                        Waiting: Human approval required
+                    </div>
+                    <div class="agent-node-metrics">
+                        <span>⚡ 95%</span>
+                        <span>💰 $0.23</span>
+                        <span>⏱️ 4m</span>
+                    </div>
+                </div>
+
+                <div class="agent-node" style="left: 500px; top: 450px;">
+                    <div class="agent-node-header">
+                        <div class="agent-node-avatar">M</div>
+                        <div class="agent-node-info">
+                            <div class="agent-node-name">Monitor</div>
+                            <div class="agent-node-role">Observability</div>
+                        </div>
+                    </div>
+                    <div class="agent-node-status">
+                        Tracking perf metrics in real-time
+                    </div>
+                    <div class="agent-node-metrics">
+                        <span>⚡ 100%</span>
+                        <span>💰 $0.05</span>
+                        <span>⏱️ 120m</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Agent Details -->
+            <div class="detail-panel">
+                <div class="detail-header">
+                    <div class="detail-avatar">O</div>
+                    <div class="detail-info">
+                        <h2>Optimizer</h2>
+                        <p>Performance Analysis Agent</p>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-section-title">Current Task</div>
+                    <div class="task-item">
+                        <div class="task-header">
+                            <div class="task-name">Analyze Parser Hotspots</div>
+                            <div class="task-badge badge-active">ACTIVE</div>
+                        </div>
+                        <div class="task-description">
+                            Using perf profiling to identify optimization opportunities in parser
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-section-title">Recent Activity</div>
+                    <div class="log-entry">
+                        <span class="log-time">2 mins ago</span>
+                        Found SIMD vectorization opportunity in lexer::lex_identifier()
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">5 mins ago</span>
+                        Requested benchmark baseline from Tester agent
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">12 mins ago</span>
+                        Started profiling with perf record
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-section-title">Capabilities</div>
+                    <div style="font-size: 12px; color: #a0a0a0; line-height: 1.8;">
+                        ✓ Read src/parser/*<br>
+                        ✓ Write src/parser/* (approved)<br>
+                        ✓ Execute benchmarks<br>
+                        ✓ Coordinate with Tester<br>
+                        ✗ Modify tests/ (restricted)
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-section-title">Resource Usage</div>
+                    <div style="font-size: 13px;">
+                        <div style="margin-bottom: 8px;">
+                            <div style="color: #a0a0a0; margin-bottom: 4px;">API Calls</div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>12 / 50</span>
+                                <span style="color: #10b981;">24%</span>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <div style="color: #a0a0a0; margin-bottom: 4px;">Cost</div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>$0.45 / $5.00</span>
+                                <span style="color: #10b981;">9%</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="color: #a0a0a0; margin-bottom: 4px;">Runtime</div>
+                            <div>8 minutes</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

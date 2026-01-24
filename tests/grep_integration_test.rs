@@ -21,10 +21,10 @@ fn test_grep_basic_search() {
     let result = builtins.execute("grep", args, &mut runtime).unwrap();
     assert_eq!(result.exit_code, 0);
     // Output includes line numbers (1:, 3:) and ANSI color codes
-    assert!(result.stdout.contains("1:") && result.stdout.contains("hello") && result.stdout.contains("world"));
-    assert!(result.stdout.contains("3:") && result.stdout.contains("hello") && result.stdout.contains("rust"));
+    assert!(result.stdout().contains("1:") && result.stdout().contains("hello") && result.stdout().contains("world"));
+    assert!(result.stdout().contains("3:") && result.stdout().contains("hello") && result.stdout().contains("rust"));
     // "foo bar" should not appear in results
-    assert!(!result.stdout.contains("foo") || !result.stdout.contains("bar"));
+    assert!(!result.stdout().contains("foo") || !result.stdout().contains("bar"));
 }
 
 #[test]
@@ -45,8 +45,8 @@ fn test_grep_case_insensitive() {
 
     let result = builtins.execute("grep", args, &mut runtime).unwrap();
     assert_eq!(result.exit_code, 0);
-    assert!(result.stdout.contains("HELLO") && result.stdout.contains("world"));
-    assert!(result.stdout.contains("hello") && result.stdout.contains("rust"));
+    assert!(result.stdout().contains("HELLO") && result.stdout().contains("world"));
+    assert!(result.stdout().contains("hello") && result.stdout().contains("rust"));
 }
 
 #[test]
@@ -72,8 +72,8 @@ fn test_grep_recursive() {
 
     let result = builtins.execute("grep", args, &mut runtime).unwrap();
     assert_eq!(result.exit_code, 0);
-    assert!(result.stdout.contains("hello") && result.stdout.contains("world"));
-    assert!(result.stdout.contains("hello") && result.stdout.contains("rust"));
+    assert!(result.stdout().contains("hello") && result.stdout().contains("world"));
+    assert!(result.stdout().contains("hello") && result.stdout().contains("rust"));
 }
 
 #[test]
@@ -95,8 +95,8 @@ fn test_grep_invert_match() {
     let result = builtins.execute("grep", args, &mut runtime).unwrap();
     assert_eq!(result.exit_code, 0);
     // Invert match: should only show lines WITHOUT "hello"
-    assert!(!result.stdout.contains("hello"));
-    assert!(result.stdout.contains("foo") && result.stdout.contains("bar"));
+    assert!(!result.stdout().contains("hello"));
+    assert!(result.stdout().contains("foo") && result.stdout().contains("bar"));
 }
 
 #[test]
@@ -116,5 +116,5 @@ fn test_grep_no_match() {
 
     let result = builtins.execute("grep", args, &mut runtime).unwrap();
     assert_eq!(result.exit_code, 1);
-    assert!(result.stdout.is_empty());
+    assert!(result.stdout().is_empty());
 }

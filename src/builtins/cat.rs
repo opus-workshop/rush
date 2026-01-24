@@ -1,4 +1,5 @@
 use crate::executor::ExecutionResult;
+use crate::executor::Output;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Context, Result};
 use memmap2::Mmap;
@@ -54,7 +55,7 @@ pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionR
         Ok(opts) => opts,
         Err(e) => {
             return Ok(ExecutionResult {
-                stdout: String::new(),
+                output: Output::Text(String::new()),
                 stderr: e.to_string(),
                 exit_code: 1,
             });
@@ -87,7 +88,7 @@ pub fn builtin_cat(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionR
     }
 
     Ok(ExecutionResult {
-        stdout: output,
+        output: Output::Text(output),
         stderr: stderr_output,
         exit_code,
     })
@@ -303,7 +304,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "Hello, World!\n");
+        assert_eq!(result.stdout(), "Hello, World!\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -318,7 +319,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&[path1.to_string(), path2.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "First file\nSecond file\n");
+        assert_eq!(result.stdout(), "First file\nSecond file\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -330,7 +331,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&["-n".to_string(), path.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "     1\tLine 1\n     2\tLine 2\n     3\tLine 3\n");
+        assert_eq!(result.stdout(), "     1\tLine 1\n     2\tLine 2\n     3\tLine 3\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -351,7 +352,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -368,7 +369,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "Small file content\n");
+        assert_eq!(result.stdout(), "Small file content\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -387,8 +388,8 @@ mod tests {
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
         // Verify the output contains the expected content
-        assert!(result.stdout.contains("This is line number 0"));
-        assert!(result.stdout.contains("This is line number 49999"));
+        assert!(result.stdout().contains("This is line number 0"));
+        assert!(result.stdout().contains("This is line number 49999"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -402,8 +403,8 @@ mod tests {
         let result = builtin_cat(&["-n".to_string(), path.to_string()], &mut runtime).unwrap();
 
         // Verify line numbers are present
-        assert!(result.stdout.contains("     1\tThis is line number 0"));
-        assert!(result.stdout.contains(" 50000\tThis is line number 49999"));
+        assert!(result.stdout().contains("     1\tThis is line number 0"));
+        assert!(result.stdout().contains(" 50000\tThis is line number 49999"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -421,7 +422,7 @@ mod tests {
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
         // Binary files should still produce output (with replacement chars for invalid UTF-8)
-        assert!(!result.stdout.is_empty());
+        assert!(!result.stdout().is_empty());
         assert_eq!(result.exit_code, 0);
     }
 
@@ -440,10 +441,10 @@ mod tests {
         ).unwrap();
 
         // Line numbers should be continuous across files
-        assert!(result.stdout.contains("     1\tFile 1 Line 1"));
-        assert!(result.stdout.contains("     2\tFile 1 Line 2"));
-        assert!(result.stdout.contains("     3\tFile 2 Line 1"));
-        assert!(result.stdout.contains("     4\tFile 2 Line 2"));
+        assert!(result.stdout().contains("     1\tFile 1 Line 1"));
+        assert!(result.stdout().contains("     2\tFile 1 Line 2"));
+        assert!(result.stdout().contains("     3\tFile 2 Line 1"));
+        assert!(result.stdout().contains("     4\tFile 2 Line 2"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -470,7 +471,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_cat(&[path.to_string()], &mut runtime).unwrap();
 
-        assert_eq!(result.stdout, "No newline at end");
+        assert_eq!(result.stdout(), "No newline at end");
         assert_eq!(result.exit_code, 0);
     }
 }

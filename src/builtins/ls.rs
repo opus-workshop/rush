@@ -1,4 +1,5 @@
 use crate::executor::ExecutionResult;
+use crate::executor::Output;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;
@@ -56,7 +57,7 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     }
 
     Ok(ExecutionResult {
-        stdout: output,
+        output: Output::Text(output),
         stderr: String::new(),
         exit_code: if had_error { 1 } else { 0 },
     })
@@ -386,7 +387,7 @@ mod tests {
         let result = builtin_ls(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
         // Empty directory should produce empty output (or just whitespace)
-        assert!(result.stdout.trim().is_empty());
+        assert!(result.stdout().trim().is_empty());
     }
 
     #[test]
@@ -402,8 +403,8 @@ mod tests {
 
         let result = builtin_ls(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("file1.txt"));
-        assert!(result.stdout.contains("file2.txt"));
+        assert!(result.stdout().contains("file1.txt"));
+        assert!(result.stdout().contains("file2.txt"));
     }
 
     #[test]
@@ -418,13 +419,13 @@ mod tests {
 
         // Without -a flag
         let result = builtin_ls(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("visible.txt"));
-        assert!(!result.stdout.contains(".hidden.txt"));
+        assert!(result.stdout().contains("visible.txt"));
+        assert!(!result.stdout().contains(".hidden.txt"));
 
         // With -a flag
         let result = builtin_ls(&["-a".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("visible.txt"));
-        assert!(result.stdout.contains(".hidden.txt"));
+        assert!(result.stdout().contains("visible.txt"));
+        assert!(result.stdout().contains(".hidden.txt"));
     }
 
     #[test]
@@ -441,9 +442,9 @@ mod tests {
         assert_eq!(result.exit_code, 0);
 
         // Should contain permission string
-        assert!(result.stdout.contains("rw") || result.stdout.contains("r-"));
+        assert!(result.stdout().contains("rw") || result.stdout().contains("r-"));
         // Should contain filename
-        assert!(result.stdout.contains("test.txt"));
+        assert!(result.stdout().contains("test.txt"));
     }
 
     #[test]
@@ -456,7 +457,7 @@ mod tests {
 
         // Should have non-zero exit code
         assert_eq!(result.exit_code, 1);
-        assert!(result.stdout.contains("cannot access"));
+        assert!(result.stdout().contains("cannot access"));
     }
 
     #[test]
@@ -470,7 +471,7 @@ mod tests {
 
         let result = builtin_ls(&["specific.txt".to_string()], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("specific.txt"));
+        assert!(result.stdout().contains("specific.txt"));
     }
 
     #[test]

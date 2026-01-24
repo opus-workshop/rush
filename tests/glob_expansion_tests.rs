@@ -25,9 +25,9 @@ fn test_glob_asterisk_expansion() {
     let result = executor.execute(statements).unwrap();
 
     // Should match both .txt files
-    assert!(result.stdout.contains("content1"));
-    assert!(result.stdout.contains("content2"));
-    assert!(!result.stdout.contains("content3"));
+    assert!(result.stdout().contains("content1"));
+    assert!(result.stdout().contains("content2"));
+    assert!(!result.stdout().contains("content3"));
 }
 
 #[test]
@@ -50,9 +50,9 @@ fn test_glob_question_mark() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains('1'));
-    assert!(result.stdout.contains('2'));
-    assert!(!result.stdout.contains("10"));
+    assert!(result.stdout().contains('1'));
+    assert!(result.stdout().contains('2'));
+    assert!(!result.stdout().contains("10"));
 }
 
 #[test]
@@ -76,10 +76,10 @@ fn test_glob_character_class() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("one"));
-    assert!(result.stdout.contains("two"));
-    assert!(!result.stdout.contains("three"));
-    assert!(!result.stdout.contains("four"));
+    assert!(result.stdout().contains("one"));
+    assert!(result.stdout().contains("two"));
+    assert!(!result.stdout().contains("three"));
+    assert!(!result.stdout().contains("four"));
 }
 
 #[test]
@@ -105,9 +105,9 @@ fn test_glob_recursive() {
     let result = executor.execute(statements).unwrap();
 
     // Should match files at all levels
-    assert!(result.stdout.contains("root"));
-    assert!(result.stdout.contains("level1"));
-    assert!(result.stdout.contains("level2"));
+    assert!(result.stdout().contains("root"));
+    assert!(result.stdout().contains("level1"));
+    assert!(result.stdout().contains("level2"));
 }
 
 #[test]
@@ -129,8 +129,8 @@ fn test_glob_dotfiles_not_matched_by_default() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("visible"));
-    assert!(!result.stdout.contains("hidden"));
+    assert!(result.stdout().contains("visible"));
+    assert!(!result.stdout().contains("hidden"));
 }
 
 #[test]
@@ -152,8 +152,8 @@ fn test_glob_dotfiles_matched_explicitly() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("hidden1"));
-    assert!(result.stdout.contains("hidden2"));
+    assert!(result.stdout().contains("hidden1"));
+    assert!(result.stdout().contains("hidden2"));
 }
 
 #[test]
@@ -198,10 +198,10 @@ fn test_glob_multiple_patterns() {
     let result = executor.execute(statements).unwrap();
 
     // Should match .txt and .md files, but not .rs
-    assert!(result.stdout.contains("txt1"));
-    assert!(result.stdout.contains("txt2"));
-    assert!(result.stdout.contains("md1"));
-    assert!(!result.stdout.contains("rs1"));
+    assert!(result.stdout().contains("txt1"));
+    assert!(result.stdout().contains("txt2"));
+    assert!(result.stdout().contains("md1"));
+    assert!(!result.stdout().contains("rs1"));
 }
 
 #[test]
@@ -224,9 +224,9 @@ fn test_glob_mixed_with_literals() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("one"));
-    assert!(result.stdout.contains("two"));
-    assert!(result.stdout.contains("specific"));
+    assert!(result.stdout().contains("one"));
+    assert!(result.stdout().contains("two"));
+    assert!(result.stdout().contains("specific"));
 }
 
 #[test]
@@ -249,8 +249,8 @@ fn test_glob_with_subdirectories() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("sub1"));
-    assert!(result.stdout.contains("sub2"));
+    assert!(result.stdout().contains("sub1"));
+    assert!(result.stdout().contains("sub2"));
 }
 
 #[test]
@@ -274,9 +274,9 @@ fn test_glob_sorted_output() {
     let result = executor.execute(statements).unwrap();
 
     // Output should be in alphabetical order: apple, mango, zebra
-    let a_pos = result.stdout.find('a').unwrap();
-    let m_pos = result.stdout.find('m').unwrap();
-    let z_pos = result.stdout.find('z').unwrap();
+    let a_pos = result.stdout().find('a').unwrap();
+    let m_pos = result.stdout().find('m').unwrap();
+    let z_pos = result.stdout().find('z').unwrap();
 
     assert!(a_pos < m_pos);
     assert!(m_pos < z_pos);
@@ -301,8 +301,8 @@ fn test_glob_with_builtin_commands() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("content1"));
-    assert!(result.stdout.contains("content2"));
+    assert!(result.stdout().contains("content1"));
+    assert!(result.stdout().contains("content2"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -328,9 +328,9 @@ fn test_glob_character_range() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains('1'));
-    assert!(result.stdout.contains('2'));
-    assert!(result.stdout.contains('3'));
-    assert!(!result.stdout.contains('5'));
-    assert!(!result.stdout.contains('9'));
+    assert!(result.stdout().contains('1'));
+    assert!(result.stdout().contains('2'));
+    assert!(result.stdout().contains('3'));
+    assert!(!result.stdout().contains('5'));
+    assert!(!result.stdout().contains('9'));
 }

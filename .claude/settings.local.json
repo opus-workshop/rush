@@ -5,7 +5,8 @@
       "Bash(./.beads/create-beads.sh:*)",
       "Bash(bash:*)",
       "Bash(./target/debug/rush:*)",
-      "Bash(timeout 3 ./target/release/rush:*)"
+      "Bash(timeout 3 ./target/release/rush:*)",
+      "Bash(BEADS_IGNORE_REPO_MISMATCH=1 bd create:*)"
     ]
   }
 }

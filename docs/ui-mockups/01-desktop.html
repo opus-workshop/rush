@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Native OS - Desktop</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .desktop {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-bar {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(20px);
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .status-left {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .os-logo {
+            font-weight: 700;
+            font-size: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .agent-count {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .agent-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .session-info {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .workspace {
+            flex: 1;
+            padding: 40px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            overflow-y: auto;
+        }
+
+        .window {
+            background: rgba(30, 30, 50, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            height: fit-content;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .window:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+            border-color: rgba(102, 126, 234, 0.4);
+        }
+
+        .window-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .window-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .window-status {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .window-status.working {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .window-content {
+            color: #e0e0e0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .agent-card {
+            display: flex;
+            gap: 12px;
+            align-items: start;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .agent-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .agent-info {
+            flex: 1;
+        }
+
+        .agent-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .agent-task {
+            font-size: 12px;
+            color: #a0a0a0;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #667eea;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+
+        .timeline-content {
+            flex: 1;
+        }
+
+        .timeline-time {
+            font-size: 11px;
+            color: #a0a0a0;
+            margin-bottom: 4px;
+        }
+
+        .timeline-text {
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-size: 13px;
+            color: #a0a0a0;
+        }
+
+        .metric-value {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .metric-good {
+            color: #10b981;
+        }
+
+        .metric-warning {
+            color: #fbbf24;
+        }
+
+        .approval-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="desktop">
+        <div class="status-bar">
+            <div class="status-left">
+                <div class="os-logo">RUSH OS</div>
+                <div class="agent-count">
+                    <span class="agent-indicator"></span>
+                    <span>4 agents active</span>
+                </div>
+            </div>
+            <div class="status-right">
+                <div class="session-info">
+                    <span>📍</span>
+                    <span>Session: parser-optimization</span>
+                </div>
+                <div>⏱️ 2h 34m</div>
+                <div>💰 $2.45</div>
+                <div>🕐 14:32</div>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <!-- Active Agents Window -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Active Agents</div>
+                    <div class="window-status">4 running</div>
+                </div>
+                <div class="window-content">
+                    <div class="agent-card">
+                        <div class="agent-avatar">O</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Optimizer</div>
+                            <div class="agent-task">Analyzing parser performance hotspots</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 73%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="agent-card">
+                        <div class="agent-avatar">T</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Tester</div>
+                            <div class="agent-task">Running benchmark suite</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 45%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="agent-card">
+                        <div class="agent-avatar">R</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Reviewer</div>
+                            <div class="agent-task">Code review pending approval</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 95%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="agent-card">
+                        <div class="agent-avatar">M</div>
+                        <div class="agent-info">
+                            <div class="agent-name">Monitor</div>
+                            <div class="agent-task">Watching for regressions</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 100%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Session Timeline -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Session Timeline</div>
+                    <div class="window-status working">In Progress</div>
+                </div>
+                <div class="window-content">
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">2 mins ago</div>
+                            <div class="timeline-text">
+                                <strong>Optimizer</strong> found SIMD opportunity in lexer
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">8 mins ago</div>
+                            <div class="timeline-text">
+                                <strong>Tester</strong> baseline captured: 145μs avg
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">15 mins ago</div>
+                            <div class="timeline-text">
+                                Checkpoint created: "before-simd-attempt"
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">32 mins ago</div>
+                            <div class="timeline-text">
+                                Session resumed from yesterday
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Performance</div>
+                    <div class="window-status">Tracking</div>
+                </div>
+                <div class="window-content">
+                    <div class="metric">
+                        <div class="metric-label">Parse Time (avg)</div>
+                        <div class="metric-value metric-good">145μs ↓12%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Test Coverage</div>
+                        <div class="metric-value metric-good">94%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Build Time</div>
+                        <div class="metric-value">12.3s</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Memory Usage</div>
+                        <div class="metric-value">142 MB</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Active Jobs</div>
+                        <div class="metric-value">2 running</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Regressions</div>
+                        <div class="metric-value metric-good">0 detected</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Approval Queue -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Needs Approval</div>
+                    <div class="window-status" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">2 waiting</div>
+                </div>
+                <div class="window-content">
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: #ef4444;"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">High Priority • 5 mins ago</div>
+                            <div class="timeline-text">
+                                <strong>Reviewer:</strong> Merge SIMD optimization to main?
+                                <br><small style="color: #a0a0a0;">Risk: Medium | Impact: +12% perf</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: #fbbf24;"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Medium Priority • 12 mins ago</div>
+                            <div class="timeline-text">
+                                <strong>Optimizer:</strong> Refactor parser interface?
+                                <br><small style="color: #a0a0a0;">Risk: Low | Files: 8 changed</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Learned Guardrails -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Guardrails</div>
+                    <div class="window-status">12 learned</div>
+                </div>
+                <div class="window-content">
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: #10b981;"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">Yesterday</div>
+                            <div class="timeline-text">
+                                Always run <code>cargo build</code> before <code>cargo test</code> when source modified
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: #10b981;"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">2 days ago</div>
+                            <div class="timeline-text">
+                                Check daemon status before executing in session
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: #10b981;"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">3 days ago</div>
+                            <div class="timeline-text">
+                                Validate parser changes don't break glob expansion
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resource Usage -->
+            <div class="window">
+                <div class="window-header">
+                    <div class="window-title">Resources</div>
+                    <div class="window-status">Within Limits</div>
+                </div>
+                <div class="window-content">
+                    <div class="metric">
+                        <div class="metric-label">API Calls Today</div>
+                        <div class="metric-value">147 / 1000</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Cost This Session</div>
+                        <div class="metric-value metric-good">$2.45 / $10.00</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">CPU Usage</div>
+                        <div class="metric-value">23%</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Tokens Used</div>
+                        <div class="metric-value">142K / 200K</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Session Duration</div>
+                        <div class="metric-value">2h 34m</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

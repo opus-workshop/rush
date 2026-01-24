@@ -42,8 +42,8 @@ fn test_conditional_and_success() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(result.stdout.contains("second"));
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
     assert_eq!(result.exit_code, 0);
     assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
 }
@@ -60,7 +60,7 @@ fn test_conditional_and_first_fails() {
     let result = executor.execute(statements).unwrap();
 
     // Second command should not run
-    assert!(!result.stdout.contains("should_not_run"));
+    assert!(!result.stdout().contains("should_not_run"));
     // Exit code should be non-zero from the first command
     assert_ne!(result.exit_code, 0);
     assert_ne!(executor.runtime_mut().get_last_exit_code(), 0);
@@ -76,8 +76,8 @@ fn test_conditional_or_first_succeeds() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(!result.stdout.contains("should_not_run"));
+    assert!(result.stdout().contains("first"));
+    assert!(!result.stdout().contains("should_not_run"));
     assert_eq!(result.exit_code, 0);
     assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
 }
@@ -93,7 +93,7 @@ fn test_conditional_or_first_fails() {
     let result = executor.execute(statements).unwrap();
 
     // Second command should run
-    assert!(result.stdout.contains("fallback"));
+    assert!(result.stdout().contains("fallback"));
     // Exit code should be 0 from the fallback command
     assert_eq!(result.exit_code, 0);
     assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
@@ -129,7 +129,7 @@ fn test_exit_code_with_variable_expansion() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.trim().contains("0"));
+    assert!(result.stdout().trim().contains("0"));
 }
 
 #[test]
@@ -142,9 +142,9 @@ fn test_chained_conditionals() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(result.stdout.contains("second"));
-    assert!(result.stdout.contains("third"));
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
+    assert!(result.stdout().contains("third"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -158,7 +158,7 @@ fn test_mixed_conditionals() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("fallback"));
+    assert!(result.stdout().contains("fallback"));
     assert_eq!(result.exit_code, 0);
 }
 

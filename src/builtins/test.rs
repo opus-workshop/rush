@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use std::fs;
@@ -9,7 +9,7 @@ pub fn builtin_test(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     let result = evaluate_test(args, runtime, false)?;
     let exit_code = if result { 0 } else { 1 };
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code,
     })
@@ -26,7 +26,7 @@ pub fn builtin_bracket(args: &[String], runtime: &mut Runtime) -> Result<Executi
     let result = evaluate_test(test_args, runtime, true)?;
     let exit_code = if result { 0 } else { 1 };
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code,
     })

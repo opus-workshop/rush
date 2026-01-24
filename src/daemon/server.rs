@@ -382,9 +382,9 @@ impl DaemonServer {
                 // Send result back to client
                 let result = ExecutionResult {
                     exit_code: exec_result.exit_code,
-                    stdout_len: exec_result.stdout.len() as u64,
+                    stdout_len: exec_result.stdout().len() as u64,
                     stderr_len: exec_result.stderr.len() as u64,
-                    stdout: exec_result.stdout,
+                    stdout: exec_result.stdout(),
                     stderr: exec_result.stderr,
                 };
 
@@ -458,9 +458,9 @@ impl DaemonServer {
         // Send result back to client
         let result = ExecutionResult {
             exit_code: exec_result.exit_code,
-            stdout_len: exec_result.stdout.len() as u64,
+            stdout_len: exec_result.stdout().len() as u64,
             stderr_len: exec_result.stderr.len() as u64,
-            stdout: exec_result.stdout,
+            stdout: exec_result.stdout(),
             stderr: exec_result.stderr,
         };
 
@@ -523,9 +523,9 @@ impl DaemonServer {
                 Err(e) => {
                     let err_msg = format!("Lexer error: {}", e);
                     return Ok(crate::executor::ExecutionResult {
-                        exit_code: 2,
-                        stdout: String::new(),
+                        output: crate::executor::Output::Text(String::new()),
                         stderr: err_msg,
+                        exit_code: 2,
                     });
                 }
             };
@@ -538,9 +538,9 @@ impl DaemonServer {
                         Err(e) => {
                             let err_msg = format!("Execution error: {}", e);
                             Ok(crate::executor::ExecutionResult {
-                                exit_code: 1,
-                                stdout: String::new(),
+                                output: crate::executor::Output::Text(String::new()),
                                 stderr: err_msg,
+                                exit_code: 1,
                             })
                         }
                     }
@@ -548,17 +548,17 @@ impl DaemonServer {
                 Err(e) => {
                     let err_msg = format!("Parse error: {}", e);
                     Ok(crate::executor::ExecutionResult {
-                        exit_code: 2,
-                        stdout: String::new(),
+                        output: crate::executor::Output::Text(String::new()),
                         stderr: err_msg,
+                        exit_code: 2,
                     })
                 }
             }
         } else {
             Ok(crate::executor::ExecutionResult {
-                exit_code: 0,
-                stdout: String::new(),
+                output: crate::executor::Output::Text(String::new()),
                 stderr: String::new(),
+                exit_code: 0,
             })
         }
     }

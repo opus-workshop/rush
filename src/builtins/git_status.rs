@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::git::GitContext;
 use crate::runtime::Runtime;
 use anyhow::Result;

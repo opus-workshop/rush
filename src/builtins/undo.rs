@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::Result;
 
@@ -73,7 +73,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_undo(&["--help".to_string()], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("Usage: undo"));
+        assert!(result.stdout().contains("Usage: undo"));
     }
 
     #[test]
@@ -81,6 +81,6 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_undo(&["list".to_string()], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("No operations to undo"));
+        assert!(result.stdout().contains("No operations to undo"));
     }
 }

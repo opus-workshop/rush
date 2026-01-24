@@ -15,7 +15,7 @@ fn test_simple_braced_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "world");
+    assert_eq!(result.stdout().trim(), "world");
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn test_use_default_operator_with_set_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "value");
+    assert_eq!(result.stdout().trim(), "value");
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn test_use_default_operator_with_unset_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "default");
+    assert_eq!(result.stdout().trim(), "default");
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn test_assign_default_operator_with_unset_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "assigned");
+    assert_eq!(result.stdout().trim(), "assigned");
 
     // Verify the variable was actually assigned
     assert_eq!(executor.runtime_mut().get_variable("UNSET"), Some("assigned".to_string()));
@@ -76,7 +76,7 @@ fn test_assign_default_operator_with_set_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "existing");
+    assert_eq!(result.stdout().trim(), "existing");
 
     // Verify the variable wasn't changed
     assert_eq!(executor.runtime_mut().get_variable("VAR"), Some("existing".to_string()));
@@ -95,7 +95,7 @@ fn test_error_if_unset_with_set_variable() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "value");
+    assert_eq!(result.stdout().trim(), "value");
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn test_remove_shortest_prefix() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "local/bin");
+    assert_eq!(result.stdout().trim(), "local/bin");
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn test_remove_longest_prefix() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "baz");
+    assert_eq!(result.stdout().trim(), "baz");
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn test_remove_shortest_suffix() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "document.tar");
+    assert_eq!(result.stdout().trim(), "document.tar");
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn test_remove_longest_suffix() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "document");
+    assert_eq!(result.stdout().trim(), "document");
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn test_prefix_removal_with_glob() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "world_test");
+    assert_eq!(result.stdout().trim(), "world_test");
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn test_suffix_removal_with_glob() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "test_hello");
+    assert_eq!(result.stdout().trim(), "test_hello");
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn test_multiple_expansions_in_one_command() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "Hello World");
+    assert_eq!(result.stdout().trim(), "Hello World");
 }
 
 #[test]
@@ -271,5 +271,5 @@ fn test_no_expansion_without_braces() {
     let statements = parser.parse().unwrap();
 
     let result = executor.execute(statements).unwrap();
-    assert_eq!(result.stdout.trim(), "world");
+    assert_eq!(result.stdout().trim(), "world");
 }

@@ -30,8 +30,8 @@ fn test_background_command_execution() {
     let result = executor.execute(statements).unwrap();
 
     // Should get job notification
-    assert!(result.stdout.contains("[1]"));
-    assert!(result.stdout.contains("\n"));
+    assert!(result.stdout().contains("[1]"));
+    assert!(result.stdout().contains("\n"));
 
     // Job should be in the job list
     let jobs = executor.runtime_mut().job_manager().list_jobs();
@@ -51,7 +51,7 @@ fn test_multiple_background_jobs() {
     let result1 = executor.execute(statements).unwrap();
 
     // Extract job ID from output
-    let job1_output = result1.stdout;
+    let job1_output = result1.stdout();
     assert!(job1_output.contains("["));
 
     // Start second job
@@ -60,7 +60,7 @@ fn test_multiple_background_jobs() {
     let statements = parser.parse().unwrap();
     let result2 = executor.execute(statements).unwrap();
 
-    let job2_output = result2.stdout;
+    let job2_output = result2.stdout();
     assert!(job2_output.contains("["));
 
     // Should have 2 jobs
@@ -97,9 +97,9 @@ fn test_jobs_builtin() {
     let result = executor.execute(statements).unwrap();
 
     // Should show the job
-    assert!(result.stdout.contains("[1]"));
-    assert!(result.stdout.contains("sleep"));
-    assert!(result.stdout.contains("Running"));
+    assert!(result.stdout().contains("[1]"));
+    assert!(result.stdout().contains("sleep"));
+    assert!(result.stdout().contains("Running"));
 
     // Cleanup
     executor.runtime_mut().job_manager().terminate_job(1).ok();
@@ -122,10 +122,10 @@ fn test_jobs_builtin_with_l_flag() {
     let result = executor.execute(statements).unwrap();
 
     // Should show the job with PID
-    assert!(result.stdout.contains("[1]"));
-    assert!(result.stdout.contains("Running"));
+    assert!(result.stdout().contains("[1]"));
+    assert!(result.stdout().contains("Running"));
     // PID should be present (it will be a number)
-    let has_pid = result.stdout.lines().any(|line| {
+    let has_pid = result.stdout().lines().any(|line| {
         line.split_whitespace()
             .any(|word| word.chars().all(|c| c.is_ascii_digit()) && word.len() > 2)
     });
@@ -146,7 +146,7 @@ fn test_jobs_empty() {
     let result = executor.execute(statements).unwrap();
 
     // Should be empty
-    assert_eq!(result.stdout, "");
+    assert_eq!(result.stdout(), "");
 }
 
 #[test]

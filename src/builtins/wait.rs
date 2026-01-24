@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use crate::jobs::JobStatus;
 use anyhow::{anyhow, Result};
@@ -46,7 +46,7 @@ pub fn builtin_wait(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     }
 
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: last_exit_code,
     })
@@ -113,7 +113,7 @@ fn wait_all_jobs(runtime: &mut Runtime) -> Result<ExecutionResult> {
     }
 
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: last_exit_code,
     })
@@ -224,7 +224,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_wait(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
     }
 
     #[test]

@@ -128,8 +128,9 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
 
         match execute_line_with_context(line, &mut executor, script_path, line_num + 1) {
             Ok(result) => {
-                if !result.stdout.is_empty() {
-                    print!("{}", result.stdout);
+                let stdout_text = result.stdout();
+                if !stdout_text.is_empty() {
+                    print!("{}", stdout_text);
                 }
                 if !result.stderr.is_empty() {
                     eprint!("{}", result.stderr);
@@ -175,8 +176,9 @@ fn run_command(command: &str, signal_handler: SignalHandler) -> Result<()> {
 
     match execute_line(command, &mut executor) {
         Ok(result) => {
-            if !result.stdout.is_empty() {
-                print!("{}", result.stdout);
+            let stdout_text = result.stdout();
+            if !stdout_text.is_empty() {
+                print!("{}", stdout_text);
             }
             if !result.stderr.is_empty() {
                 eprint!("{}", result.stderr);
@@ -405,8 +407,9 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
 
                 match execute_line(line, &mut executor) {
                     Ok(result) => {
-                        if !result.stdout.is_empty() {
-                            print!("{}", result.stdout);
+                        let stdout_text = result.stdout();
+                        if !stdout_text.is_empty() {
+                            print!("{}", stdout_text);
                         }
                         if !result.stderr.is_empty() {
                             eprintln!("{}", result.stderr);
@@ -458,8 +461,9 @@ fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
 
         match execute_line(line, &mut executor) {
             Ok(result) => {
-                if !result.stdout.is_empty() {
-                    print!("{}", result.stdout);
+                let stdout_text = result.stdout();
+                if !stdout_text.is_empty() {
+                    print!("{}", stdout_text);
                 }
                 if !result.stderr.is_empty() {
                     eprint!("{}", result.stderr);
@@ -530,14 +534,14 @@ mod tests {
     fn test_execute_echo() {
         let mut executor = Executor::new();
         let result = execute_line("echo hello", &mut executor).unwrap();
-        assert_eq!(result.stdout, "hello\n");
+        assert_eq!(result.stdout(), "hello\n");
     }
 
     #[test]
     fn test_execute_pwd() {
         let mut executor = Executor::new();
         let result = execute_line("pwd", &mut executor).unwrap();
-        assert!(!result.stdout.is_empty());
+        assert!(!result.stdout().is_empty());
     }
 
     #[test]
@@ -564,6 +568,6 @@ mod tests {
         let mut executor = Executor::new();
         let result = execute_line_with_context("echo test", &mut executor, "test.rush", 1);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().stdout, "test\n");
+        assert_eq!(result.unwrap().stdout(), "test\n");
     }
 }

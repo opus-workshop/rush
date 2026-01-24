@@ -1,4 +1,5 @@
 use crate::executor::ExecutionResult;
+use crate::executor::Output;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use grep_matcher::Matcher;
@@ -72,7 +73,7 @@ pub fn builtin_grep(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     let exit_code = if found_any { 0 } else { 1 };
 
     Ok(ExecutionResult {
-        stdout: String::from_utf8_lossy(&stdout).to_string(),
+        output: Output::Text(String::from_utf8_lossy(&stdout).to_string()),
         stderr: String::from_utf8_lossy(&stderr).to_string(),
         exit_code,
     })
@@ -97,7 +98,7 @@ pub fn builtin_grep_with_stdin(args: &[String], _runtime: &mut Runtime, stdin_da
     let exit_code = if found { 0 } else { 1 };
 
     Ok(ExecutionResult {
-        stdout: String::from_utf8_lossy(&stdout).to_string(),
+        output: Output::Text(String::from_utf8_lossy(&stdout).to_string()),
         stderr: String::from_utf8_lossy(&stderr).to_string(),
         exit_code,
     })

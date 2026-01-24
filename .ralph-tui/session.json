@@ -1,0 +1,200 @@
+{
+  "version": 1,
+  "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
+  "status": "running",
+  "startedAt": "2026-01-24T19:17:05.631Z",
+  "updatedAt": "2026-01-24T19:27:29.743Z",
+  "currentIteration": 0,
+  "maxIterations": 10,
+  "tasksCompleted": 0,
+  "isPaused": false,
+  "agentPlugin": "claude",
+  "trackerState": {
+    "plugin": "beads-bv",
+    "epicId": "rush-dgr",
+    "totalTasks": 29,
+    "tasks": [
+      {
+        "id": "rush-dgr.21",
+        "title": "POSIX-020: Implement IFS field splitting",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.20",
+        "title": "POSIX-019: Implement case statement",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.19",
+        "title": "POSIX-018: Implement until loop",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.18",
+        "title": "POSIX-017: Implement while loop",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.17",
+        "title": "POSIX-016: Implement here-documents",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.16",
+        "title": "POSIX-015: Implement special variables",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.14",
+        "title": "POSIX-014: Implement full positional parameters",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.13",
+        "title": "POSIX-013: Implement readonly builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.12",
+        "title": "POSIX-012: Implement command builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.11",
+        "title": "POSIX-011: Implement colon (:) no-op builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.10",
+        "title": "POSIX-010: Implement continue builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.9",
+        "title": "POSIX-009: Implement break builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.8",
+        "title": "POSIX-008: Re-enable and test kill builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.7",
+        "title": "POSIX-007: Re-enable and test exec builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.6",
+        "title": "POSIX-006: Re-enable and test eval builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.5",
+        "title": "POSIX-005: Re-enable and test trap builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.4",
+        "title": "POSIX-004: Re-enable and test local builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.3",
+        "title": "POSIX-003: Re-enable and test shift builtin",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.2",
+        "title": "POSIX-002: Re-enable and test return builtin",
+        "status": "in_progress",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.1",
+        "title": "POSIX-001: Re-enable and test read builtin",
+        "status": "completed",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.29",
+        "title": "POSIX-028: Audit and test quoting behavior",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.28",
+        "title": "POSIX-027: Implement standard shell variables",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.27",
+        "title": "POSIX-026: Implement arbitrary FD redirection",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.26",
+        "title": "POSIX-025: Implement full job specifications",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.25",
+        "title": "POSIX-024: Implement terminal signals",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.24",
+        "title": "POSIX-023: Implement SIGCHLD handler",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.23",
+        "title": "POSIX-022: Implement terminal control",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.22",
+        "title": "POSIX-021: Implement process groups",
+        "status": "open",
+        "completedInSession": false
+      },
+      {
+        "id": "rush-dgr.30",
+        "title": "POSIX-029: POSIX test suite integration",
+        "status": "open",
+        "completedInSession": false
+      }
+    ]
+  },
+  "iterations": [],
+  "skippedTaskIds": [],
+  "cwd": "/Users/asher/tt/rush",
+  "activeTaskIds": [
+    "rush-dgr.2"
+  ],
+  "subagentPanelVisible": false
+}

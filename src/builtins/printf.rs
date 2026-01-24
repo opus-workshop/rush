@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 
@@ -190,7 +190,7 @@ pub fn builtin_printf(args: &[String], _runtime: &mut Runtime) -> Result<Executi
         Ok(s) => s,
         Err(e) => {
             return Ok(ExecutionResult {
-                stdout: String::new(),
+                output: Output::Text(String::new()),
                 stderr: e.to_string() + "\n",
                 exit_code: 1,
             });
@@ -323,7 +323,7 @@ mod tests {
     fn test_printf_simple_string() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Hello %s".to_string(), "World".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Hello World");
+        assert_eq!(result.stdout(), "Hello World");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -331,7 +331,7 @@ mod tests {
     fn test_printf_decimal() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Count: %d".to_string(), "42".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Count: 42");
+        assert_eq!(result.stdout(), "Count: 42");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -339,7 +339,7 @@ mod tests {
     fn test_printf_float() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Price: %.2f".to_string(), "3.14159".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Price: 3.14");
+        assert_eq!(result.stdout(), "Price: 3.14");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -347,7 +347,7 @@ mod tests {
     fn test_printf_hex() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Hex: %x".to_string(), "255".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Hex: ff");
+        assert_eq!(result.stdout(), "Hex: ff");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -355,7 +355,7 @@ mod tests {
     fn test_printf_octal() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Octal: %o".to_string(), "255".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Octal: 377");
+        assert_eq!(result.stdout(), "Octal: 377");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -363,7 +363,7 @@ mod tests {
     fn test_printf_width() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["%10s".to_string(), "test".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "      test");
+        assert_eq!(result.stdout(), "      test");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -371,7 +371,7 @@ mod tests {
     fn test_printf_left_align() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["%-10s".to_string(), "test".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "test      ");
+        assert_eq!(result.stdout(), "test      ");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -379,7 +379,7 @@ mod tests {
     fn test_printf_escape_sequences() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Line 1\\nLine 2".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Line 1\nLine 2");
+        assert_eq!(result.stdout(), "Line 1\nLine 2");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -387,8 +387,8 @@ mod tests {
     fn test_printf_no_newline() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Hello".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Hello");
-        assert!(!result.stdout.ends_with('\n'));
+        assert_eq!(result.stdout(), "Hello");
+        assert!(!result.stdout().ends_with('\n'));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -400,7 +400,7 @@ mod tests {
             "Alice".to_string(),
             "30".to_string(),
         ], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Name: Alice, Age: 30");
+        assert_eq!(result.stdout(), "Name: Alice, Age: 30");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -413,7 +413,7 @@ mod tests {
             "two".to_string(),
             "three".to_string(),
         ], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "one\ntwo\nthree\n");
+        assert_eq!(result.stdout(), "one\ntwo\nthree\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -425,7 +425,7 @@ mod tests {
             "Apple".to_string(),
             "1.99".to_string(),
         ], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Apple                       1.99\n");
+        assert_eq!(result.stdout(), "Apple                       1.99\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -442,7 +442,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["%s %d".to_string(), "test".to_string()], &mut runtime).unwrap();
         // Missing argument should be treated as "0" for numbers
-        assert_eq!(result.stdout, "test 0");
+        assert_eq!(result.stdout(), "test 0");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -451,7 +451,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["%d".to_string(), "abc".to_string()], &mut runtime).unwrap();
         // Invalid number should be treated as 0
-        assert_eq!(result.stdout, "0");
+        assert_eq!(result.stdout(), "0");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -464,7 +464,7 @@ mod tests {
             "255".to_string(),
             "255".to_string(),
         ], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Hex: ff, Octal: 377, Decimal: 255\n");
+        assert_eq!(result.stdout(), "Hex: ff, Octal: 377, Decimal: 255\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -472,7 +472,7 @@ mod tests {
     fn test_printf_literal_only() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["Just text\\n".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "Just text\n");
+        assert_eq!(result.stdout(), "Just text\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -480,7 +480,7 @@ mod tests {
     fn test_printf_percent_escape() {
         let mut runtime = Runtime::new();
         let result = builtin_printf(&["100%% complete\\n".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "100% complete\n");
+        assert_eq!(result.stdout(), "100% complete\n");
         assert_eq!(result.exit_code, 0);
     }
 }

@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use nu_ansi_term::Color;
@@ -350,10 +350,10 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_help(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("Rush Shell Builtins"));
-        assert!(result.stdout.contains("cd"));
-        assert!(result.stdout.contains("echo"));
-        assert!(result.stdout.contains("help"));
+        assert!(result.stdout().contains("Rush Shell Builtins"));
+        assert!(result.stdout().contains("cd"));
+        assert!(result.stdout().contains("echo"));
+        assert!(result.stdout().contains("help"));
     }
 
     #[test]
@@ -361,11 +361,11 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_help(&["cd".to_string()], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("cd"));
-        assert!(result.stdout.contains("DESCRIPTION"));
-        assert!(result.stdout.contains("USAGE"));
-        assert!(result.stdout.contains("EXAMPLES"));
-        assert!(result.stdout.contains("Change the current directory"));
+        assert!(result.stdout().contains("cd"));
+        assert!(result.stdout().contains("DESCRIPTION"));
+        assert!(result.stdout().contains("USAGE"));
+        assert!(result.stdout().contains("EXAMPLES"));
+        assert!(result.stdout().contains("Change the current directory"));
     }
 
     #[test]
@@ -376,8 +376,8 @@ mod tests {
         for builtin in BUILTINS {
             let result = builtin_help(&[builtin.name.to_string()], &mut runtime).unwrap();
             assert_eq!(result.exit_code, 0);
-            assert!(result.stdout.contains(builtin.name));
-            assert!(result.stdout.contains("DESCRIPTION"));
+            assert!(result.stdout().contains(builtin.name));
+            assert!(result.stdout().contains("DESCRIPTION"));
         }
     }
 
@@ -400,8 +400,8 @@ mod tests {
     fn test_help_examples() {
         let mut runtime = Runtime::new();
         let result = builtin_help(&["set".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("EXAMPLES"));
-        assert!(result.stdout.contains("set -e"));
-        assert!(result.stdout.contains("Exit on error"));
+        assert!(result.stdout().contains("EXAMPLES"));
+        assert!(result.stdout().contains("set -e"));
+        assert!(result.stdout().contains("Exit on error"));
     }
 }

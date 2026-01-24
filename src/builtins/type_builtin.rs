@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use std::env;
@@ -34,7 +34,7 @@ pub fn builtin_type(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     }
 
     Ok(ExecutionResult {
-        stdout: output,
+        output: Output::Text(output),
         stderr: String::new(),
         exit_code,
     })
@@ -74,10 +74,12 @@ fn get_command_type(name: &str, runtime: &Runtime) -> Option<CommandType> {
 fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "cd" | "pwd" | "echo" | "exit" | "export" | "source" 
-            | "cat" | "find" | "ls" | "mkdir" | "git-status" | "grep" 
-            | "undo" | "jobs" | "fg" | "bg" | "set" 
+        "cd" | "pwd" | "echo" | "exit" | "export" | "source"
+            | "cat" | "find" | "ls" | "mkdir" | "git-status" | "grep"
+            | "undo" | "jobs" | "fg" | "bg" | "set"
             | "alias" | "unalias" | "test" | "[" | "help" | "type"
+            | "shift" | "local" | "true" | "false" | "return" | "read"
+            | "trap" | "unset" | "printf" | "eval" | "exec" | "kill"
     )
 }
 
@@ -130,7 +132,7 @@ mod tests {
         let mut runtime = Runtime::new();
 
         let result = builtin_type(&["cd".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "cd is a shell builtin\n");
+        assert_eq!(result.stdout(), "cd is a shell builtin\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -142,7 +144,7 @@ mod tests {
         runtime.set_alias("ll".to_string(), "ls -la".to_string());
         
         let result = builtin_type(&["ll".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "ll is aliased to 'ls -la'\n");
+        assert_eq!(result.stdout(), "ll is aliased to 'ls -la'\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -153,7 +155,7 @@ mod tests {
         // Test with a common external command that should exist on most systems
         let result = builtin_type(&["sh".to_string()], &mut runtime).unwrap();
         // sh should be found as an external command
-        assert!(result.stdout.contains("sh is /"));
+        assert!(result.stdout().contains("sh is /"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -170,7 +172,7 @@ mod tests {
         runtime.define_function(func);
 
         let result = builtin_type(&["myfunc".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "myfunc is a function\n");
+        assert_eq!(result.stdout(), "myfunc is a function\n");
         assert_eq!(result.exit_code, 0);
     }
 
@@ -179,7 +181,7 @@ mod tests {
         let mut runtime = Runtime::new();
 
         let result = builtin_type(&["nonexistent_command_xyz".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "nonexistent_command_xyz: not found\n");
+        assert_eq!(result.stdout(), "nonexistent_command_xyz: not found\n");
         assert_eq!(result.exit_code, 1);
     }
 
@@ -188,8 +190,8 @@ mod tests {
         let mut runtime = Runtime::new();
 
         let result = builtin_type(&["cd".to_string(), "pwd".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("cd is a shell builtin"));
-        assert!(result.stdout.contains("pwd is a shell builtin"));
+        assert!(result.stdout().contains("cd is a shell builtin"));
+        assert!(result.stdout().contains("pwd is a shell builtin"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -211,9 +213,9 @@ mod tests {
             &mut runtime
         ).unwrap();
         
-        assert!(result.stdout.contains("cd is a shell builtin"));
-        assert!(result.stdout.contains("ll is aliased to 'ls -la'"));
-        assert!(result.stdout.contains("myfunc is a function"));
+        assert!(result.stdout().contains("cd is a shell builtin"));
+        assert!(result.stdout().contains("ll is aliased to 'ls -la'"));
+        assert!(result.stdout().contains("myfunc is a function"));
         assert_eq!(result.exit_code, 0);
     }
 
@@ -226,7 +228,7 @@ mod tests {
         
         // type should report cd as a builtin (builtins have priority)
         let result = builtin_type(&["cd".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "cd is a shell builtin\n");
+        assert_eq!(result.stdout(), "cd is a shell builtin\n");
         assert_eq!(result.exit_code, 0);
     }
 

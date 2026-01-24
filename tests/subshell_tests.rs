@@ -13,7 +13,7 @@ fn test_basic_subshell() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "hello");
+    assert_eq!(result.stdout().trim(), "hello");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -30,7 +30,7 @@ fn test_variable_isolation() {
     let result = executor.execute(statements).unwrap();
 
     // The variable should still be "parent" after the subshell
-    assert_eq!(result.stdout.trim(), "parent");
+    assert_eq!(result.stdout().trim(), "parent");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -81,7 +81,7 @@ fn test_nested_subshells() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "nested");
+    assert_eq!(result.stdout().trim(), "nested");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -96,8 +96,8 @@ fn test_multiple_statements_in_subshell() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(result.stdout.contains("second"));
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -112,7 +112,7 @@ fn test_subshell_variable_expansion() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout.trim(), "hello");
+    assert_eq!(result.stdout().trim(), "hello");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -131,7 +131,7 @@ fn test_deeply_nested_variable_isolation() {
     let result = executor.execute(statements).unwrap();
 
     // Should still be level0
-    assert_eq!(result.stdout.trim(), "level0");
+    assert_eq!(result.stdout().trim(), "level0");
 }
 
 /// Test subshell inherits parent variables
@@ -146,7 +146,7 @@ fn test_subshell_inherits_variables() {
     let result = executor.execute(statements).unwrap();
 
     // Subshell should see parent's variable
-    assert_eq!(result.stdout.trim(), "parent");
+    assert_eq!(result.stdout().trim(), "parent");
 }
 
 /// Test subshell with cd and pwd
@@ -162,7 +162,7 @@ fn test_subshell_cd_pwd() {
     let result = executor.execute(statements).unwrap();
 
     // Should print /tmp
-    assert_eq!(result.stdout.trim(), "/tmp");
+    assert_eq!(result.stdout().trim(), "/tmp");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -177,7 +177,7 @@ fn test_empty_subshell() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout, "");
+    assert_eq!(result.stdout(), "");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -197,8 +197,8 @@ echo second
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(result.stdout.contains("second"));
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -213,8 +213,8 @@ fn test_sequential_subshells() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("first"));
-    assert!(result.stdout.contains("second"));
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -232,8 +232,8 @@ fn test_subshell_complex() {
     let result = executor.execute(statements).unwrap();
 
     // Should output "inner" from subshell, then "outer" from parent
-    assert!(result.stdout.contains("inner"));
-    assert!(result.stdout.contains("outer"));
+    assert!(result.stdout().contains("inner"));
+    assert!(result.stdout().contains("outer"));
 }
 
 /// Test that modifications in nested subshells don't leak
@@ -250,7 +250,7 @@ fn test_nested_modifications_dont_leak() {
     let result = executor.execute(statements).unwrap();
 
     // Outer variable should be unchanged
-    assert_eq!(result.stdout.trim(), "a");
+    assert_eq!(result.stdout().trim(), "a");
 }
 
 /// Test subshell exit on error doesn't stop parent
@@ -265,5 +265,5 @@ fn test_subshell_error_isolation() {
 
     let result = executor.execute(statements).unwrap();
 
-    assert!(result.stdout.contains("continued"));
+    assert!(result.stdout().contains("continued"));
 }

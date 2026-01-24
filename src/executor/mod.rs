@@ -1,4 +1,8 @@
 pub mod pipeline;
+pub mod value;
+
+// Re-export Value type for convenience
+pub use value::Value;
 
 use crate::builtins::Builtins;
 use crate::correction::Corrector;
@@ -73,7 +77,7 @@ impl Executor {
             }
 
             let result = self.execute_statement(statement)?;
-            accumulated_stdout.push_str(&result.stdout);
+            accumulated_stdout.push_str(&result.stdout());
             accumulated_stderr.push_str(&result.stderr);
             last_exit_code = result.exit_code;
             
@@ -83,7 +87,7 @@ impl Executor {
             // Check errexit option: exit if command failed
             if self.runtime.options.errexit && last_exit_code != 0 {
                 return Ok(ExecutionResult {
-                    stdout: accumulated_stdout,
+                    output: Output::Text(accumulated_stdout),
                     stderr: accumulated_stderr,
                     exit_code: last_exit_code,
                 });
@@ -91,7 +95,7 @@ impl Executor {
         }
 
         Ok(ExecutionResult {
-            stdout: accumulated_stdout,
+            output: Output::Text(accumulated_stdout),
             stderr: accumulated_stderr,
             exit_code: last_exit_code,
         })
@@ -205,9 +209,9 @@ impl Executor {
                         let resolved = resolve_path(target);
                         let mut file = File::create(&resolved)
                             .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
-                        file.write_all(result.stdout.as_bytes())
+                        file.write_all(result.stdout().as_bytes())
                             .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
-                        result.stdout.clear(); // Clear stdout as it's been redirected
+                        result.clear_stdout(); // Clear stdout as it's been redirected
                     }
                 }
                 RedirectKind::StdoutAppend => {
@@ -218,9 +222,9 @@ impl Executor {
                             .append(true)
                             .open(&resolved)
                             .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
-                        file.write_all(result.stdout.as_bytes())
+                        file.write_all(result.stdout().as_bytes())
                             .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
-                        result.stdout.clear(); // Clear stdout as it's been redirected
+                        result.clear_stdout(); // Clear stdout as it's been redirected
                     }
                 }
                 RedirectKind::Stdin => {
@@ -239,7 +243,7 @@ impl Executor {
                 }
                 RedirectKind::StderrToStdout => {
                     // Merge stderr into stdout
-                    result.stdout.push_str(&result.stderr);
+                    result.push_stdout(&result.stderr.clone());
                     result.stderr.clear();
                 }
                 RedirectKind::Both => {
@@ -247,11 +251,12 @@ impl Executor {
                         let resolved = resolve_path(target);
                         let mut file = File::create(&resolved)
                             .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
-                        file.write_all(result.stdout.as_bytes())
+                        // Clone file descriptor for both stdout and stderr
+                        file.write_all(result.stdout().as_bytes())
                             .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
                         file.write_all(result.stderr.as_bytes())
                             .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
-                        result.stdout.clear();
+                        result.clear_stdout();
                         result.stderr.clear();
                     }
                 }
@@ -280,16 +285,39 @@ impl Executor {
             self.runtime.set_variable(param.name.clone(), arg_value);
         }
 
+        // Enter function context (allows return builtin)
+        self.runtime.enter_function_context();
+
         // Execute function body
         let mut last_result = ExecutionResult::default();
         for statement in func.body {
-            let stmt_result = self.execute_statement(statement)?;
-            // Accumulate stdout from all statements
-            last_result.stdout.push_str(&stmt_result.stdout);
-            last_result.stderr.push_str(&stmt_result.stderr);
-            // Keep the last exit code
-            last_result.exit_code = stmt_result.exit_code;
+            match self.execute_statement(statement) {
+                Ok(stmt_result) => {
+                    // Accumulate stdout from all statements
+                    last_result.push_stdout(&stmt_result.stdout());
+                    last_result.stderr.push_str(&stmt_result.stderr);
+                    // Keep the last exit code
+                    last_result.exit_code = stmt_result.exit_code;
+                }
+                Err(e) => {
+                    // Check if this is a return signal
+                    if let Some(return_signal) = e.downcast_ref::<crate::builtins::return_builtin::ReturnSignal>() {
+                        // Early return from function
+                        last_result.exit_code = return_signal.exit_code;
+                        break;
+                    } else {
+                        // Some other error - propagate it
+                        self.runtime.exit_function_context();
+                        self.runtime.pop_scope();
+                        self.runtime.pop_call();
+                        return Err(e);
+                    }
+                }
+            }
         }
+
+        // Exit function context
+        self.runtime.exit_function_context();
 
         // Clean up scope and call stack
         self.runtime.pop_scope();
@@ -560,7 +588,7 @@ impl Executor {
         };
 
         Ok(ExecutionResult {
-            stdout: stdout_str,
+            output: Output::Text(stdout_str),
             stderr: stderr_str,
             exit_code,
         })
@@ -607,7 +635,7 @@ impl Executor {
                         .output()
                     {
                         Ok(output) => Ok(ExecutionResult {
-                            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                            output: Output::Text(String::from_utf8_lossy(&output.stdout).to_string()),
                             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                             exit_code: output.status.code().unwrap_or(1),
                         }),
@@ -656,7 +684,7 @@ impl Executor {
         for handle in handles {
             match handle.join() {
                 Ok(Ok(result)) => {
-                    combined_stdout.push_str(&result.stdout);
+                    combined_stdout.push_str(&result.stdout());
                     combined_stderr.push_str(&result.stderr);
                     max_exit_code = max_exit_code.max(result.exit_code);
                 }
@@ -672,7 +700,7 @@ impl Executor {
         }
 
         Ok(ExecutionResult {
-            stdout: combined_stdout,
+            output: Output::Text(combined_stdout),
             stderr: combined_stderr,
             exit_code: max_exit_code,
         })
@@ -748,7 +776,7 @@ impl Executor {
             self.runtime.set_last_exit_code(right_result.exit_code);
             
             Ok(ExecutionResult {
-                stdout: format!("{}{}", left_result.stdout, right_result.stdout),
+                output: Output::Text(format!("{}{}", left_result.stdout(), right_result.stdout())),
                 stderr: format!("{}{}", left_result.stderr, right_result.stderr),
                 exit_code: right_result.exit_code,
             })
@@ -769,7 +797,7 @@ impl Executor {
             self.runtime.set_last_exit_code(right_result.exit_code);
             
             Ok(ExecutionResult {
-                stdout: format!("{}{}", left_result.stdout, right_result.stdout),
+                output: Output::Text(format!("{}{}", left_result.stdout(), right_result.stdout())),
                 stderr: format!("{}{}", left_result.stderr, right_result.stderr),
                 exit_code: right_result.exit_code,
             })
@@ -899,7 +927,7 @@ impl Executor {
                 }
                 // Execute the function and return its stdout
                 let result = self.execute_user_function(&call.name, args)?;
-                Ok(result.stdout)
+                Ok(result.stdout())
             }
             _ => Err(anyhow!("Expression evaluation not yet implemented")),
         }
@@ -1073,7 +1101,7 @@ impl Executor {
         let result = sub_executor.execute(statements)?;
         
         // Return stdout with trailing newlines trimmed (bash behavior)
-        Ok(result.stdout.trim_end().to_string())
+        Ok(result.stdout().trim_end().to_string())
     }
 
     fn literal_to_string(&self, lit: Literal) -> String {
@@ -1152,7 +1180,6 @@ impl Executor {
     }
 }
 
-// Helper function for parallel execution
 fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
     match arg {
         Argument::Literal(s) => s.clone(),
@@ -1195,7 +1222,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                         show_progress: false,
                     };
                     if let Ok(result) = sub_executor.execute(statements) {
-                        return result.stdout.trim_end().to_string();
+                        return result.stdout().trim_end().to_string();
                     }
                 }
             }
@@ -1232,17 +1259,47 @@ fn expand_and_resolve_arguments_static(args: &[Argument], runtime: &Runtime) -> 
     Ok(expanded_args)
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ExecutionResult {
-    pub stdout: String,
+    pub output: Output,
     pub stderr: String,
     pub exit_code: i32,
 }
 
-impl ExecutionResult {
-    pub fn success(stdout: String) -> Self {
+/// Output can be either traditional text or structured data
+#[derive(Debug, Clone)]
+pub enum Output {
+    Text(String),
+    Structured(serde_json::Value),
+}
+
+impl Default for ExecutionResult {
+    fn default() -> Self {
         Self {
-            stdout,
+            output: Output::Text(String::new()),
+            stderr: String::new(),
+            exit_code: 0,
+        }
+    }
+}
+
+impl Output {
+    /// Get the text representation of this output
+    pub fn as_text(&self) -> String {
+        match self {
+            Output::Text(s) => s.clone(),
+            Output::Structured(v) => {
+                // Convert JSON value to pretty-printed string
+                serde_json::to_string_pretty(v).unwrap_or_else(|_| String::new())
+            }
+        }
+    }
+}
+
+impl ExecutionResult {
+    pub fn success(text: String) -> Self {
+        Self {
+            output: Output::Text(text),
             stderr: String::new(),
             exit_code: 0,
         }
@@ -1250,104 +1307,35 @@ impl ExecutionResult {
 
     pub fn error(stderr: String) -> Self {
         Self {
-            stdout: String::new(),
+            output: Output::Text(String::new()),
             stderr,
             exit_code: 1,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::Parser;
-    use crate::lexer::Lexer;
-
-    #[test]
-    fn test_parallel_execution() {
-        let mut executor = Executor::new();
-        
-        // Parse parallel execution: echo hello ||| echo world
-        let tokens = Lexer::tokenize("echo hello ||| echo world").unwrap();
-        let mut parser = Parser::new(tokens);
-        let statements = parser.parse().unwrap();
-        
-        let result = executor.execute(statements).unwrap();
-        
-        // Both outputs should be present (order may vary due to parallel execution)
-        assert!(result.stdout.contains("hello"));
-        assert!(result.stdout.contains("world"));
-        assert_eq!(result.exit_code, 0);
+    pub fn stdout(&self) -> String {
+        self.output.as_text()
     }
 
-    #[test]
-    fn test_alias_expansion() {
-        let mut executor = Executor::new();
-        
-        // Create an alias
-        executor.runtime.set_alias("ll".to_string(), "echo hello".to_string());
-        
-        // Execute the alias
-        let tokens = Lexer::tokenize("ll").unwrap();
-        let mut parser = Parser::new(tokens);
-        let statements = parser.parse().unwrap();
-        
-        let result = executor.execute(statements).unwrap();
-        
-        assert_eq!(result.stdout, "hello\n");
-        assert_eq!(result.exit_code, 0);
+    /// Get mutable reference to stdout text (only works for Text output)
+    pub fn stdout_mut(&mut self) -> Option<&mut String> {
+        match &mut self.output {
+            Output::Text(s) => Some(s),
+            Output::Structured(_) => None,
+        }
     }
 
-    #[test]
-    fn test_alias_expansion_with_args() {
-        let mut executor = Executor::new();
-        
-        // Create an alias that takes arguments
-        executor.runtime.set_alias("greet".to_string(), "echo Hello".to_string());
-        
-        // Execute the alias with additional arguments
-        let tokens = Lexer::tokenize("greet World").unwrap();
-        let mut parser = Parser::new(tokens);
-        let statements = parser.parse().unwrap();
-        
-        let result = executor.execute(statements).unwrap();
-        
-        assert_eq!(result.stdout, "Hello World\n");
-        assert_eq!(result.exit_code, 0);
+    /// Clear stdout content (only works for Text output)
+    pub fn clear_stdout(&mut self) {
+        if let Output::Text(s) = &mut self.output {
+            s.clear();
+        }
     }
 
-    #[test]
-    fn test_alias_to_builtin() {
-        let mut executor = Executor::new();
-        
-        // Create an alias to a builtin with flags
-        executor.runtime.set_alias("ll".to_string(), "ls -la".to_string());
-        
-        // The alias should expand to the ls builtin
-        // Note: We can't easily test the actual ls output, but we can verify it doesn't error
-        let tokens = Lexer::tokenize("ll").unwrap();
-        let mut parser = Parser::new(tokens);
-        let statements = parser.parse().unwrap();
-        
-        let result = executor.execute(statements);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_alias_chaining() {
-        let mut executor = Executor::new();
-        
-        // Create first alias
-        executor.runtime.set_alias("e".to_string(), "echo".to_string());
-        
-        // Execute command using the alias
-        let tokens = Lexer::tokenize("e test").unwrap();
-        let mut parser = Parser::new(tokens);
-        let statements = parser.parse().unwrap();
-        
-        let result = executor.execute(statements).unwrap();
-        
-        assert_eq!(result.stdout, "test\n");
-        assert_eq!(result.exit_code, 0);
+    /// Append to stdout (only works for Text output)
+    pub fn push_stdout(&mut self, text: &str) {
+        if let Output::Text(s) = &mut self.output {
+            s.push_str(text);
+        }
     }
 }

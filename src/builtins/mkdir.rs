@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Context, Result};
 use std::fs;
@@ -60,7 +60,7 @@ pub fn builtin_mkdir(args: &[String], runtime: &mut Runtime) -> Result<Execution
         Ok(opts) => opts,
         Err(e) => {
             return Ok(ExecutionResult {
-                stdout: String::new(),
+                output: Output::Text(String::new()),
                 stderr: format!("{}\n", e),
                 exit_code: 1,
             });
@@ -97,7 +97,7 @@ pub fn builtin_mkdir(args: &[String], runtime: &mut Runtime) -> Result<Execution
     }
 
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: stderr_output,
         exit_code,
     })
@@ -305,8 +305,8 @@ mod tests {
         let result = builtin_mkdir(&["--help".to_string()], &mut runtime).unwrap();
 
         assert_eq!(result.exit_code, 0);
-        assert!(result.stdout.contains("Usage: mkdir"));
-        assert!(result.stdout.contains("-p"));
+        assert!(result.stdout().contains("Usage: mkdir"));
+        assert!(result.stdout().contains("-p"));
     }
 
     #[test]

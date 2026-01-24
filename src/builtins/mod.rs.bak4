@@ -1,0 +1,456 @@
+use crate::executor::{ExecutionResult, Output};
+use crate::runtime::Runtime;
+use crate::correction::Corrector;
+use anyhow::{anyhow, Result};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::env;
+
+mod cat;
+mod find;
+mod git_status;
+mod grep;
+mod help;
+mod ls;
+mod mkdir;
+mod undo;
+mod jobs;
+mod set;
+mod alias;
+mod test;
+mod type_builtin;
+// mod shift;
+// mod local;
+// pub mod return_builtin;  // Public so executor can access ReturnSignal
+// mod read;
+// pub mod trap;  // Public so runtime and executor can access TrapSignal
+mod unset;
+mod printf;
+// mod eval;
+// mod exec;
+mod builtin;
+// mod kill;
+
+type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
+
+#[derive(Clone)]
+pub struct Builtins {
+    commands: HashMap<String, BuiltinFn>,
+}
+
+impl Default for Builtins {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Builtins {
+    pub fn new() -> Self {
+        let mut commands: HashMap<String, BuiltinFn> = HashMap::new();
+
+        commands.insert("cd".to_string(), builtin_cd);
+        commands.insert("pwd".to_string(), builtin_pwd);
+        commands.insert("echo".to_string(), builtin_echo);
+        commands.insert("exit".to_string(), builtin_exit);
+        commands.insert("export".to_string(), builtin_export);
+        commands.insert("source".to_string(), builtin_source);
+        commands.insert("cat".to_string(), cat::builtin_cat);
+        commands.insert("find".to_string(), find::builtin_find);
+        commands.insert("ls".to_string(), ls::builtin_ls);
+        commands.insert("mkdir".to_string(), mkdir::builtin_mkdir);
+        commands.insert("git".to_string(), builtin_git);
+        commands.insert("grep".to_string(), grep::builtin_grep);
+        commands.insert("undo".to_string(), undo::builtin_undo);
+        commands.insert("jobs".to_string(), jobs::builtin_jobs);
+        commands.insert("fg".to_string(), jobs::builtin_fg);
+        commands.insert("bg".to_string(), jobs::builtin_bg);
+        commands.insert("set".to_string(), set::builtin_set);
+        commands.insert("alias".to_string(), alias::builtin_alias);
+        commands.insert("unalias".to_string(), alias::builtin_unalias);
+        commands.insert("test".to_string(), test::builtin_test);
+        commands.insert("[".to_string(), test::builtin_bracket);
+        commands.insert("help".to_string(), help::builtin_help);
+        commands.insert("type".to_string(), type_builtin::builtin_type);
+        // commands.insert("shift".to_string(), shift::builtin_shift);
+        // commands.insert("local".to_string(), local::builtin_local);
+        commands.insert("true".to_string(), builtin_true);
+        commands.insert("false".to_string(), builtin_false);
+        // commands.insert("return".to_string(), return_builtin::builtin_return);
+        // commands.insert("read".to_string(), read::builtin_read);
+        // commands.insert("trap".to_string(), trap::builtin_trap);
+        commands.insert("unset".to_string(), unset::builtin_unset);
+        commands.insert("printf".to_string(), printf::builtin_printf);
+        // commands.insert("eval".to_string(), eval::builtin_eval);
+        // commands.insert("exec".to_string(), exec::builtin_exec);
+        commands.insert("builtin".to_string(), builtin::builtin_builtin);
+        // commands.insert("kill".to_string(), kill::builtin_kill);
+
+        Self { commands }
+    }
+
+    #[inline]
+    pub fn is_builtin(&self, name: &str) -> bool {
+        self.commands.contains_key(name)
+    }
+
+    pub fn builtin_names(&self) -> Vec<String> {
+        self.commands.keys().cloned().collect()
+    }
+
+    #[inline]
+    pub fn execute(
+        &self,
+        name: &str,
+        args: Vec<String>,
+        runtime: &mut Runtime,
+    ) -> Result<ExecutionResult> {
+        if let Some(func) = self.commands.get(name) {
+            func(&args, runtime)
+        } else {
+            Err(anyhow!("Builtin '{}' not found", name))
+        }
+    }
+
+    /// Execute a builtin with optional stdin data
+    pub fn execute_with_stdin(
+        &self,
+        name: &str,
+        args: Vec<String>,
+        runtime: &mut Runtime,
+        stdin: Option<&[u8]>,
+    ) -> Result<ExecutionResult> {
+        // Special handling for cat with stdin
+        if name == "cat" {
+            if let Some(stdin_data) = stdin {
+                return cat::builtin_cat_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+        
+        // Special handling for grep with stdin
+        if name == "grep" {
+            if let Some(stdin_data) = stdin {
+                return grep::builtin_grep_with_stdin(&args, runtime, stdin_data);
+            }
+        }
+
+        // Special handling for read with stdin
+        // if name == "read" {
+        //     if let Some(stdin_data) = stdin {
+        //         return read::builtin_read_with_stdin(&args, runtime, stdin_data);
+        //     }
+        // }
+        
+        // For other builtins, use regular execute
+        self.execute(name, args, runtime)
+    }
+}
+
+pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    let target = if args.is_empty() {
+        dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?
+    } else {
+        let path = &args[0];
+        if path == "-" {
+            // TODO: Implement previous directory tracking
+            runtime.get_cwd().clone()
+        } else if path.starts_with('~') {
+            let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+            home.join(path.trim_start_matches("~/"))
+        } else {
+            PathBuf::from(path)
+        }
+    };
+
+    let absolute = if target.is_absolute() {
+        target
+    } else {
+        runtime.get_cwd().join(target)
+    };
+
+    if !absolute.exists() {
+        // Provide path suggestions
+        let corrector = Corrector::new();
+        let suggestions = corrector.suggest_path(&absolute, runtime.get_cwd());
+        
+        let mut error_msg = format!("cd: no such file or directory: {:?}", absolute);
+        
+        if !suggestions.is_empty() {
+            error_msg.push_str("\n\nDid you mean?");
+            for suggestion in suggestions.iter().take(3) {
+                let similarity = Corrector::similarity_percent(suggestion.score, &suggestion.text);
+                error_msg.push_str(&format!(
+                    "\n  {} ({}%, {})",
+                    suggestion.text,
+                    similarity,
+                    suggestion.kind.label()
+                ));
+            }
+        }
+        
+        return Err(anyhow!(error_msg));
+    }
+
+    if !absolute.is_dir() {
+        return Err(anyhow!("cd: not a directory: {:?}", absolute));
+    }
+
+    // Update runtime's cwd
+    runtime.set_cwd(absolute.clone());
+    
+    // Also update the process's actual current directory so other parts can see it
+    env::set_current_dir(&absolute)?;
+    
+    Ok(ExecutionResult::success(String::new()))
+}
+
+pub(crate) fn builtin_pwd(_args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    let cwd = runtime.get_cwd();
+    Ok(ExecutionResult::success(
+        cwd.to_string_lossy().to_string() + "\n",
+    ))
+}
+
+pub(crate) fn builtin_echo(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    let output = args.join(" ") + "\n";
+    Ok(ExecutionResult::success(output))
+}
+
+pub(crate) fn builtin_exit(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    let code = if args.is_empty() {
+        0
+    } else {
+        args[0].parse::<i32>().unwrap_or(0)
+    };
+
+    std::process::exit(code);
+}
+
+pub(crate) fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        return Err(anyhow!("export: usage: export VAR=value"));
+    }
+
+    for arg in args {
+        if let Some((key, value)) = arg.split_once('=') {
+            runtime.set_env(key, value);
+            runtime.set_variable(key.to_string(), value.to_string());
+        } else {
+            return Err(anyhow!("export: invalid syntax: {}", arg));
+        }
+    }
+
+    Ok(ExecutionResult::success(String::new()))
+}
+
+pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        // No subcommand provided - let external git handle it
+        return Err(anyhow!("git: missing subcommand"));
+    }
+
+    match args[0].as_str() {
+        "status" => {
+            // Call the optimized git status builtin
+            git_status::builtin_git_status(&args[1..], runtime)
+        }
+        _ => {
+            // For other git subcommands, spawn external git
+            use std::process::Command;
+
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(runtime.get_cwd())
+                .output()
+                .map_err(|e| anyhow!("Failed to execute git: {}", e))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let exit_code = output.status.code().unwrap_or(1);
+
+            Ok(ExecutionResult {
+                stdout,
+                stderr,
+                exit_code,
+            })
+        }
+    }
+}
+
+pub(crate) fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    Ok(ExecutionResult {
+        output: Output::Text(String::new()),
+        stderr: String::new(),
+        exit_code: 0,
+    })
+}
+
+pub(crate) fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    Ok(ExecutionResult {
+        output: Output::Text(String::new()),
+        stderr: String::new(),
+        exit_code: 1,
+    })
+}
+
+// TODO: Implement builtin_source properly with executor access
+#[allow(dead_code)]
+pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    if args.is_empty() {
+        return Err(anyhow!("source: usage: source <file>"));
+    }
+
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use crate::executor::Executor;
+
+    let file_path = &args[0];
+    let path = if file_path.starts_with('~') {
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+        home.join(file_path.trim_start_matches("~/"))
+    } else {
+        PathBuf::from(file_path)
+    };
+
+    // Make path absolute if relative
+    let path = if path.is_absolute() {
+        path
+    } else {
+        runtime.get_cwd().join(path)
+    };
+
+    if !path.exists() {
+        return Err(anyhow!("source: {}: No such file or directory", file_path));
+    }
+
+    // Read and execute file
+    let file = fs::File::open(&path)
+        .map_err(|e| anyhow!("source: Failed to open '{}': {}", path.display(), e))?;
+    let reader = BufReader::new(file);
+
+    // Enter function context for sourced scripts (allows return)
+    runtime.enter_function_context();
+    
+    // We need an executor to run the commands, but we can't access it from here
+    // So we'll return the file contents as a special marker that main.rs can handle
+    // For now, execute line by line in a basic way
+    for (line_num, line) in reader.lines().enumerate() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Parse and execute - we need to do this carefully
+        // since we don't have access to executor here
+        match Lexer::tokenize(line) {
+            Ok(tokens) => {
+                let mut parser = Parser::new(tokens);
+                match parser.parse() {
+                    Ok(statements) => {
+                        // Create temporary executor with current runtime
+                        let mut executor = Executor::new();
+                        // Copy runtime state (this is not ideal but works for source)
+                        *executor.runtime_mut() = runtime.clone();
+                        
+                        match executor.execute(statements) {
+                            Ok(result) => {
+                                // Copy back runtime state to preserve variable changes
+                                *runtime = executor.runtime_mut().clone();
+                                // Print any output
+                                if !result.stdout().is_empty() {
+                                    print!("{}", result.stdout);
+                                }
+                                if !result.stderr.is_empty() {
+                                    eprint!("{}", result.stderr);
+                                }
+                            }
+                            Err(e) => {
+                                // Check if this is a return signal from sourced script
+                                // TODO: Re-enable when return_builtin module exists
+                                // if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
+                                //     // Early return from sourced script
+                                //     runtime.exit_function_context();
+                                //     return Ok(ExecutionResult {
+                                //         output: Output::Text(String::new()),
+                                //         stderr: String::new(),
+                                //         exit_code: return_signal.exit_code,
+                                //     });
+                                // }
+                                eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}:{}: Parse error: {}", path.display(), line_num + 1, e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{}:{}: Tokenize error: {}", path.display(), line_num + 1, e);
+            }
+        }
+    }
+
+    // Exit function context after sourced script completes
+    runtime.exit_function_context();
+
+    Ok(ExecutionResult::success(String::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_echo() {
+        let mut runtime = Runtime::new();
+        let result = builtin_echo(&["hello".to_string(), "world".to_string()], &mut runtime)
+            .unwrap();
+        assert_eq!(result.stdout(), "hello world\n");
+    }
+
+    #[test]
+    fn test_pwd() {
+        let mut runtime = Runtime::new();
+        let result = builtin_pwd(&[], &mut runtime).unwrap();
+        assert!(!result.stdout().is_empty());
+    }
+
+    #[test]
+    fn test_true_exit_code() {
+        let mut runtime = Runtime::new();
+        let result = builtin_true(&[], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout(), "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_false_exit_code() {
+        let mut runtime = Runtime::new();
+        let result = builtin_false(&[], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 1);
+        assert_eq!(result.stdout(), "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_true_ignores_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
+        let result = builtin_true(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_false_ignores_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
+        let result = builtin_false(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 1);
+    }
+}

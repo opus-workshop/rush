@@ -157,7 +157,7 @@ fn test_execution_state_not_corrupted() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout, "42\n");
+    assert_eq!(result.stdout(), "42\n");
     assert_eq!(result.exit_code, 0);
 }
 
@@ -181,7 +181,7 @@ fn test_nested_error_recovery() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    assert_eq!(result.stdout, "recovered\n");
+    assert_eq!(result.stdout(), "recovered\n");
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn test_conditional_and_error_recovery() {
     assert!(result.is_ok());
     let exec_result = result.unwrap();
     assert_ne!(exec_result.exit_code, 0);
-    assert!(!exec_result.stdout.contains("should_not_run"));
+    assert!(!exec_result.stdout().contains("should_not_run"));
 }
 
 #[test]

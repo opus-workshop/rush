@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 
@@ -117,15 +117,15 @@ mod tests {
     fn test_history_all() {
         let mut runtime = setup_test_runtime();
         let result = builtin_history(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("echo hello"));
-        assert!(result.stdout.contains("cargo test"));
+        assert!(result.stdout().contains("echo hello"));
+        assert!(result.stdout().contains("cargo test"));
     }
 
     #[test]
     fn test_history_n() {
         let mut runtime = setup_test_runtime();
         let result = builtin_history(&["3".to_string()], &mut runtime).unwrap();
-        let lines: Vec<&str> = result.stdout.lines().collect();
+        let lines: Vec<&str> = result.stdout().lines().collect();
         assert_eq!(lines.len(), 3);
     }
 
@@ -137,8 +137,8 @@ mod tests {
             &mut runtime,
         )
         .unwrap();
-        assert!(result.stdout.contains("cargo build"));
-        assert!(result.stdout.contains("cargo test"));
+        assert!(result.stdout().contains("cargo build"));
+        assert!(result.stdout().contains("cargo test"));
     }
 
     #[test]
@@ -149,7 +149,7 @@ mod tests {
             &mut runtime,
         )
         .unwrap();
-        assert!(result.stdout.contains("No matching commands found"));
+        assert!(result.stdout().contains("No matching commands found"));
     }
 
     #[test]
@@ -158,7 +158,7 @@ mod tests {
         assert!(runtime.history().len() > 0);
 
         let result = builtin_history(&["clear".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("History cleared"));
+        assert!(result.stdout().contains("History cleared"));
         assert_eq!(runtime.history().len(), 0);
     }
 }

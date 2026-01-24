@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 
@@ -109,7 +109,7 @@ mod tests {
         let mut runtime = Runtime::new();
 
         let result = builtin_alias(&[], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
     }
 
     #[test]
@@ -119,8 +119,8 @@ mod tests {
         runtime.set_alias("la".to_string(), "ls -a".to_string());
 
         let result = builtin_alias(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("alias la='ls -a'"));
-        assert!(result.stdout.contains("alias ll='ls -la'"));
+        assert!(result.stdout().contains("alias la='ls -a'"));
+        assert!(result.stdout().contains("alias ll='ls -la'"));
     }
 
     #[test]
@@ -129,7 +129,7 @@ mod tests {
         runtime.set_alias("ll".to_string(), "ls -la".to_string());
 
         let result = builtin_alias(&["ll".to_string()], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "alias ll='ls -la'\n");
+        assert_eq!(result.stdout(), "alias ll='ls -la'\n");
     }
 
     #[test]

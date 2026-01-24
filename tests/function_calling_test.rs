@@ -29,7 +29,7 @@ fn test_simple_function_call_no_params() {
     })).unwrap();
 
     // Should return "hello\n" from echo
-    assert!(result.stdout.contains("hello"));
+    assert!(result.stdout().contains("hello"));
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn test_function_with_parameters() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("world"));
+    assert!(result.stdout().contains("world"));
 }
 
 #[test]
@@ -107,8 +107,8 @@ fn test_function_with_multiple_parameters() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("hello"));
-    assert!(result.stdout.contains("world"));
+    assert!(result.stdout().contains("hello"));
+    assert!(result.stdout().contains("world"));
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn test_recursive_factorial() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("5"));
+    assert!(result.stdout().contains("5"));
 }
 
 #[test]
@@ -193,8 +193,8 @@ fn test_function_calling_another_function() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("main called"));
-    assert!(result.stdout.contains("helper called"));
+    assert!(result.stdout().contains("main called"));
+    assert!(result.stdout().contains("helper called"));
 }
 
 #[test]
@@ -234,8 +234,8 @@ fn test_scope_isolation_parameters_shadow_variables() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("local"));
-    assert!(!result.stdout.contains("global"));
+    assert!(result.stdout().contains("local"));
+    assert!(!result.stdout().contains("global"));
 }
 
 #[test]
@@ -325,7 +325,7 @@ fn test_function_return_value() {
         redirects: vec![],
     })).unwrap();
 
-    assert!(result.stdout.contains("42"));
+    assert!(result.stdout().contains("42"));
     assert_eq!(result.exit_code, 0);
 }
 
@@ -367,5 +367,300 @@ fn test_function_stdout_capture() {
 
     // Note: Each echo only captures its own output, not accumulated
     // The last statement's output is what's returned
-    assert!(result.stdout.contains("line3"));
+    assert!(result.stdout().contains("line3"));
+}
+
+// ============================================================================
+// RETURN BUILTIN TESTS
+// ============================================================================
+
+#[test]
+fn test_return_with_exit_code_42() {
+    let mut executor = Executor::new();
+
+    // Define a function that returns with exit code 42
+    let func = FunctionDef {
+        name: "return_42".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("42".to_string())],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function and check the exit code
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "return_42".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 42);
+}
+
+#[test]
+fn test_return_with_no_argument_defaults_to_zero() {
+    let mut executor = Executor::new();
+
+    // Define a function that returns without an argument
+    let func = FunctionDef {
+        name: "return_default".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function and check the exit code is 0
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "return_default".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+}
+
+#[test]
+fn test_return_early_from_function() {
+    let mut executor = Executor::new();
+
+    // Define a function that returns early, skipping subsequent commands
+    let func = FunctionDef {
+        name: "early_return".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("before return".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("5".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("after return".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "early_return".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    // Should return early with exit code 5
+    assert_eq!(result.exit_code, 5);
+    // The output should contain "before return" but not "after return"
+    // Note: In the current implementation, the last command output is what's captured
+}
+
+#[test]
+fn test_return_with_various_exit_codes() {
+    let mut executor = Executor::new();
+
+    // Test return with exit code 0
+    let func_0 = FunctionDef {
+        name: "return_0".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("0".to_string())],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func_0)).unwrap();
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "return_0".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+    assert_eq!(result.exit_code, 0);
+
+    // Test return with exit code 1
+    let func_1 = FunctionDef {
+        name: "return_1".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("1".to_string())],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func_1)).unwrap();
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "return_1".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+    assert_eq!(result.exit_code, 1);
+
+    // Test return with exit code 255
+    let func_255 = FunctionDef {
+        name: "return_255".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("255".to_string())],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func_255)).unwrap();
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "return_255".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+    assert_eq!(result.exit_code, 255);
+}
+
+#[test]
+fn test_return_in_nested_function_calls() {
+    let mut executor = Executor::new();
+
+    // Define inner function that returns 10
+    let inner_func = FunctionDef {
+        name: "inner".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("10".to_string())],
+                redirects: vec![],
+            })
+        ],
+    };
+
+    // Define outer function that calls inner and then returns 20
+    let outer_func = FunctionDef {
+        name: "outer".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "inner".to_string(),
+                args: vec![],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("20".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(inner_func)).unwrap();
+    executor.execute_statement(Statement::FunctionDef(outer_func)).unwrap();
+
+    // Call outer function - should return 20 (its own return, not inner's)
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "outer".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 20);
+}
+
+#[test]
+fn test_return_preserves_function_output() {
+    let mut executor = Executor::new();
+
+    // Define a function that echoes something then returns
+    let func = FunctionDef {
+        name: "echo_and_return".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("output".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("7".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "echo_and_return".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    // Should have exit code 7
+    assert_eq!(result.exit_code, 7);
+    // Note: Output behavior depends on implementation details
+}
+
+#[test]
+fn test_return_with_conditional_logic() {
+    let mut executor = Executor::new();
+
+    // This test demonstrates return in a more complex function
+    // Define a function that conditionally returns different codes
+    // Since we don't have full if/else parsing in simple AST, we'll simulate with commands
+    let func = FunctionDef {
+        name: "conditional_return".to_string(),
+        params: vec![Parameter {
+            name: "should_fail".to_string(),
+            type_hint: None,
+        }],
+        body: vec![
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("checking condition".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "return".to_string(),
+                args: vec![Argument::Literal("99".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "conditional_return".to_string(),
+        args: vec![Argument::Literal("yes".to_string())],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 99);
 }

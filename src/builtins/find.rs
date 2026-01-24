@@ -6,7 +6,7 @@
 //! - Automatically excludes common build directories (.git, node_modules, target)
 //! - Uses efficient pattern matching with glob patterns
 
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use ignore::WalkBuilder;
@@ -484,9 +484,9 @@ mod tests {
         let result = builtin_find(&vec!["-name".to_string(), "*.rs".to_string()], &mut runtime)
             .unwrap();
 
-        assert!(result.stdout.contains("test1.rs"));
-        assert!(result.stdout.contains("test3.rs"));
-        assert!(!result.stdout.contains("test2.txt"));
+        assert!(result.stdout().contains("test1.rs"));
+        assert!(result.stdout().contains("test3.rs"));
+        assert!(!result.stdout().contains("test2.txt"));
     }
 
     #[test]
@@ -501,14 +501,14 @@ mod tests {
         // Find files
         let result =
             builtin_find(&vec!["-type".to_string(), "f".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("file.txt"));
-        assert!(!result.stdout.contains("subdir"));
+        assert!(result.stdout().contains("file.txt"));
+        assert!(!result.stdout().contains("subdir"));
 
         // Find directories
         let result =
             builtin_find(&vec!["-type".to_string(), "d".to_string()], &mut runtime).unwrap();
-        assert!(!result.stdout.contains("file.txt"));
-        assert!(result.stdout.contains("subdir"));
+        assert!(!result.stdout().contains("file.txt"));
+        assert!(result.stdout().contains("subdir"));
     }
 
     #[test]
@@ -531,13 +531,13 @@ mod tests {
 
         // With gitignore (default)
         let result = builtin_find(&vec![], &mut runtime).unwrap();
-        assert!(result.stdout.contains("include.txt"));
-        assert!(!result.stdout.contains("ignore.log"), "Expected ignore.log to be excluded, but found it in: {}", result.stdout);
+        assert!(result.stdout().contains("include.txt"));
+        assert!(!result.stdout().contains("ignore.log"), "Expected ignore.log to be excluded, but found it in: {}", result.stdout);
 
         // Without gitignore
         let result = builtin_find(&vec!["--no-ignore".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("include.txt"));
-        assert!(result.stdout.contains("ignore.log"));
+        assert!(result.stdout().contains("include.txt"));
+        assert!(result.stdout().contains("ignore.log"));
     }
 
     #[test]
@@ -556,8 +556,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(result.stdout.contains("root.txt"));
-        assert!(!result.stdout.contains("file1.txt"));
-        assert!(!result.stdout.contains("file2.txt"));
+        assert!(result.stdout().contains("root.txt"));
+        assert!(!result.stdout().contains("file1.txt"));
+        assert!(!result.stdout().contains("file2.txt"));
     }
 }

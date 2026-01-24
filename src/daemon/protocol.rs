@@ -78,6 +78,10 @@ pub struct ExecutionResult {
     pub stdout_len: u64,
     /// Number of bytes written to stderr
     pub stderr_len: u64,
+    /// Standard output content
+    pub stdout: String,
+    /// Standard error content
+    pub stderr: String,
 }
 
 /// Signal delivery request (Client → Daemon)
@@ -326,6 +330,8 @@ mod tests {
             exit_code: 0,
             stdout_len: 1024,
             stderr_len: 0,
+            stdout: "stdout".to_string(),
+            stderr: "stderr".to_string(),
         });
 
         let message_id = 45;
@@ -393,6 +399,8 @@ mod tests {
             exit_code: 0,
             stdout_len: 512,
             stderr_len: 0,
+            stdout: "stdout".to_string(),
+            stderr: "stderr".to_string(),
         });
 
         let message_id = 100;
@@ -433,6 +441,8 @@ mod tests {
                     exit_code: 0,
                     stdout_len: 5,
                     stderr_len: 0,
+                    stdout: "stdout".to_string(),
+                    stderr: "stderr".to_string(),
                 }),
                 3,
             ),

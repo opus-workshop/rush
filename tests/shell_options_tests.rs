@@ -16,7 +16,7 @@ fn test_set_errexit_stops_on_error() {
 
     // Should exit after false, so echo should not execute
     assert_ne!(result.exit_code, 0);
-    assert!(!result.stdout.contains("should_not_print"));
+    assert!(!result.stdout().contains("should_not_print"));
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn test_set_errexit_can_be_disabled() {
     let result = executor.execute(statements).unwrap();
 
     // Should continue after false because errexit is disabled
-    assert!(result.stdout.contains("should_print"));
+    assert!(result.stdout().contains("should_print"));
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn test_set_nounset_allows_defined_var() {
 
     // Should work fine with defined variable
     assert_eq!(result.exit_code, 0);
-    assert!(result.stdout.contains("hello"));
+    assert!(result.stdout().contains("hello"));
 }
 
 #[test]
@@ -125,8 +125,8 @@ fn test_set_no_args_shows_options() {
     let result = executor.execute(statements).unwrap();
 
     // Should show current options
-    assert!(result.stdout.contains("set -e"));
-    assert!(result.stdout.contains("set +u"));
+    assert!(result.stdout().contains("set -e"));
+    assert!(result.stdout().contains("set +u"));
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_errexit_and_pipefail_combined() {
 
     // Should exit after pipeline due to errexit and pipefail
     assert_ne!(result.exit_code, 0);
-    assert!(!result.stdout.contains("should_not_print"));
+    assert!(!result.stdout().contains("should_not_print"));
 }
 
 #[test]
@@ -242,5 +242,5 @@ fn test_options_isolated_in_subshell() {
     let result = executor.execute(statements).unwrap();
 
     // Should continue after subshell because errexit is not set in parent
-    assert!(result.stdout.contains("after_subshell"));
+    assert!(result.stdout().contains("after_subshell"));
 }

@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 
@@ -144,10 +144,10 @@ mod tests {
         runtime.options.xtrace = true;
 
         let result = builtin_set(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("set -e"));
-        assert!(result.stdout.contains("set -x"));
-        assert!(result.stdout.contains("set +u"));
-        assert!(result.stdout.contains("set +o pipefail"));
+        assert!(result.stdout().contains("set -e"));
+        assert!(result.stdout().contains("set -x"));
+        assert!(result.stdout().contains("set +u"));
+        assert!(result.stdout().contains("set +o pipefail"));
     }
 
     #[test]

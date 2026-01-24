@@ -21,7 +21,7 @@ mod test;
 mod type_builtin;
 // mod shift;
 // mod local;
-// pub mod return_builtin;  // Public so executor can access ReturnSignal
+pub mod return_builtin;  // Public so executor can access ReturnSignal
 mod read;
 // pub mod trap;  // Public so runtime and executor can access TrapSignal
 mod unset;
@@ -75,7 +75,7 @@ impl Builtins {
         // commands.insert("local".to_string(), local::builtin_local);
         commands.insert("true".to_string(), builtin_true);
         commands.insert("false".to_string(), builtin_false);
-        // commands.insert("return".to_string(), return_builtin::builtin_return);
+        commands.insert("return".to_string(), return_builtin::builtin_return);
         // commands.insert("read".to_string(), read::builtin_read);
         // commands.insert("trap".to_string(), trap::builtin_trap);
         commands.insert("unset".to_string(), unset::builtin_unset);
@@ -371,16 +371,15 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
                             }
                             Err(e) => {
                                 // Check if this is a return signal from sourced script
-                                // TODO: Re-enable when return_builtin module exists
-                                // if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
-                                //     // Early return from sourced script
-                                //     runtime.exit_function_context();
-                                //     return Ok(ExecutionResult {
-                                //         output: Output::Text(String::new()),
-                                //         stderr: String::new(),
-                                //         exit_code: return_signal.exit_code,
-                                //     });
-                                // }
+                                if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
+                                    // Early return from sourced script
+                                    runtime.exit_function_context();
+                                    return Ok(ExecutionResult {
+                                        output: Output::Text(String::new()),
+                                        stderr: String::new(),
+                                        exit_code: return_signal.exit_code,
+                                    });
+                                }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
                             }
                         }

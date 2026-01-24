@@ -1,4 +1,4 @@
-use super::ExecutionResult;
+use super::{ExecutionResult, Output};
 use crate::builtins::Builtins;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
@@ -74,15 +74,15 @@ pub fn execute_pipeline(
 
             // Set $? to the pipeline's exit code
             runtime.set_last_exit_code(pipeline_exit_code);
-            
+
             return Ok(ExecutionResult {
-                stdout: result.stdout,
+                output: Output::Text(result.stdout()),
                 stderr: combined_stderr,
                 exit_code: pipeline_exit_code,
             });
         }
 
-        previous_output = result.stdout.into_bytes();
+        previous_output = result.stdout().into_bytes();
     }
 
     Ok(ExecutionResult::default())
@@ -158,7 +158,7 @@ fn execute_external_pipeline_command(
         .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
 
     Ok(ExecutionResult {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        output: Output::Text(String::from_utf8_lossy(&output.stdout).to_string()),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         exit_code: output.status.code().unwrap_or(1),
     })
@@ -217,7 +217,7 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
                         show_progress: false,
                     };
                     if let Ok(result) = sub_executor.execute(statements) {
-                        return result.stdout.trim_end().to_string();
+                        return result.stdout().trim_end().to_string();
                     }
                 }
             }

@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use crate::jobs::{Job, JobStatus};
 use anyhow::{anyhow, Result};
@@ -114,7 +114,7 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                 _ => 0,
             };
             Ok(ExecutionResult {
-                stdout: String::new(),
+                output: Output::Text(String::new()),
                 stderr: String::new(),
                 exit_code,
             })
@@ -204,7 +204,7 @@ mod tests {
     fn test_jobs_empty() {
         let mut runtime = Runtime::new();
         let result = builtin_jobs(&[], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
     }
 
     #[test]
@@ -214,8 +214,8 @@ mod tests {
         runtime.job_manager().add_job(12345, "sleep 100".to_string());
 
         let result = builtin_jobs(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("[1]"));
-        assert!(result.stdout.contains("sleep 100"));
+        assert!(result.stdout().contains("[1]"));
+        assert!(result.stdout().contains("sleep 100"));
     }
 
     #[test]
@@ -224,6 +224,6 @@ mod tests {
         runtime.job_manager().add_job(12345, "sleep 100".to_string());
 
         let result = builtin_jobs(&["-l".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("12345"));
+        assert!(result.stdout().contains("12345"));
     }
 }

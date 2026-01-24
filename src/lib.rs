@@ -5,6 +5,7 @@ pub mod lexer;
 pub mod parser;
 pub mod executor;
 pub mod runtime;
+pub mod value;
 pub mod builtins;
 pub mod completion;
 pub mod history;
