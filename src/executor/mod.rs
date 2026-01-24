@@ -783,7 +783,27 @@ impl Executor {
                                     }));
                                 }
                             }
-                            // Not a break signal, propagate the error
+
+                            // Check if this is a continue signal
+                            if let Some(continue_signal) = e.downcast_ref::<crate::builtins::continue_builtin::ContinueSignal>() {
+                                // First, add any accumulated output from the continue signal itself
+                                accumulated_stdout.push_str(&continue_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&continue_signal.accumulated_stderr);
+
+                                if continue_signal.levels == 1 {
+                                    // Continue in this loop - skip to next iteration
+                                    break; // Break out of the statement loop, continue with next item
+                                } else {
+                                    // Propagate to outer loop with decreased level and accumulated output
+                                    return Err(anyhow::Error::new(crate::builtins::continue_builtin::ContinueSignal {
+                                        levels: continue_signal.levels - 1,
+                                        accumulated_stdout: accumulated_stdout.clone(),
+                                        accumulated_stderr: accumulated_stderr.clone(),
+                                    }));
+                                }
+                            }
+
+                            // Not a break or continue signal, propagate the error
                             return Err(e);
                         }
                     }

@@ -31,6 +31,7 @@ mod exec;
 mod builtin;
 mod kill;
 pub mod break_builtin;  // Public so executor can access BreakSignal
+pub mod continue_builtin;  // Public so executor can access ContinueSignal
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -86,6 +87,7 @@ impl Builtins {
         commands.insert("builtin".to_string(), builtin::builtin_builtin);
         commands.insert("kill".to_string(), kill::builtin_kill);
         commands.insert("break".to_string(), break_builtin::builtin_break);
+        commands.insert("continue".to_string(), continue_builtin::builtin_continue);
 
         Self { commands }
     }
