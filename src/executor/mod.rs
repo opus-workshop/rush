@@ -72,6 +72,19 @@ impl Executor {
             // Check for signals before each statement
             if let Some(handler) = &self.signal_handler {
                 if handler.should_shutdown() {
+                    // Execute signal trap if set
+                    let signal_num = handler.signal_number();
+                    let trap_signal = match signal_num {
+                        2 => Some(crate::builtins::trap::TrapSignal::Int),  // SIGINT
+                        15 => Some(crate::builtins::trap::TrapSignal::Term), // SIGTERM
+                        1 => Some(crate::builtins::trap::TrapSignal::Hup),   // SIGHUP
+                        _ => None,
+                    };
+                    
+                    if let Some(sig) = trap_signal {
+                        let _ = self.execute_trap(sig);
+                    }
+                    
                     return Err(anyhow!("Interrupted by signal"));
                 }
             }
@@ -83,6 +96,11 @@ impl Executor {
             
             // Update $? after each statement
             self.runtime.set_last_exit_code(last_exit_code);
+
+            // Execute ERR trap if command failed
+            if last_exit_code != 0 {
+                let _ = self.execute_trap(crate::builtins::trap::TrapSignal::Err);
+            }
 
             // Check errexit option: exit if command failed
             if self.runtime.options.errexit && last_exit_code != 0 {
@@ -163,12 +181,20 @@ impl Executor {
         // Check if it's a user-defined function first
         if self.runtime.get_function(&command_name).is_some() {
             let args = self.expand_and_resolve_arguments(&command_args)?;
+            // Track last argument for $_
+            if let Some(last) = args.last() {
+                self.runtime.set_last_arg(last.clone());
+            }
             return self.execute_user_function(&command_name, args);
         }
 
         // Check if it's a builtin command
         if self.builtins.is_builtin(&command_name) {
             let args = self.expand_and_resolve_arguments(&command_args)?;
+            // Track last argument for $_
+            if let Some(last) = args.last() {
+                self.runtime.set_last_arg(last.clone());
+            }
             let mut result = self.builtins.execute(&command_name, args, &mut self.runtime)?;
 
             // Handle redirects for builtins
@@ -333,6 +359,11 @@ impl Executor {
 
     fn execute_external_command(&mut self, command: Command) -> Result<ExecutionResult> {
         let args = self.expand_and_resolve_arguments(&command.args)?;
+
+        // Track last argument for $_
+        if let Some(last) = args.last() {
+            self.runtime.set_last_arg(last.clone());
+        }
 
         // Set up command with redirects
         let mut cmd = StdCommand::new(&command.name);
@@ -950,6 +981,9 @@ impl Executor {
                 // Add to job manager
                 let job_id = self.runtime.job_manager().add_job(pid, command_str);
 
+                // Track last background PID for $!
+                self.runtime.set_last_bg_pid(pid);
+
                 // Return success with job information
                 Ok(ExecutionResult::success(format!("[{}] {}\n", job_id, pid)))
             }
@@ -982,12 +1016,47 @@ impl Executor {
         match expr {
             Expression::Literal(lit) => Ok(self.literal_to_string(lit)),
             Expression::Variable(name) => {
+                // Strip single $ from variable name (use strip_prefix to remove only one $)
+                let var_name = name.strip_prefix('$').unwrap_or(&name);
+
+                // Handle special variables first
+                if var_name == "$" {
+                    return Ok(std::process::id().to_string());
+                } else if var_name == "!" {
+                    return Ok(self.runtime.get_last_bg_pid()
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_default());
+                } else if var_name == "-" {
+                    return Ok(self.runtime.get_option_flags());
+                } else if var_name == "_" {
+                    return Ok(self.runtime.get_last_arg().to_string());
+                } else if var_name == "#" {
+                    return Ok(self.runtime.param_count().to_string());
+                } else if var_name == "@" {
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if var_name == "*" {
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if var_name == "0" {
+                    if let Some(val) = self.runtime.get_variable("0") {
+                        return Ok(val);
+                    } else {
+                        return Ok("rush".to_string());
+                    }
+                } else if var_name == "?" {
+                    return Ok(self.runtime.get_last_exit_code().to_string());
+                } else if let Ok(index) = var_name.parse::<usize>() {
+                    if index > 0 {
+                        return Ok(self.runtime.get_positional_param(index).unwrap_or_default());
+                    }
+                }
+
+                // Regular variable expansion
                 // Use get_variable_checked to respect nounset option
                 if self.runtime.options.nounset {
-                    self.runtime.get_variable_checked(&name)
+                    self.runtime.get_variable_checked(var_name)
                 } else {
                     Ok(self.runtime
-                        .get_variable(&name)
+                        .get_variable(var_name)
                         .unwrap_or_default())
                 }
             }
@@ -1018,11 +1087,25 @@ impl Executor {
         match arg {
             Argument::Literal(s) => Ok(s.clone()),
             Argument::Variable(var) => {
-                // Strip $ from variable name
-                let var_name = var.trim_start_matches('$');
-                
-                // Handle special positional parameters
-                if var_name == "#" {
+                // Strip single $ from variable name (use strip_prefix to remove only one $)
+                let var_name = var.strip_prefix('$').unwrap_or(var);
+
+                // Handle special variables first
+                if var_name == "$" {
+                    // $$ - process ID of the shell
+                    return Ok(std::process::id().to_string());
+                } else if var_name == "!" {
+                    // $! - PID of last background command
+                    return Ok(self.runtime.get_last_bg_pid()
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_default());
+                } else if var_name == "-" {
+                    // $- - current option flags
+                    return Ok(self.runtime.get_option_flags());
+                } else if var_name == "_" {
+                    // $_ - last argument of previous command
+                    return Ok(self.runtime.get_last_arg().to_string());
+                } else if var_name == "#" {
                     // $# - number of positional parameters
                     return Ok(self.runtime.param_count().to_string());
                 } else if var_name == "@" {
@@ -1030,8 +1113,7 @@ impl Executor {
                     // For now, return as space-separated string (proper quoting handled later)
                     return Ok(self.runtime.get_positional_params().join(" "));
                 } else if var_name == "*" {
-                    // $* - all positional parameters as single word (joined by IFS)
-                    // TODO: Use IFS variable, for now use space
+                    // $* - all positional parameters
                     return Ok(self.runtime.get_positional_params().join(" "));
                 } else if var_name == "0" {
                     // $0 - shell name or script name
@@ -1046,7 +1128,7 @@ impl Executor {
                         return Ok(self.runtime.get_positional_param(index).unwrap_or_default());
                     }
                 }
-                
+
                 // Regular variable expansion
                 // Use get_variable_checked to respect nounset option
                 if self.runtime.options.nounset {
@@ -1060,9 +1142,23 @@ impl Executor {
             Argument::BracedVariable(braced_var) => {
                 // Parse the braced variable expansion
                 let expansion = self.parse_braced_var_expansion(braced_var)?;
-                
-                // Handle special positional parameters in braced expansions
-                if expansion.name == "#" {
+
+                // Handle special variables in braced expansions
+                if expansion.name == "$" {
+                    // ${$} - process ID of the shell (no operators allowed)
+                    return Ok(std::process::id().to_string());
+                } else if expansion.name == "!" {
+                    // ${!} - PID of last background command (no operators allowed)
+                    return Ok(self.runtime.get_last_bg_pid()
+                        .map(|pid| pid.to_string())
+                        .unwrap_or_default());
+                } else if expansion.name == "-" {
+                    // ${-} - current option flags (no operators allowed)
+                    return Ok(self.runtime.get_option_flags());
+                } else if expansion.name == "_" {
+                    // ${_} - last argument of previous command (no operators allowed)
+                    return Ok(self.runtime.get_last_arg().to_string());
+                } else if expansion.name == "#" {
                     // ${#} - number of positional parameters
                     return Ok(self.runtime.param_count().to_string());
                 } else if expansion.name == "@" {
@@ -1095,7 +1191,7 @@ impl Executor {
                         }
                     }
                 }
-                
+
                 // Expand it using the runtime
                 self.runtime.expand_variable(&expansion)
             }
@@ -1272,6 +1368,48 @@ impl Executor {
 
     pub fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
+    }
+
+    /// Execute a trap handler for the given signal
+    /// Returns Ok(()) if trap was executed successfully or if no trap is set
+    /// Returns Err if trap execution failed
+    pub fn execute_trap(&mut self, signal: crate::builtins::trap::TrapSignal) -> Result<()> {
+        // Get the trap command for this signal
+        let trap_command = match self.runtime.get_trap(signal) {
+            Some(cmd) => cmd.clone(),
+            None => return Ok(()), // No trap set, nothing to do
+        };
+
+        // Empty command means ignore the signal
+        if trap_command.is_empty() {
+            return Ok(());
+        }
+
+        // Execute the trap command
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+
+        let tokens = Lexer::tokenize(&trap_command)
+            .map_err(|e| anyhow!("Failed to tokenize trap command: {}", e))?;
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse()
+            .map_err(|e| anyhow!("Failed to parse trap command: {}", e))?;
+
+        // Execute the trap (errors are logged but don't stop execution)
+        match self.execute(statements) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Print error but don't fail - traps should be resilient
+                eprintln!("trap: error executing {} handler: {}", signal.to_string(), e);
+                Ok(())
+            }
+        }
+    }
+
+    /// Execute the EXIT trap if one is set
+    /// This should be called before the shell exits
+    pub fn execute_exit_trap(&mut self) {
+        let _ = self.execute_trap(crate::builtins::trap::TrapSignal::Exit);
     }
 
     /// Source a file by executing its contents line by line

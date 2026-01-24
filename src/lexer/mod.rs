@@ -128,12 +128,14 @@ pub enum Token {
     #[regex(r"\$\{[^}]+\}", |lex| lex.slice().to_string())]
     BracedVariable(String),
 
-    // Special variables ($?, $!, $$, etc.)
-    #[regex(r"\$[?!$#@*0-9]", |lex| lex.slice().to_string())]
+    // Special variables ($?, $!, $$, $#, $@, $*, $0-9, $-, $_)
+    // Includes both single and special multi-char patterns
+    #[regex(r"\$[?!$#@*\-_0-9]", |lex| lex.slice().to_string())]
     SpecialVariable(String),
 
-    // Regular variables
-    #[regex(r"\$[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
+    // Regular variables (at least 2 chars after $, or single letter)
+    // This ensures $_ is matched as SpecialVariable, not Variable
+    #[regex(r"\$[a-zA-Z][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Variable(String),
 
     // File paths and arguments
@@ -425,6 +427,50 @@ mod tests {
             assert_eq!(var, "${VAR%suffix}");
         } else {
             panic!("Expected BracedVariable token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_special_variable_shell_pid() {
+        let tokens = Lexer::tokenize("$$").unwrap();
+        assert_eq!(tokens.len(), 1, "Should have 1 token for $$");
+        if let Token::SpecialVariable(var) = &tokens[0] {
+            assert_eq!(var, "$$", "Should be $$ token");
+        } else {
+            panic!("Expected SpecialVariable token for $$, got {:?}", tokens[0]);
+        }
+    }
+
+    #[test]
+    fn test_special_variable_last_bg_pid() {
+        let tokens = Lexer::tokenize("$!").unwrap();
+        assert_eq!(tokens.len(), 1);
+        if let Token::SpecialVariable(var) = &tokens[0] {
+            assert_eq!(var, "$!");
+        } else {
+            panic!("Expected SpecialVariable token for $!, got {:?}", tokens[0]);
+        }
+    }
+
+    #[test]
+    fn test_special_variable_option_flags() {
+        let tokens = Lexer::tokenize("$-").unwrap();
+        assert_eq!(tokens.len(), 1);
+        if let Token::SpecialVariable(var) = &tokens[0] {
+            assert_eq!(var, "$-");
+        } else {
+            panic!("Expected SpecialVariable token for $-, got {:?}", tokens[0]);
+        }
+    }
+
+    #[test]
+    fn test_special_variable_last_arg() {
+        let tokens = Lexer::tokenize("$_").unwrap();
+        assert_eq!(tokens.len(), 1);
+        if let Token::SpecialVariable(var) = &tokens[0] {
+            assert_eq!(var, "$_");
+        } else {
+            panic!("Expected SpecialVariable token for $_, got {:?}", tokens[0]);
         }
     }
 }

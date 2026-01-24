@@ -45,6 +45,11 @@ pub struct Runtime {
     permanent_stdout: Option<i32>,
     permanent_stderr: Option<i32>,
     permanent_stdin: Option<i32>,
+    // Special variables tracking
+    last_bg_pid: Option<u32>,  // Track PID of last background job ($!)
+    last_arg: String,  // Track last argument of previous command ($_)
+    // Directory stack for pushd/popd/dirs builtins
+    dir_stack: Vec<PathBuf>,
 }
 
 impl Default for Runtime {
@@ -78,6 +83,9 @@ impl Runtime {
             permanent_stdout: None,
             permanent_stderr: None,
             permanent_stdin: None,
+            last_bg_pid: None,
+            last_arg: String::new(),
+            dir_stack: Vec::new(),
         };
 
         // Initialize $? to 0
@@ -636,5 +644,72 @@ impl Runtime {
         let mut vars: Vec<String> = self.readonly_vars.iter().cloned().collect();
         vars.sort();
         vars
+    }
+
+    // Special variable management
+
+    /// Set the PID of the last background job ($!)
+    pub fn set_last_bg_pid(&mut self, pid: u32) {
+        self.last_bg_pid = Some(pid);
+    }
+
+    /// Get the PID of the last background job ($!)
+    pub fn get_last_bg_pid(&self) -> Option<u32> {
+        self.last_bg_pid
+    }
+
+    /// Set the last argument of the previous command ($_)
+    pub fn set_last_arg(&mut self, arg: String) {
+        self.last_arg = arg;
+    }
+
+    /// Get the last argument of the previous command ($_)
+    pub fn get_last_arg(&self) -> &str {
+        &self.last_arg
+    }
+
+    /// Get current shell options as a flag string (for $-)
+    /// Returns flags like "eux" for enabled options
+    pub fn get_option_flags(&self) -> String {
+        let mut flags = String::new();
+        if self.options.errexit {
+            flags.push('e');
+        }
+        if self.options.nounset {
+            flags.push('u');
+        }
+        if self.options.xtrace {
+            flags.push('x');
+        }
+        if self.options.verbose {
+            flags.push('v');
+        }
+        if self.options.noclobber {
+            flags.push('C');
+        }
+        // Note: pipefail is a long option and doesn't have a short flag
+        flags
+    }
+
+    // Directory stack management (for pushd/popd/dirs builtins)
+
+    /// Push a directory onto the stack
+    pub fn push_dir(&mut self, dir: PathBuf) {
+        self.dir_stack.push(dir);
+    }
+
+    /// Pop a directory from the stack
+    pub fn pop_dir(&mut self) -> Option<PathBuf> {
+        self.dir_stack.pop()
+    }
+
+    /// Get the directory stack (returns a reference)
+    pub fn get_dir_stack(&self) -> &[PathBuf] {
+        &self.dir_stack
+    }
+
+    /// Clear the directory stack
+    pub fn clear_dir_stack(&mut self) {
+        self.dir_stack.clear();
     }
 }
