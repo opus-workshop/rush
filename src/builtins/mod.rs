@@ -88,6 +88,7 @@ impl Builtins {
         commands.insert("kill".to_string(), kill::builtin_kill);
         commands.insert("break".to_string(), break_builtin::builtin_break);
         commands.insert("continue".to_string(), continue_builtin::builtin_continue);
+        commands.insert(":".to_string(), builtin_colon);
 
         Self { commands }
     }
@@ -296,6 +297,14 @@ pub(crate) fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<
     })
 }
 
+pub(crate) fn builtin_colon(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+    Ok(ExecutionResult {
+        output: Output::Text(String::new()),
+        stderr: String::new(),
+        exit_code: 0,
+    })
+}
+
 // TODO: Implement builtin_source properly with executor access
 #[allow(dead_code)]
 pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
@@ -455,5 +464,32 @@ mod tests {
         let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
         let result = builtin_false(&args, &mut runtime).unwrap();
         assert_eq!(result.exit_code, 1);
+    }
+
+    #[test]
+    fn test_colon_exit_code() {
+        let mut runtime = Runtime::new();
+        let result = builtin_colon(&[], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout(), "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_colon_ignores_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "--flag".to_string()];
+        let result = builtin_colon(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.stdout(), "");
+        assert_eq!(result.stderr, "");
+    }
+
+    #[test]
+    fn test_colon_with_many_arguments() {
+        let mut runtime = Runtime::new();
+        let args = vec!["foo".to_string(), "bar".to_string(), "baz".to_string(), "qux".to_string()];
+        let result = builtin_colon(&args, &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
     }
 }

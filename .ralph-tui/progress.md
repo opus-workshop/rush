@@ -25,6 +25,28 @@ after each iteration and included in agent prompts for context.
 - Exit code stored in signal: `return_signal.exit_code`
 - Also handled in `builtin_source` for sourced scripts
 
+### Loop Context Tracking
+- Runtime tracks loop nesting depth via `loop_depth` field
+- Enter context: `runtime.enter_loop()`
+- Exit context: `runtime.exit_loop()`
+- Check depth: `runtime.get_loop_depth()` returns usize
+- Required for break/continue builtins
+
+### BreakSignal Error Pattern with Output Preservation
+- Break builtin throws `BreakSignal` error to exit loops early
+- Caught in executor loop execution using `downcast_ref::<BreakSignal>()`
+- Signal carries: `levels: usize`, `accumulated_stdout: String`, `accumulated_stderr: String`
+- Loops accumulate output before propagating signal to preserve all output before break
+- When levels > 1, outer loop decrements and propagates; when levels == 1, loop exits
+
+### ContinueSignal Error Pattern with Output Preservation
+- Continue builtin throws `ContinueSignal` error to skip to next loop iteration
+- Caught in executor loop execution using `downcast_ref::<ContinueSignal>()`
+- Signal carries: `levels: usize`, `accumulated_stdout: String`, `accumulated_stderr: String`
+- When levels == 1: breaks out of statement loop (using Rust's `break`), continues with next iteration
+- When levels > 1: propagates to outer loop with decremented level (similar to break)
+- Key difference from break: continues loop execution instead of exiting entirely
+
 ### Positional Parameters in Functions
 - Functions MUST set positional parameters ($1, $2, $#, $@, $*) when called with args
 - In `execute_user_function`: Call `runtime.set_positional_params(args.clone())`
@@ -620,5 +642,197 @@ All 31 kill tests passing:
 
 **Notes:**
 safe process existence checks in tests without actually sending harmful signals\n- **nix crate integration** provides type-safe Unix signal handling\n- **Comprehensive signal support** - names (TERM, INT, KILL, HUP, etc.), numbers (0-31), with/without SIG prefix\n- **Platform-aware** - Unix-only with proper Windows error handling\n\nThis completes the 8th POSIX builtin re-enablement, continuing the perfect pattern established across: return, shift, local, trap, eval, exec, and now **kill**!\n\n
+
+---
+
+## 2026-01-24 - rush-dgr.9: POSIX-009: Implement break builtin
+
+### Status: COMPLETE ✓
+
+### What was implemented
+- Created src/builtins/break_builtin.rs with BreakSignal error type
+- Added loop_depth field to Runtime struct for tracking loop nesting
+- Added enter_loop(), exit_loop(), and get_loop_depth() methods to Runtime
+- Registered break builtin in src/builtins/mod.rs (public module for signal access)
+- Enhanced execute_for_loop to handle BreakSignal with output accumulation
+- Created tests/loop_control_tests.rs with 11 comprehensive integration tests
+- All 18 tests passing (7 unit + 11 integration)
+
+### Files changed
+- src/builtins/break_builtin.rs: Created new file (~140 lines with 7 unit tests)
+- src/builtins/mod.rs: Added break_builtin module and registration (2 lines)
+- src/runtime/mod.rs: Added loop_depth field and 3 tracking methods
+- src/executor/mod.rs: Enhanced execute_for_loop with BreakSignal handling and output accumulation
+- tests/loop_control_tests.rs: Created new file with 11 integration tests (~327 lines)
+
+### Test Results
+All 18 break tests passing:
+**Unit tests (7) in src/builtins/break_builtin.rs:**
+- test_break_outside_loop
+- test_break_with_no_args
+- test_break_with_level
+- test_break_with_zero
+- test_break_with_invalid_number
+- test_break_too_many_args
+- test_break_exceeds_loop_depth
+
+**Integration tests (11) in tests/loop_control_tests.rs:**
+- test_break_basic_for_loop
+- test_break_with_condition
+- test_break_outside_loop
+- test_break_nested_loops_level_1
+- test_break_nested_loops_level_2
+- test_break_with_invalid_argument
+- test_break_with_zero
+- test_break_exceeds_loop_depth
+- test_break_too_many_arguments
+- test_break_preserves_output_before_break
+- test_break_in_triple_nested_loop
+
+### **Learnings:**
+
+**Pattern: Break builtin requires new infrastructure (unlike previous re-enable tasks)**
+- Unlike return, shift, local, trap, eval, exec, and kill which were already implemented, break required building from scratch
+- Added loop_depth tracking to Runtime (similar to function_depth pattern)
+- Created BreakSignal error type (similar to ReturnSignal pattern)
+- Module must be public (`pub mod break_builtin`) so executor can access BreakSignal type
+
+**Pattern: Loop depth tracking follows function depth pattern**
+- Runtime needs a `loop_depth: usize` field to track nesting
+- Runtime provides: `enter_loop()`, `exit_loop()`, `get_loop_depth()`
+- Executor calls enter_loop() before loop body, exit_loop() after (even on error)
+- Break builtin checks loop_depth to validate break level argument
+
+**Pattern: BreakSignal carries accumulated output for nested loops**
+- BreakSignal has `levels: usize` field (how many loops to break from)
+- BreakSignal has `accumulated_stdout: String` and `accumulated_stderr: String` fields
+- When break N is encountered, inner loop accumulates output before propagating signal
+- Outer loop receives BreakSignal, adds its accumulated output, decrements levels, and propagates
+- This ensures output from all loops before the break point is preserved
+
+**Pattern: For loop execution must accumulate output**
+- execute_for_loop needs local variables: accumulated_stdout, accumulated_stderr, last_exit_code
+- For each statement in loop body, accumulate stdout/stderr from execution result
+- When BreakSignal is caught, check if levels == 1 (break from this loop) or > 1 (propagate to outer)
+- Return accumulated output whether breaking normally or via signal
+
+**Gotcha: Reserved keyword "break" requires module name "break_builtin"**
+- Can't create module named "break" (Rust reserved keyword)
+- Had to rename file from break.rs to break_builtin.rs
+- Registered as `pub mod break_builtin` in mod.rs
+- Builtin still registered as "break" in the commands HashMap
+
+**Gotcha: Expression::Literal requires Literal enum wrapper**
+- ForLoop.iterable is Expression enum, Expression::Literal takes Literal enum
+- Can't use `Expression::Literal("text".to_string())` directly
+- Must use `Expression::Literal(Literal::String("text".to_string()))`
+- Need to import Literal from parser::ast module in tests
+
+**Gotcha: Pattern matching on Result<usize> requires handling all cases**
+- Can't use `Ok(n) if n > 0` guard pattern without handling `Ok(other)` case
+- Must explicitly handle `Ok(0)` before `Ok(n)` catch-all
+- Compiler error: "non-exhaustive patterns: `Ok(1_usize..)` not covered"
+
+**Impact: Break builtin enables loop control flow**
+- Users can now exit from for loops early with `break`
+- Supports POSIX `break [N]` syntax to break from N nested loops
+- Essential for loop control flow in shell scripts
+- Output from statements before break is preserved and returned
+- Foundation laid for future while/until loop support and continue builtin
+
+---
+## ✓ Iteration 8 - rush-dgr.9: POSIX-009: Implement break builtin
+*2026-01-24T20:19:31.938Z (632s)*
+
+**Status:** Completed
+
+**Notes:**
+d documented:\n- Committed with standard format: `feat: rush-dgr.9 - POSIX-009: Implement break builtin`\n- Closed bead with comprehensive completion notes\n- Documented learnings in `.ralph-tui/progress.md` with patterns for future reference\n- Added BreakSignal and Loop Context Tracking patterns to the codebase patterns section\n\nThis continues the excellent pattern from the previous 8 POSIX builtins (return, shift, local, trap, eval, exec, kill) and completes the 9th builtin in the epic!\n\n
+
+---
+
+## 2026-01-24 - rush-dgr.10: POSIX-010: Implement continue builtin
+
+### Status: COMPLETE ✓
+
+### What was implemented
+- Created src/builtins/continue_builtin.rs with ContinueSignal error type
+- Registered continue builtin in src/builtins/mod.rs (public module for signal access)
+- Enhanced execute_for_loop to handle ContinueSignal with iteration skipping logic
+- Created 12 comprehensive integration tests in tests/loop_control_tests.rs
+- All 19 tests passing (7 unit + 12 integration)
+
+### Files changed
+- src/builtins/continue_builtin.rs: Created new file (~146 lines with 7 unit tests)
+- src/builtins/mod.rs: Added continue_builtin module and registration (2 lines)
+- src/executor/mod.rs: Enhanced execute_for_loop with ContinueSignal handling (~20 lines)
+- tests/loop_control_tests.rs: Added 12 integration tests (~429 lines)
+
+### Test Results
+All 19 continue tests passing:
+**Unit tests (7) in src/builtins/continue_builtin.rs:**
+- test_continue_outside_loop
+- test_continue_with_no_args
+- test_continue_with_level
+- test_continue_with_zero
+- test_continue_with_invalid_number
+- test_continue_too_many_args
+- test_continue_exceeds_loop_depth
+
+**Integration tests (12) in tests/loop_control_tests.rs:**
+- test_continue_basic_for_loop
+- test_continue_skips_remaining_statements
+- test_continue_outside_loop
+- test_continue_nested_loops_level_1
+- test_continue_nested_loops_level_2
+- test_continue_with_invalid_argument
+- test_continue_with_zero
+- test_continue_exceeds_loop_depth
+- test_continue_too_many_arguments
+- test_continue_preserves_output_before_continue
+- test_continue_in_triple_nested_loop
+- test_continue_all_iterations_complete
+
+### **Learnings:**
+
+**Pattern: Continue builtin mirrors break builtin structure**
+- Follow exact same pattern as break: ContinueSignal error type, loop_depth validation, levels field
+- Module must be public (`pub mod continue_builtin`) so executor can access ContinueSignal type
+- Signal carries accumulated output like break: `accumulated_stdout`, `accumulated_stderr`, `levels`
+- Same validation logic: check loop_depth, parse levels argument, validate range
+
+**Pattern: Continue differs from break in loop execution semantics**
+- **Break**: when levels == 1, exits loop entirely (return from lambda)
+- **Continue**: when levels == 1, breaks from statement loop (Rust `break`), continues with next iteration
+- The key insight: Rust's `break` in the inner statement loop means "stop executing remaining statements, go to next for-loop item"
+- This naturally implements continue's "skip to next iteration" behavior
+
+**Pattern: Continue with levels > 1 propagates like break**
+- When continue 2 is called in nested loops, inner loop catches signal
+- Adds accumulated output to signal
+- Decrements levels and propagates to outer loop
+- Outer loop receives ContinueSignal with levels-1, continues propagation or skips to next iteration
+
+**Gotcha: Reserved keyword "continue" requires module name "continue_builtin"**
+- Can't create module named "continue" (Rust reserved keyword)
+- Had to name file continue_builtin.rs (same pattern as break_builtin.rs)
+- Registered as `pub mod continue_builtin` in mod.rs
+- Builtin still registered as "continue" in the commands HashMap
+
+**Impact: Continue builtin completes loop control flow**
+- Users now have full POSIX loop control: break to exit, continue to skip
+- Supports `continue [N]` syntax to skip N nested loop levels
+- Essential for loop control flow in shell scripts
+- Output from statements before continue is preserved and returned
+- Completes the pair with break for comprehensive loop control
+
+---
+## ✓ Iteration 9 - rush-dgr.10: POSIX-010: Implement continue builtin
+*2026-01-24T20:24:59.206Z (326s)*
+
+**Status:** Completed
+
+**Notes:**
+Patterns Discovered:\n- Continue mirrors break's structure but differs in execution semantics\n- When levels == 1: Rust's `break` skips remaining statements, naturally continuing to next iteration\n- Module naming: `continue_builtin.rs` (reserved keyword avoidance)\n- Signal propagation with output preservation matches break pattern\n\nThis completes the 10th POSIX builtin in the rush-dgr epic, providing full loop control flow capability alongside the previously implemented `break` builtin!\n\n
 
 ---

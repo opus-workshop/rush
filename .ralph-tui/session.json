@@ -3,10 +3,10 @@
   "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
   "status": "running",
   "startedAt": "2026-01-24T19:17:05.631Z",
-  "updatedAt": "2026-01-24T20:08:59.713Z",
-  "currentIteration": 7,
+  "updatedAt": "2026-01-24T20:25:00.563Z",
+  "currentIteration": 9,
   "maxIterations": 10,
-  "tasksCompleted": 7,
+  "tasksCompleted": 9,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -77,14 +77,14 @@
       {
         "id": "rush-dgr.10",
         "title": "POSIX-010: Implement continue builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.9",
         "title": "POSIX-009: Implement break builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.8",
@@ -260,12 +260,32 @@
       "durationMs": 195500,
       "startedAt": "2026-01-24T20:05:42.665Z",
       "endedAt": "2026-01-24T20:08:58.165Z"
+    },
+    {
+      "iteration": 8,
+      "status": "completed",
+      "taskId": "rush-dgr.9",
+      "taskTitle": "POSIX-009: Implement break builtin",
+      "taskCompleted": true,
+      "durationMs": 632184,
+      "startedAt": "2026-01-24T20:08:59.554Z",
+      "endedAt": "2026-01-24T20:19:31.738Z"
+    },
+    {
+      "iteration": 9,
+      "status": "completed",
+      "taskId": "rush-dgr.10",
+      "taskTitle": "POSIX-010: Implement continue builtin",
+      "taskCompleted": true,
+      "durationMs": 325871,
+      "startedAt": "2026-01-24T20:19:33.137Z",
+      "endedAt": "2026-01-24T20:24:59.008Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/asher/tt/rush",
   "activeTaskIds": [
-    "rush-dgr.9"
+    "rush-dgr.11"
   ],
   "subagentPanelVisible": false
 }

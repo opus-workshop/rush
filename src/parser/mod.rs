@@ -164,6 +164,7 @@ impl Parser {
         let name = match self.advance() {
             Some(Token::Identifier(s)) => s.clone(),
             Some(Token::LeftBracket) => "[".to_string(),
+            Some(Token::Colon) => ":".to_string(),
             _ => return Err(anyhow!("Expected command name")),
         };
 
