@@ -23,7 +23,7 @@ mod shift;
 mod local;
 pub mod return_builtin;  // Public so executor can access ReturnSignal
 mod read;
-// pub mod trap;  // Public so runtime and executor can access TrapSignal
+pub mod trap;  // Public so runtime and executor can access TrapSignal
 mod unset;
 mod printf;
 // mod eval;
@@ -76,8 +76,7 @@ impl Builtins {
         commands.insert("true".to_string(), builtin_true);
         commands.insert("false".to_string(), builtin_false);
         commands.insert("return".to_string(), return_builtin::builtin_return);
-        // commands.insert("read".to_string(), read::builtin_read);
-        // commands.insert("trap".to_string(), trap::builtin_trap);
+        commands.insert("trap".to_string(), trap::builtin_trap);
         commands.insert("unset".to_string(), unset::builtin_unset);
         commands.insert("printf".to_string(), printf::builtin_printf);
         commands.insert("read".to_string(), read::builtin_read);

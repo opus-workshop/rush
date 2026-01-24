@@ -3,10 +3,10 @@
   "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
   "status": "running",
   "startedAt": "2026-01-24T19:17:05.631Z",
-  "updatedAt": "2026-01-24T19:36:13.176Z",
-  "currentIteration": 1,
+  "updatedAt": "2026-01-24T19:49:16.337Z",
+  "currentIteration": 3,
   "maxIterations": 10,
-  "tasksCompleted": 1,
+  "tasksCompleted": 3,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -113,14 +113,14 @@
       {
         "id": "rush-dgr.4",
         "title": "POSIX-004: Re-enable and test local builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.3",
         "title": "POSIX-003: Re-enable and test shift builtin",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.2",
@@ -200,12 +200,32 @@
       "durationMs": 532323,
       "startedAt": "2026-01-24T19:27:19.279Z",
       "endedAt": "2026-01-24T19:36:11.602Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "rush-dgr.3",
+      "taskTitle": "POSIX-003: Re-enable and test shift builtin",
+      "taskCompleted": true,
+      "durationMs": 528652,
+      "startedAt": "2026-01-24T19:36:13.006Z",
+      "endedAt": "2026-01-24T19:45:01.658Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "rush-dgr.4",
+      "taskTitle": "POSIX-004: Re-enable and test local builtin",
+      "taskCompleted": true,
+      "durationMs": 251656,
+      "startedAt": "2026-01-24T19:45:03.083Z",
+      "endedAt": "2026-01-24T19:49:14.739Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/asher/tt/rush",
   "activeTaskIds": [
-    "rush-dgr.3"
+    "rush-dgr.5"
   ],
   "subagentPanelVisible": false
 }

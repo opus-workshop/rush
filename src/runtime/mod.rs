@@ -3,6 +3,7 @@ use crate::parser::ast::{VarExpansion, VarExpansionOp};
 use crate::history::History;
 use crate::undo::UndoManager;
 use crate::jobs::JobManager;
+use crate::builtins::trap::{TrapHandlers, TrapSignal};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -36,6 +37,7 @@ pub struct Runtime {
     positional_params: Vec<String>,  // Track $1, $2, etc. for shift builtin
     positional_stack: Vec<Vec<String>>,  // Stack for function scopes
     function_depth: usize,  // Track function call depth for return builtin
+    trap_handlers: TrapHandlers,  // Signal trap handlers
     // Permanent file descriptor redirections (set by exec builtin)
     permanent_stdout: Option<i32>,
     permanent_stderr: Option<i32>,
@@ -67,6 +69,7 @@ impl Runtime {
             positional_params: Vec::new(),
             positional_stack: Vec::new(),
             function_depth: 0,
+            trap_handlers: TrapHandlers::new(),
             permanent_stdout: None,
             permanent_stderr: None,
             permanent_stdin: None,
@@ -560,30 +563,29 @@ impl Runtime {
     }
 
     // Trap handler management
-    
-    // TODO: Re-enable when trap module exists
-    // /// Set a trap handler for a signal
-    // pub fn set_trap(&mut self, signal: TrapSignal, command: String) {
-    //     self.trap_handlers.set(signal, command);
-    // }
 
-    // /// Remove a trap handler for a signal
-    // pub fn remove_trap(&mut self, signal: TrapSignal) {
-    //     self.trap_handlers.remove(signal);
-    // }
+    /// Set a trap handler for a signal
+    pub fn set_trap(&mut self, signal: TrapSignal, command: String) {
+        self.trap_handlers.set(signal, command);
+    }
 
-    // /// Get the trap handler for a signal
-    // pub fn get_trap(&self, signal: TrapSignal) -> Option<&String> {
-    //     self.trap_handlers.get(signal)
-    // }
+    /// Remove a trap handler for a signal
+    pub fn remove_trap(&mut self, signal: TrapSignal) {
+        self.trap_handlers.remove(signal);
+    }
 
-    // /// Get all trap handlers
-    // pub fn get_all_traps(&self) -> &HashMap<TrapSignal, String> {
-    //     self.trap_handlers.all()
-    // }
-    
-    // /// Check if a signal has a trap handler
-    // pub fn has_trap(&self, signal: TrapSignal) -> bool {
-    //     self.trap_handlers.has_handler(signal)
-    // }
+    /// Get the trap handler for a signal
+    pub fn get_trap(&self, signal: TrapSignal) -> Option<&String> {
+        self.trap_handlers.get(signal)
+    }
+
+    /// Get all trap handlers
+    pub fn get_all_traps(&self) -> &HashMap<TrapSignal, String> {
+        self.trap_handlers.all()
+    }
+
+    /// Check if a signal has a trap handler
+    pub fn has_trap(&self, signal: TrapSignal) -> bool {
+        self.trap_handlers.has_handler(signal)
+    }
 }

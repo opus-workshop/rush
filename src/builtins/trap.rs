@@ -254,7 +254,7 @@ mod tests {
 
         // No traps set - should return empty
         let result = builtin_trap(&[], &mut runtime).unwrap();
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
     }
 
     #[test]
@@ -271,10 +271,10 @@ mod tests {
         let mut runtime = Runtime::new();
 
         let result = builtin_trap(&["-l".to_string()], &mut runtime).unwrap();
-        assert!(result.stdout.contains("INT"));
-        assert!(result.stdout.contains("TERM"));
-        assert!(result.stdout.contains("EXIT"));
-        assert!(result.stdout.contains("ERR"));
+        assert!(result.stdout().contains("INT"));
+        assert!(result.stdout().contains("TERM"));
+        assert!(result.stdout().contains("EXIT"));
+        assert!(result.stdout().contains("ERR"));
     }
 
     #[test]
@@ -326,10 +326,10 @@ mod tests {
         runtime.set_trap(TrapSignal::Int, "echo interrupted".to_string());
 
         let result = builtin_trap(&[], &mut runtime).unwrap();
-        assert!(result.stdout.contains("EXIT"));
-        assert!(result.stdout.contains("cleanup"));
-        assert!(result.stdout.contains("INT"));
-        assert!(result.stdout.contains("interrupted"));
+        assert!(result.stdout().contains("EXIT"));
+        assert!(result.stdout().contains("cleanup"));
+        assert!(result.stdout().contains("INT"));
+        assert!(result.stdout().contains("interrupted"));
     }
 
     #[test]
