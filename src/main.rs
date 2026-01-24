@@ -97,10 +97,8 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
 
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
-    // Set up script arguments as $1, $2, etc.
-    for (i, arg) in script_args.iter().enumerate() {
-        executor.runtime_mut().set_variable((i + 1).to_string(), arg.clone());
-    }
+    // Set up positional parameters ($1, $2, etc.) and $#, $@, $*
+    executor.runtime_mut().set_positional_params(script_args.clone());
 
     // Set $0 to script name
     executor.runtime_mut().set_variable("0".to_string(), script_path.to_string());

@@ -1020,6 +1020,34 @@ impl Executor {
             Argument::Variable(var) => {
                 // Strip $ from variable name
                 let var_name = var.trim_start_matches('$');
+                
+                // Handle special positional parameters
+                if var_name == "#" {
+                    // $# - number of positional parameters
+                    return Ok(self.runtime.param_count().to_string());
+                } else if var_name == "@" {
+                    // $@ - all positional parameters as separate words
+                    // For now, return as space-separated string (proper quoting handled later)
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if var_name == "*" {
+                    // $* - all positional parameters as single word (joined by IFS)
+                    // TODO: Use IFS variable, for now use space
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if var_name == "0" {
+                    // $0 - shell name or script name
+                    if let Some(val) = self.runtime.get_variable("0") {
+                        return Ok(val);
+                    } else {
+                        return Ok("rush".to_string());
+                    }
+                } else if let Ok(index) = var_name.parse::<usize>() {
+                    // $1, $2, etc. - positional parameters
+                    if index > 0 {
+                        return Ok(self.runtime.get_positional_param(index).unwrap_or_default());
+                    }
+                }
+                
+                // Regular variable expansion
                 // Use get_variable_checked to respect nounset option
                 if self.runtime.options.nounset {
                     self.runtime.get_variable_checked(var_name)
@@ -1032,6 +1060,42 @@ impl Executor {
             Argument::BracedVariable(braced_var) => {
                 // Parse the braced variable expansion
                 let expansion = self.parse_braced_var_expansion(braced_var)?;
+                
+                // Handle special positional parameters in braced expansions
+                if expansion.name == "#" {
+                    // ${#} - number of positional parameters
+                    return Ok(self.runtime.param_count().to_string());
+                } else if expansion.name == "@" {
+                    // ${@} - all positional parameters
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if expansion.name == "*" {
+                    // ${*} - all positional parameters
+                    return Ok(self.runtime.get_positional_params().join(" "));
+                } else if expansion.name == "0" {
+                    // ${0} - shell name or script name
+                    if let Some(val) = self.runtime.get_variable("0") {
+                        return Ok(val);
+                    } else {
+                        return Ok("rush".to_string());
+                    }
+                } else if let Ok(index) = expansion.name.parse::<usize>() {
+                    // ${1}, ${2}, ${10}, etc. - positional parameters
+                    if index > 0 {
+                        // Check if positional param exists
+                        if let Some(value) = self.runtime.get_positional_param(index) {
+                            // Param exists - set it in temp runtime and apply operator
+                            let mut temp_runtime = self.runtime.clone();
+                            temp_runtime.set_variable(expansion.name.clone(), value.clone());
+                            return temp_runtime.expand_variable(&expansion);
+                        } else {
+                            // Param doesn't exist - apply operator to None
+                            let mut temp_runtime = self.runtime.clone();
+                            // Don't set the variable - let it be unset so operators work correctly
+                            return temp_runtime.expand_variable(&expansion);
+                        }
+                    }
+                }
+                
                 // Expand it using the runtime
                 self.runtime.expand_variable(&expansion)
             }
