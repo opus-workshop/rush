@@ -100,6 +100,7 @@ pub fn builtin_read(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
             output: Output::Text(String::new()),
             stderr: String::new(),
             exit_code: 1,
+        error: None,
         });
     }
 
@@ -131,6 +132,7 @@ pub fn builtin_read_with_stdin(
                 output: Output::Text(String::new()),
                 stderr: String::new(),
                 exit_code: 1,
+        error: None,
             });
         }
         Ok(_) => {

@@ -229,7 +229,7 @@ mod tests {
     fn test_value_to_text_primitives() {
         assert_eq!(Value::String("hello".into()).to_text(), "hello");
         assert_eq!(Value::Int(42).to_text(), "42");
-        assert_eq!(Value::Float(3.14).to_text(), "3.14");
+        assert_eq!(Value::Float(3.5).to_text(), "3.5");
         assert_eq!(Value::Bool(true).to_text(), "true");
         assert_eq!(Value::Null.to_text(), "");
     }

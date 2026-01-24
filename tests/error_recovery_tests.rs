@@ -74,7 +74,7 @@ fn test_execution_continues_after_error() {
     assert!(result.is_ok());
     let exec_result = result.unwrap();
     assert_eq!(exec_result.exit_code, 0);
-    assert_eq!(exec_result.stdout, "hello\n");
+    assert_eq!(exec_result.stdout(), "hello\n");
 }
 
 #[test]
@@ -213,5 +213,5 @@ fn test_conditional_or_error_recovery() {
     assert!(result.is_ok());
     let exec_result = result.unwrap();
     assert_eq!(exec_result.exit_code, 0);
-    assert_eq!(exec_result.stdout, "should_run\n");
+    assert_eq!(exec_result.stdout(), "should_run\n");
 }

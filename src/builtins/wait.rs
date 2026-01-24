@@ -49,6 +49,7 @@ pub fn builtin_wait(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: last_exit_code,
+        error: None,
     })
 }
 
@@ -116,6 +117,7 @@ fn wait_all_jobs(runtime: &mut Runtime) -> Result<ExecutionResult> {
         output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: last_exit_code,
+        error: None,
     })
 }
 

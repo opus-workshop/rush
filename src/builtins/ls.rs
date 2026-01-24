@@ -60,6 +60,7 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
         output: Output::Text(output),
         stderr: String::new(),
         exit_code: if had_error { 1 } else { 0 },
+        error: None,
     })
 }
 

@@ -104,7 +104,8 @@ line2")"#).unwrap();
     let result = executor.execute(statements).unwrap();
 
     // Should trim trailing newline but preserve internal ones
-    let output = result.stdout().trim();
+    let stdout = result.stdout();
+    let output = stdout.trim();
     assert!(output.contains("line1"));
     assert!(output.contains("line2"));
 }
@@ -119,7 +120,8 @@ fn test_command_substitution_with_multiple_args() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    let output = result.stdout().trim();
+    let stdout = result.stdout();
+    let output = stdout.trim();
     assert!(output.contains("first"));
     assert!(output.contains("middle"));
     assert!(output.contains("last"));
@@ -242,7 +244,8 @@ fn test_command_substitution_with_semicolon() {
     let result = executor.execute(statements).unwrap();
 
     // Should contain output from both commands
-    let output = result.stdout().trim();
+    let stdout = result.stdout();
+    let output = stdout.trim();
     assert!(output.contains('a'));
     assert!(output.contains('b'));
 }
@@ -258,7 +261,8 @@ fn test_mixed_arguments_with_substitution() {
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
 
-    let output = result.stdout().trim();
+    let stdout = result.stdout();
+    let output = stdout.trim();
     assert!(output.contains("literal"));
     assert!(output.contains("substituted"));
     assert!(output.contains("another"));

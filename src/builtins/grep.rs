@@ -76,6 +76,7 @@ pub fn builtin_grep(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         output: Output::Text(String::from_utf8_lossy(&stdout).to_string()),
         stderr: String::from_utf8_lossy(&stderr).to_string(),
         exit_code,
+        error: None,
     })
 }
 
@@ -101,6 +102,7 @@ pub fn builtin_grep_with_stdin(args: &[String], _runtime: &mut Runtime, stdin_da
         output: Output::Text(String::from_utf8_lossy(&stdout).to_string()),
         stderr: String::from_utf8_lossy(&stderr).to_string(),
         exit_code,
+        error: None,
     })
 }
 

@@ -79,6 +79,7 @@ pub fn execute_pipeline(
                 output: Output::Text(result.stdout()),
                 stderr: combined_stderr,
                 exit_code: pipeline_exit_code,
+                error: None,
             });
         }
 
@@ -161,6 +162,7 @@ fn execute_external_pipeline_command(
         output: Output::Text(String::from_utf8_lossy(&output.stdout).to_string()),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         exit_code: output.status.code().unwrap_or(1),
+        error: None,
     })
 }
 

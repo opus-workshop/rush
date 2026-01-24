@@ -182,6 +182,7 @@ impl Worker {
                         output: crate::executor::Output::Text(String::new()),
                         stderr: err_msg,
                         exit_code: 2,
+                        error: None,
                     });
                 }
             };
@@ -197,6 +198,7 @@ impl Worker {
                                 output: crate::executor::Output::Text(String::new()),
                                 stderr: err_msg,
                                 exit_code: 1,
+                                error: None,
                             })
                         }
                     }
@@ -207,6 +209,7 @@ impl Worker {
                         output: crate::executor::Output::Text(String::new()),
                         stderr: err_msg,
                         exit_code: 2,
+                        error: None,
                     })
                 }
             }
@@ -215,6 +218,7 @@ impl Worker {
                 output: crate::executor::Output::Text(String::new()),
                 stderr: String::new(),
                 exit_code: 0,
+                error: None,
             })
         }
     }

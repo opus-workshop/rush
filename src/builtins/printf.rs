@@ -193,6 +193,7 @@ pub fn builtin_printf(args: &[String], _runtime: &mut Runtime) -> Result<Executi
                 output: Output::Text(String::new()),
                 stderr: e.to_string() + "\n",
                 exit_code: 1,
+        error: None,
             });
         }
     };
