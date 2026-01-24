@@ -1,4 +1,4 @@
-use crate::executor::ExecutionResult;
+use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use crate::correction::Corrector;
 use anyhow::{anyhow, Result};
@@ -19,15 +19,17 @@ mod set;
 mod alias;
 mod test;
 mod type_builtin;
-mod shift;
-mod local;
-pub mod return_builtin;  // Public so executor can access ReturnSignal
+// mod shift;
+// mod local;
+// pub mod return_builtin;  // Public so executor can access ReturnSignal
 mod read;
-pub mod trap;  // Public so runtime and executor can access TrapSignal
+// pub mod trap;  // Public so runtime and executor can access TrapSignal
 mod unset;
 mod printf;
-mod eval;
-mod exec;
+// mod eval;
+// mod exec;
+mod builtin;
+// mod kill;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -69,17 +71,20 @@ impl Builtins {
         commands.insert("[".to_string(), test::builtin_bracket);
         commands.insert("help".to_string(), help::builtin_help);
         commands.insert("type".to_string(), type_builtin::builtin_type);
-        commands.insert("shift".to_string(), shift::builtin_shift);
-        commands.insert("local".to_string(), local::builtin_local);
+        // commands.insert("shift".to_string(), shift::builtin_shift);
+        // commands.insert("local".to_string(), local::builtin_local);
         commands.insert("true".to_string(), builtin_true);
         commands.insert("false".to_string(), builtin_false);
-        commands.insert("return".to_string(), return_builtin::builtin_return);
-        commands.insert("read".to_string(), read::builtin_read);
-        commands.insert("trap".to_string(), trap::builtin_trap);
+        // commands.insert("return".to_string(), return_builtin::builtin_return);
+        // commands.insert("read".to_string(), read::builtin_read);
+        // commands.insert("trap".to_string(), trap::builtin_trap);
         commands.insert("unset".to_string(), unset::builtin_unset);
         commands.insert("printf".to_string(), printf::builtin_printf);
-        commands.insert("eval".to_string(), eval::builtin_eval);
-        commands.insert("exec".to_string(), exec::builtin_exec);
+        commands.insert("read".to_string(), read::builtin_read);
+        // commands.insert("eval".to_string(), eval::builtin_eval);
+        // commands.insert("exec".to_string(), exec::builtin_exec);
+        commands.insert("builtin".to_string(), builtin::builtin_builtin);
+        // commands.insert("kill".to_string(), kill::builtin_kill);
 
         Self { commands }
     }
@@ -141,7 +146,7 @@ impl Builtins {
     }
 }
 
-fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     let target = if args.is_empty() {
         dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?
     } else {
@@ -199,19 +204,19 @@ fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult>
     Ok(ExecutionResult::success(String::new()))
 }
 
-fn builtin_pwd(_args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_pwd(_args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     let cwd = runtime.get_cwd();
     Ok(ExecutionResult::success(
         cwd.to_string_lossy().to_string() + "\n",
     ))
 }
 
-fn builtin_echo(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_echo(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
     let output = args.join(" ") + "\n";
     Ok(ExecutionResult::success(output))
 }
 
-fn builtin_exit(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_exit(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
     let code = if args.is_empty() {
         0
     } else {
@@ -221,7 +226,7 @@ fn builtin_exit(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResu
     std::process::exit(code);
 }
 
-fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {
         return Err(anyhow!("export: usage: export VAR=value"));
     }
@@ -238,7 +243,7 @@ fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     Ok(ExecutionResult::success(String::new()))
 }
 
-fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {
         // No subcommand provided - let external git handle it
         return Err(anyhow!("git: missing subcommand"));
@@ -264,7 +269,7 @@ fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult
             let exit_code = output.status.code().unwrap_or(1);
 
             Ok(ExecutionResult {
-                stdout,
+                output: Output::Text(stdout),
                 stderr,
                 exit_code,
             })
@@ -272,17 +277,17 @@ fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult
     }
 }
 
-fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 0,
     })
 }
 
-fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
     Ok(ExecutionResult {
-        stdout: String::new(),
+        output: Output::Text(String::new()),
         stderr: String::new(),
         exit_code: 1,
     })
@@ -290,7 +295,7 @@ fn builtin_false(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionRe
 
 // TODO: Implement builtin_source properly with executor access
 #[allow(dead_code)]
-fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {
         return Err(anyhow!("source: usage: source <file>"));
     }
@@ -357,8 +362,8 @@ fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                                 // Copy back runtime state to preserve variable changes
                                 *runtime = executor.runtime_mut().clone();
                                 // Print any output
-                                if !result.stdout.is_empty() {
-                                    print!("{}", result.stdout);
+                                if !result.stdout().is_empty() {
+                                    print!("{}", result.stdout());
                                 }
                                 if !result.stderr.is_empty() {
                                     eprint!("{}", result.stderr);
@@ -366,15 +371,16 @@ fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                             }
                             Err(e) => {
                                 // Check if this is a return signal from sourced script
-                                if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
-                                    // Early return from sourced script
-                                    runtime.exit_function_context();
-                                    return Ok(ExecutionResult {
-                                        stdout: String::new(),
-                                        stderr: String::new(),
-                                        exit_code: return_signal.exit_code,
-                                    });
-                                }
+                                // TODO: Re-enable when return_builtin module exists
+                                // if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
+                                //     // Early return from sourced script
+                                //     runtime.exit_function_context();
+                                //     return Ok(ExecutionResult {
+                                //         output: Output::Text(String::new()),
+                                //         stderr: String::new(),
+                                //         exit_code: return_signal.exit_code,
+                                //     });
+                                // }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
                             }
                         }
@@ -405,14 +411,14 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_echo(&["hello".to_string(), "world".to_string()], &mut runtime)
             .unwrap();
-        assert_eq!(result.stdout, "hello world\n");
+        assert_eq!(result.stdout(), "hello world\n");
     }
 
     #[test]
     fn test_pwd() {
         let mut runtime = Runtime::new();
         let result = builtin_pwd(&[], &mut runtime).unwrap();
-        assert!(!result.stdout.is_empty());
+        assert!(!result.stdout().is_empty());
     }
 
     #[test]
@@ -420,7 +426,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_true(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
         assert_eq!(result.stderr, "");
     }
 
@@ -429,7 +435,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_false(&[], &mut runtime).unwrap();
         assert_eq!(result.exit_code, 1);
-        assert_eq!(result.stdout, "");
+        assert_eq!(result.stdout(), "");
         assert_eq!(result.stderr, "");
     }
 
