@@ -3,10 +3,10 @@
   "sessionId": "72e76152-8691-4cc8-b5be-e6c617f691ec",
   "status": "running",
   "startedAt": "2026-01-24T19:17:05.631Z",
-  "updatedAt": "2026-01-24T19:27:29.743Z",
-  "currentIteration": 0,
+  "updatedAt": "2026-01-24T19:36:13.176Z",
+  "currentIteration": 1,
   "maxIterations": 10,
-  "tasksCompleted": 0,
+  "tasksCompleted": 1,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -125,8 +125,8 @@
       {
         "id": "rush-dgr.2",
         "title": "POSIX-002: Re-enable and test return builtin",
-        "status": "in_progress",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "rush-dgr.1",
@@ -190,11 +190,22 @@
       }
     ]
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "rush-dgr.2",
+      "taskTitle": "POSIX-002: Re-enable and test return builtin",
+      "taskCompleted": true,
+      "durationMs": 532323,
+      "startedAt": "2026-01-24T19:27:19.279Z",
+      "endedAt": "2026-01-24T19:36:11.602Z"
+    }
+  ],
   "skippedTaskIds": [],
   "cwd": "/Users/asher/tt/rush",
   "activeTaskIds": [
-    "rush-dgr.2"
+    "rush-dgr.3"
   ],
   "subagentPanelVisible": false
 }

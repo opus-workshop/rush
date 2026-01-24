@@ -664,3 +664,231 @@ fn test_return_with_conditional_logic() {
 
     assert_eq!(result.exit_code, 99);
 }
+
+// ===== shift builtin tests =====
+
+#[test]
+fn test_shift_basic_single_parameter() {
+    let mut executor = Executor::new();
+    
+    // Set positional parameters manually
+    executor.runtime_mut().set_positional_params(vec![
+        "arg1".to_string(),
+        "arg2".to_string(),
+        "arg3".to_string(),
+    ]);
+    
+    // Verify initial state
+    assert_eq!(executor.runtime_mut().get_variable("1"), Some("arg1".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("#"), Some("3".to_string()));
+    
+    // Execute shift
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(executor.runtime_mut().get_variable("1"), Some("arg2".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("2"), Some("arg3".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("3"), None);
+    assert_eq!(executor.runtime_mut().get_variable("#"), Some("2".to_string()));
+}
+
+#[test]
+fn test_shift_multiple_parameters() {
+    let mut executor = Executor::new();
+    
+    executor.runtime_mut().set_positional_params(vec![
+        "a".to_string(),
+        "b".to_string(),
+        "c".to_string(),
+        "d".to_string(),
+        "e".to_string(),
+    ]);
+    
+    // Shift by 2
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift".to_string(),
+        args: vec![Argument::Literal("2".to_string())],
+        redirects: vec![],
+    })).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(executor.runtime_mut().get_variable("1"), Some("c".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("2"), Some("d".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("3"), Some("e".to_string()));
+    assert_eq!(executor.runtime_mut().get_variable("#"), Some("3".to_string()));
+}
+
+#[test]
+fn test_shift_in_function_with_args() {
+    let mut executor = Executor::new();
+    
+    // Create a function that processes arguments using shift
+    let func = FunctionDef {
+        name: "process_args".to_string(),
+        params: vec![],
+        body: vec![
+            // Echo first arg ($1)
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("1".to_string())],
+                redirects: vec![],
+            }),
+            // Shift
+            Statement::Command(Command {
+                name: "shift".to_string(),
+                args: vec![],
+                redirects: vec![],
+            }),
+            // Echo new first arg (was $2, now $1)
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("1".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+    
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+    
+    // Call function with arguments
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "process_args".to_string(),
+        args: vec![
+            Argument::Literal("first".to_string()),
+            Argument::Literal("second".to_string()),
+            Argument::Literal("third".to_string()),
+        ],
+        redirects: vec![],
+    })).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout().contains("first"));
+    assert!(result.stdout().contains("second"));
+}
+
+#[test]
+fn test_shift_multiple_times_in_function() {
+    let mut executor = Executor::new();
+    
+    // Create a function that shifts multiple times
+    let func = FunctionDef {
+        name: "shift_twice".to_string(),
+        params: vec![],
+        body: vec![
+            // Echo $1
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("1".to_string())],
+                redirects: vec![],
+            }),
+            // Shift
+            Statement::Command(Command {
+                name: "shift".to_string(),
+                args: vec![],
+                redirects: vec![],
+            }),
+            // Echo $1 (was $2)
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("1".to_string())],
+                redirects: vec![],
+            }),
+            // Shift again
+            Statement::Command(Command {
+                name: "shift".to_string(),
+                args: vec![],
+                redirects: vec![],
+            }),
+            // Echo $1 (was $3)
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("1".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+    
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+    
+    // Call with multiple arguments
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift_twice".to_string(),
+        args: vec![
+            Argument::Literal("alpha".to_string()),
+            Argument::Literal("beta".to_string()),
+            Argument::Literal("gamma".to_string()),
+        ],
+        redirects: vec![],
+    })).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout().contains("alpha"));
+    assert!(result.stdout().contains("beta"));
+    assert!(result.stdout().contains("gamma"));
+}
+
+#[test]
+fn test_shift_error_when_no_params() {
+    let mut executor = Executor::new();
+    
+    // No positional parameters set
+    executor.runtime_mut().set_positional_params(vec![]);
+    
+    // Try to shift - should error
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift".to_string(),
+        args: vec![],
+        redirects: vec![],
+    }));
+    
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_shift_error_when_count_exceeds_params() {
+    let mut executor = Executor::new();
+    
+    executor.runtime_mut().set_positional_params(vec![
+        "arg1".to_string(),
+        "arg2".to_string(),
+    ]);
+    
+    // Try to shift by 3 when only 2 params - should error
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift".to_string(),
+        args: vec![Argument::Literal("3".to_string())],
+        redirects: vec![],
+    }));
+    
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_shift_preserves_dollar_at_and_star() {
+    let mut executor = Executor::new();
+    
+    executor.runtime_mut().set_positional_params(vec![
+        "one".to_string(),
+        "two".to_string(),
+        "three".to_string(),
+    ]);
+    
+    // Shift once
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "shift".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    // $@ and $* should now contain only "two three"
+    let dollar_at = executor.runtime_mut().get_variable("@");
+    assert!(dollar_at.is_some());
+    let at_val = dollar_at.unwrap();
+    assert!(at_val.contains("two"));
+    assert!(at_val.contains("three"));
+}

@@ -532,7 +532,7 @@ mod tests {
         // With gitignore (default)
         let result = builtin_find(&vec![], &mut runtime).unwrap();
         assert!(result.stdout().contains("include.txt"));
-        assert!(!result.stdout().contains("ignore.log"), "Expected ignore.log to be excluded, but found it in: {}", result.stdout);
+        assert!(!result.stdout().contains("ignore.log"), "Expected ignore.log to be excluded, but found it in: {}", result.stdout());
 
         // Without gitignore
         let result = builtin_find(&vec!["--no-ignore".to_string()], &mut runtime).unwrap();

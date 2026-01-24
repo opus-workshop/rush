@@ -24,7 +24,7 @@ fn execute_command(input: &str, temp_dir: &TempDir) -> Result<String, String> {
     if result.exit_code != 0 {
         Err(result.stderr)
     } else {
-        Ok(result.stdout)
+        Ok(result.stdout())
     }
 }
 

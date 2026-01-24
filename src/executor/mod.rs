@@ -285,6 +285,9 @@ impl Executor {
             self.runtime.set_variable(param.name.clone(), arg_value);
         }
 
+        // Set positional parameters ($1, $2, $#, $@, $*) for the function
+        self.runtime.set_positional_params(args.clone());
+
         // Enter function context (allows return builtin)
         self.runtime.enter_function_context();
 

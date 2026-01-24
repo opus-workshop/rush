@@ -129,7 +129,7 @@ fn test_jobs_builtin_with_l_flag() {
         line.split_whitespace()
             .any(|word| word.chars().all(|c| c.is_ascii_digit()) && word.len() > 2)
     });
-    assert!(has_pid, "Expected PID in output: {}", result.stdout);
+    assert!(has_pid, "Expected PID in output: {}", result.stdout());
 
     // Cleanup
     executor.runtime_mut().job_manager().terminate_job(1).ok();
