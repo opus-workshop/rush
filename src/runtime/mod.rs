@@ -5,6 +5,7 @@ use crate::undo::UndoManager;
 use crate::jobs::JobManager;
 use crate::builtins::trap::{TrapHandlers, TrapSignal};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::env;
 use std::path::PathBuf;
 use anyhow::{anyhow, Result};
@@ -24,6 +25,7 @@ pub struct ShellOptions {
 #[derive(Clone)]
 pub struct Runtime {
     variables: HashMap<String, String>,
+    readonly_vars: HashSet<String>,  // Track readonly variables
     functions: HashMap<String, FunctionDef>,
     aliases: HashMap<String, String>,
     cwd: PathBuf,
@@ -57,6 +59,7 @@ impl Runtime {
 
         let mut runtime = Self {
             variables: HashMap::new(),
+            readonly_vars: HashSet::new(),
             functions: HashMap::new(),
             aliases: HashMap::new(),
             cwd,
@@ -90,6 +93,16 @@ impl Runtime {
             // Otherwise set in global scope
             self.variables.insert(name, value);
         }
+    }
+
+    /// Set a variable with readonly check
+    /// Returns an error if the variable is readonly
+    pub fn set_variable_checked(&mut self, name: String, value: String) -> Result<()> {
+        if self.is_readonly(&name) {
+            return Err(anyhow!("{}: readonly variable", name));
+        }
+        self.set_variable(name, value);
+        Ok(())
     }
 
     pub fn get_variable(&self, name: &str) -> Option<String> {
@@ -604,5 +617,24 @@ impl Runtime {
     /// Check if a signal has a trap handler
     pub fn has_trap(&self, signal: TrapSignal) -> bool {
         self.trap_handlers.has_handler(signal)
+    }
+
+    // Readonly variable management
+
+    /// Mark a variable as readonly
+    pub fn mark_readonly(&mut self, name: String) {
+        self.readonly_vars.insert(name);
+    }
+
+    /// Check if a variable is readonly
+    pub fn is_readonly(&self, name: &str) -> bool {
+        self.readonly_vars.contains(name)
+    }
+
+    /// Get all readonly variable names
+    pub fn get_readonly_vars(&self) -> Vec<String> {
+        let mut vars: Vec<String> = self.readonly_vars.iter().cloned().collect();
+        vars.sort();
+        vars
     }
 }

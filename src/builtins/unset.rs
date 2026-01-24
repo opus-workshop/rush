@@ -41,6 +41,11 @@ pub fn builtin_unset(args: &[String], runtime: &mut Runtime) -> Result<Execution
             return Err(anyhow!("unset: {}: cannot unset", name));
         }
 
+        // Check if variable is readonly
+        if !remove_functions && runtime.is_readonly(name) {
+            return Err(anyhow!("unset: {}: cannot unset: readonly variable", name));
+        }
+
         if remove_functions {
             // Remove function - no error if it doesn't exist
             runtime.remove_function(name);
