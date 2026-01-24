@@ -14,6 +14,7 @@ mod progress;
 mod signal;
 mod glob_expansion;
 mod jobs;
+mod terminal;
 
 use completion::Completer;
 use executor::Executor;

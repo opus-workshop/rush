@@ -216,6 +216,7 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
                         builtins: Builtins::new(),
                         corrector: Corrector::new(),
                         signal_handler: None,
+                        terminal_control: crate::terminal::TerminalControl::new(),
                         show_progress: false,
                     };
                     if let Ok(result) = sub_executor.execute(statements) {

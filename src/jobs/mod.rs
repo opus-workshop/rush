@@ -27,6 +27,7 @@ impl JobStatus {
 pub struct Job {
     pub id: usize,
     pub pid: u32,
+    pub pgid: u32, // Process group ID
     pub command: String,
     pub status: JobStatus,
 }
@@ -36,6 +37,7 @@ impl Job {
         Self {
             id,
             pid,
+            pgid: pid, // Initially, pgid == pid (process becomes group leader)
             command,
             status: JobStatus::Running,
         }
@@ -129,6 +131,7 @@ impl JobManager {
         jobs.get(&job_id).map(|j| Job {
             id: j.id,
             pid: j.pid,
+            pgid: j.pgid,
             command: j.command.clone(),
             status: j.status,
         })
@@ -142,6 +145,7 @@ impl JobManager {
             .map(|j| Job {
                 id: j.id,
                 pid: j.pid,
+                pgid: j.pgid,
                 command: j.command.clone(),
                 status: j.status,
             })
@@ -154,6 +158,7 @@ impl JobManager {
             .map(|j| Job {
                 id: j.id,
                 pid: j.pid,
+                pgid: j.pgid,
                 command: j.command.clone(),
                 status: j.status,
             })
@@ -210,6 +215,7 @@ impl JobManager {
             .map(|j| Job {
                 id: j.id,
                 pid: j.pid,
+                pgid: j.pgid,
                 command: j.command.clone(),
                 status: j.status,
             })
@@ -226,6 +232,7 @@ impl JobManager {
             Some(Job {
                 id: prev.id,
                 pid: prev.pid,
+                pgid: prev.pgid,
                 command: prev.command.clone(),
                 status: prev.status,
             })

@@ -11,6 +11,7 @@ use crate::parser::ast::*;
 use crate::runtime::Runtime;
 use crate::progress::ProgressIndicator;
 use crate::signal::SignalHandler;
+use crate::terminal::TerminalControl;
 use anyhow::{anyhow, Result};
 use std::process::Command as StdCommand;
 use std::sync::Arc;
@@ -22,6 +23,7 @@ pub struct Executor {
     builtins: Builtins,
     corrector: Corrector,
     signal_handler: Option<SignalHandler>,
+    terminal_control: TerminalControl,
     show_progress: bool,
 }
 
@@ -39,6 +41,7 @@ impl Executor {
             corrector: Corrector::new(),
             signal_handler: None,
             show_progress: true, // Default to true for CLI usage
+            terminal_control: TerminalControl::new(),
         }
     }
 
@@ -49,6 +52,7 @@ impl Executor {
             builtins: Builtins::new(),
             corrector: Corrector::new(),
             signal_handler: None,
+            terminal_control: TerminalControl::new(),
             show_progress: false,
         }
     }
@@ -59,6 +63,7 @@ impl Executor {
             builtins: Builtins::new(),
             corrector: Corrector::new(),
             signal_handler: Some(signal_handler),
+            terminal_control: TerminalControl::new(),
             show_progress: true,
         }
     }
@@ -930,6 +935,7 @@ impl Executor {
             corrector: self.corrector.clone(),
             signal_handler: None, // Subshells don't need their own signal handlers
             show_progress: self.show_progress, // Inherit progress setting from parent
+            terminal_control: self.terminal_control.clone(),
         };
 
         // Execute all statements in the subshell
@@ -1129,15 +1135,8 @@ impl Executor {
                     }
                 }
 
-                // Regular variable expansion
-                // Use get_variable_checked to respect nounset option
-                if self.runtime.options.nounset {
-                    self.runtime.get_variable_checked(var_name)
-                } else {
-                    Ok(self.runtime
-                        .get_variable(var_name)
-                        .unwrap_or_default())
-                }
+                // Regular variable - just get its value
+                Ok(self.runtime.get_variable(var_name).unwrap_or_default())
             }
             Argument::BracedVariable(braced_var) => {
                 // Parse the braced variable expansion
@@ -1336,6 +1335,7 @@ impl Executor {
             corrector: self.corrector.clone(),
             signal_handler: None,
             show_progress: false, // Don't show progress for substitutions
+            terminal_control: self.terminal_control.clone(),
         };
         
         // Execute the command and capture output
@@ -1503,6 +1503,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                         corrector: Corrector::new(),
                         signal_handler: None,
                         show_progress: false,
+                        terminal_control: TerminalControl::new(),
                     };
                     if let Ok(result) = sub_executor.execute(statements) {
                         return result.stdout().trim_end().to_string();
