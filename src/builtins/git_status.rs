@@ -184,10 +184,8 @@ fn output_json(git_ctx: &GitContext) -> Result<ExecutionResult> {
     let tracking = git_ctx.tracking_branch();
     let (ahead, behind) = git_ctx.ahead_behind().unwrap_or((0, 0));
 
-    let staged = git_ctx.staged_files();
-    let unstaged = git_ctx.unstaged_files();
-    let untracked = git_ctx.untracked_files();
-    let conflicted = git_ctx.conflicted_files();
+    // Optimized: Get all statuses in a single pass instead of 4 separate calls
+    let (staged, unstaged, untracked, conflicted) = git_ctx.all_file_statuses();
 
     let state = if staged.is_empty() && unstaged.is_empty() && untracked.is_empty() {
         RepoState::Clean

@@ -1,4 +1,4 @@
-use git2::{Repository, StatusOptions, Status};
+use git2::{Repository, StatusOptions};
 use std::path::{Path, PathBuf};
 
 pub struct GitContext {
@@ -75,6 +75,90 @@ impl GitContext {
             dirty,
             ahead_behind,
         }
+    }
+
+    /// Get all file statuses in a single pass (optimized for git_status builtin)
+    /// This is significantly faster than calling staged/unstaged/untracked separately
+    pub fn all_file_statuses(&self) -> (Vec<FileStatus>, Vec<FileStatus>, Vec<PathBuf>, Vec<PathBuf>) {
+        let repo = match &self.repo {
+            Some(r) => r,
+            None => return (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+        };
+
+        let mut staged = Vec::new();
+        let mut unstaged = Vec::new();
+        let mut untracked = Vec::new();
+        let mut conflicted = Vec::new();
+
+        if let Ok(statuses) = repo.statuses(Some(StatusOptions::new().include_untracked(true))) {
+            for entry in statuses.iter() {
+                let status = entry.status();
+                let path = entry.path().unwrap_or("");
+
+                // Check staged files
+                if status.is_index_new() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Added,
+                    });
+                } else if status.is_index_modified() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Modified,
+                    });
+                } else if status.is_index_deleted() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Deleted,
+                    });
+                } else if status.is_index_renamed() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Renamed,
+                    });
+                } else if status.is_index_typechange() {
+                    staged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Typechange,
+                    });
+                }
+
+                // Check unstaged files
+                if status.is_wt_modified() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Modified,
+                    });
+                } else if status.is_wt_deleted() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Deleted,
+                    });
+                } else if status.is_wt_typechange() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Typechange,
+                    });
+                } else if status.is_wt_renamed() {
+                    unstaged.push(FileStatus {
+                        path: PathBuf::from(path),
+                        status: FileStatusType::Renamed,
+                    });
+                }
+
+                // Check untracked files
+                if status.is_wt_new() {
+                    untracked.push(PathBuf::from(path));
+                }
+
+                // Check conflicted files
+                if status.is_conflicted() {
+                    conflicted.push(PathBuf::from(path));
+                }
+            }
+        }
+
+        (staged, unstaged, untracked, conflicted)
     }
 
     pub fn staged_files(&self) -> Vec<FileStatus> {

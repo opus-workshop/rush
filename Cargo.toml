@@ -85,6 +85,10 @@ harness = false
 name = "shell_comparison"
 harness = false
 
+[[bench]]
+name = "ai_agent_workloads"
+harness = false
+
 [features]
 default = []
 embedded = []
