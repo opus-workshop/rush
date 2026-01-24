@@ -36,6 +36,7 @@ pub mod break_builtin;  // Public so executor can access BreakSignal
 pub mod continue_builtin;  // Public so executor can access ContinueSignal
 mod json;
 mod command;
+mod fetch;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -97,6 +98,7 @@ impl Builtins {
         commands.insert("json_get".to_string(), json::builtin_json_get);
         commands.insert("json_set".to_string(), json::builtin_json_set);
         commands.insert("json_query".to_string(), json::builtin_json_query);
+        commands.insert("fetch".to_string(), fetch::builtin_fetch);
 
         Self { commands }
     }
