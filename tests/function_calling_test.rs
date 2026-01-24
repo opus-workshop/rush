@@ -892,3 +892,325 @@ fn test_shift_preserves_dollar_at_and_star() {
     assert!(at_val.contains("two"));
     assert!(at_val.contains("three"));
 }
+
+// ============================================================================
+// POSIX-004: Local builtin integration tests
+// ============================================================================
+
+#[test]
+fn test_local_basic_variable() {
+    let mut executor = Executor::new();
+
+    // Define a function that uses local variable
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![Argument::Literal("x=5".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("x".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout().trim(), "5");
+}
+
+#[test]
+fn test_local_shadows_global() {
+    let mut executor = Executor::new();
+
+    // Set global variable
+    executor.runtime_mut().set_variable("x".to_string(), "10".to_string());
+
+    // Define a function that creates local variable with same name
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![Argument::Literal("x=5".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("x".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function - should see local value (5)
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout().trim(), "5");
+
+    // After function exits, global value should be restored
+    assert_eq!(executor.runtime_mut().get_variable("x"), Some("10".to_string()));
+}
+
+#[test]
+fn test_local_error_outside_function() {
+    let mut executor = Executor::new();
+
+    // Try to use local outside a function - should error
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "local".to_string(),
+        args: vec![Argument::Literal("x=5".to_string())],
+        redirects: vec![],
+    }));
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("can only be used in a function"));
+}
+
+#[test]
+fn test_local_multiple_variables() {
+    let mut executor = Executor::new();
+
+    // Define a function that declares multiple local variables
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![
+                    Argument::Literal("a=1".to_string()),
+                    Argument::Literal("b=2".to_string()),
+                    Argument::Literal("c=3".to_string()),
+                ],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![
+                    Argument::Variable("a".to_string()),
+                    Argument::Variable("b".to_string()),
+                    Argument::Variable("c".to_string()),
+                ],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout().trim(), "1 2 3");
+}
+
+#[test]
+fn test_local_without_assignment() {
+    let mut executor = Executor::new();
+
+    // Define a function that declares local variable without assignment
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![Argument::Literal("x".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("empty:".to_string()), Argument::Variable("x".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function - variable should exist but be empty
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.stdout().trim(), "empty:");
+}
+
+#[test]
+fn test_local_cleanup_on_function_exit() {
+    let mut executor = Executor::new();
+
+    // Define a function that creates local variables
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![
+                    Argument::Literal("temp1=value1".to_string()),
+                    Argument::Literal("temp2=value2".to_string()),
+                ],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Literal("done".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+
+    // After function exits, local variables should not exist
+    assert_eq!(executor.runtime_mut().get_variable("temp1"), None);
+    assert_eq!(executor.runtime_mut().get_variable("temp2"), None);
+}
+
+#[test]
+fn test_local_in_nested_functions() {
+    let mut executor = Executor::new();
+
+    // Define inner function
+    let inner_func = FunctionDef {
+        name: "inner".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![Argument::Literal("x=inner".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("x".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    // Define outer function that calls inner
+    let outer_func = FunctionDef {
+        name: "outer".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![Argument::Literal("x=outer".to_string())],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "inner".to_string(),
+                args: vec![],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![Argument::Variable("x".to_string())],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(inner_func)).unwrap();
+    executor.execute_statement(Statement::FunctionDef(outer_func)).unwrap();
+
+    // Call outer function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "outer".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    // Should see "inner" from inner function, then "outer" from outer function
+    let output = result.stdout();
+    assert!(output.contains("inner"));
+    assert!(output.contains("outer"));
+}
+
+#[test]
+fn test_local_mixed_assigned_and_unassigned() {
+    let mut executor = Executor::new();
+
+    // Define a function with mix of assigned and unassigned locals
+    let func = FunctionDef {
+        name: "foo".to_string(),
+        params: vec![],
+        body: vec![
+            Statement::Command(Command {
+                name: "local".to_string(),
+                args: vec![
+                    Argument::Literal("a=1".to_string()),
+                    Argument::Literal("b".to_string()),
+                    Argument::Literal("c=3".to_string()),
+                ],
+                redirects: vec![],
+            }),
+            Statement::Command(Command {
+                name: "echo".to_string(),
+                args: vec![
+                    Argument::Variable("a".to_string()),
+                    Argument::Literal("|".to_string()),
+                    Argument::Variable("b".to_string()),
+                    Argument::Literal("|".to_string()),
+                    Argument::Variable("c".to_string()),
+                ],
+                redirects: vec![],
+            }),
+        ],
+    };
+
+    executor.execute_statement(Statement::FunctionDef(func)).unwrap();
+
+    // Call the function
+    let result = executor.execute_statement(Statement::Command(Command {
+        name: "foo".to_string(),
+        args: vec![],
+        redirects: vec![],
+    })).unwrap();
+
+    assert_eq!(result.exit_code, 0);
+    // b should be empty
+    assert_eq!(result.stdout().trim(), "1 |  | 3");
+}

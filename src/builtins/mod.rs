@@ -20,7 +20,7 @@ mod alias;
 mod test;
 mod type_builtin;
 mod shift;
-// mod local;
+mod local;
 pub mod return_builtin;  // Public so executor can access ReturnSignal
 mod read;
 // pub mod trap;  // Public so runtime and executor can access TrapSignal
@@ -72,7 +72,7 @@ impl Builtins {
         commands.insert("help".to_string(), help::builtin_help);
         commands.insert("type".to_string(), type_builtin::builtin_type);
         commands.insert("shift".to_string(), shift::builtin_shift);
-        // mod local;
+        commands.insert("local".to_string(), local::builtin_local);
         commands.insert("true".to_string(), builtin_true);
         commands.insert("false".to_string(), builtin_false);
         commands.insert("return".to_string(), return_builtin::builtin_return);
