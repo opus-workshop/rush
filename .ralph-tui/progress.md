@@ -251,3 +251,99 @@ All 20 local tests passing:
 e()`\n   - Variable validation already implemented\n\n### Test Results:\n- **All 20 tests passing** (11 unit + 9 integration)\n- Build successful in release mode\n- Committed with message: `feat: rush-dgr.4 - POSIX-004: Re-enable and test local builtin`\n\n### Key Insight:\nThe implementation was already complete - just needed activation! The scope stack infrastructure from function parameter binding works perfectly for local variables, enabling proper POSIX-compliant function-local scoping.\n\n
 
 ---
+
+## 2026-01-24 - rush-dgr.5: POSIX-005: Re-enable and test trap builtin
+
+### Status: COMPLETE ✓
+
+### What was implemented
+- Added `trap_handlers: TrapHandlers` field to Runtime struct
+- Added import of `TrapHandlers` and `TrapSignal` in runtime/mod.rs
+- Uncommented trap module in src/builtins/mod.rs (line 26)
+- Uncommented trap builtin registration (line 80)
+- Uncommented all trap-related methods in Runtime (set_trap, remove_trap, get_trap, get_all_traps, has_trap)
+- Fixed ExecutionResult API issues in trap.rs unit tests (stdout -> stdout())
+- Added 14 comprehensive integration tests in tests/trap_builtin_tests.rs
+
+### Files changed
+- src/runtime/mod.rs: Added TrapHandlers import, trap_handlers field, uncommented 5 trap methods
+- src/builtins/mod.rs: Uncommented trap module and registration (2 lines)
+- src/builtins/trap.rs: Fixed stdout() API calls in 3 unit tests
+- tests/trap_builtin_tests.rs: Created new file with 14 integration tests (~348 lines)
+
+### Test Results
+All 27 trap tests passing:
+**Unit tests (13) in src/builtins/trap.rs:**
+- test_signal_parsing
+- test_signal_to_string
+- test_signal_numbers
+- test_trap_handlers
+- test_trap_builtin_no_args
+- test_trap_builtin_single_arg_error
+- test_trap_builtin_list_signals
+- test_trap_builtin_set_handler
+- test_trap_builtin_set_multiple
+- test_trap_builtin_remove_handler
+- test_trap_builtin_list_with_traps
+- test_trap_builtin_ignore_signal
+- test_trap_builtin_invalid_signal
+
+**Integration tests (14) in tests/trap_builtin_tests.rs:**
+- test_trap_basic_set_and_list
+- test_trap_set_multiple_signals
+- test_trap_reset_to_default
+- test_trap_ignore_signal
+- test_trap_list_signals
+- test_trap_with_signal_numbers
+- test_trap_exit_special_signal
+- test_trap_err_special_signal
+- test_trap_invalid_signal
+- test_trap_single_arg_error
+- test_trap_list_with_p_flag
+- test_trap_override_existing
+- test_trap_case_insensitive_signal_names
+- test_trap_with_sigprefix
+
+### **Learnings:**
+
+**Pattern: Trap builtin implementation was already complete**
+- The trap.rs implementation was fully functional with comprehensive unit tests
+- TrapSignal enum with Int, Term, Hup, Exit, Err variants already defined
+- TrapHandlers storage with HashMap already implemented
+- Signal parsing (names, numbers, SIG prefix) already working
+- Only needed to wire it into Runtime and uncomment module/registration
+
+**Pattern: Runtime integration for trap handlers**
+- Runtime needs a `trap_handlers: TrapHandlers` field to store trap state
+- Runtime provides convenience methods: set_trap(), remove_trap(), get_trap(), get_all_traps(), has_trap()
+- These methods delegate to TrapHandlers internal HashMap
+- Module must be public (`pub mod trap`) so Runtime and executor can access TrapSignal type
+
+**Pattern: Integration test structure for Command AST**
+- Args must be wrapped in `Argument::Literal()`, not plain strings
+- Import needed: `use rush::parser::ast::{Statement, Command, Argument}`
+- Command struct doesn't have a `background` field - don't include it
+- Access runtime via `executor.runtime_mut()` to check internal state
+
+**Gotcha: ExecutionResult stdout API consistency**
+- Same issue as previous builtins - tests accessing `.stdout` field instead of `.stdout()` method
+- Had to fix 3 unit tests in trap.rs to use stdout() method
+- This is a recurring pattern across the codebase migration
+
+**Impact: Trap builtin enables signal handling and cleanup operations**
+- Users can now catch signals (INT, TERM, HUP) and execute custom handlers
+- EXIT trap runs on shell exit for cleanup operations
+- ERR trap runs when commands fail (for error handling)
+- Essential for writing robust shell scripts with proper signal handling
+- Supports POSIX syntax: trap 'command' SIGNAL, trap - SIGNAL, trap '' SIGNAL
+
+---
+## ✓ Iteration 4 - rush-dgr.5: POSIX-005: Re-enable and test trap builtin
+*2026-01-24T19:54:53.567Z (337s)*
+
+**Status:** Completed
+
+**Notes:**
+pecial signals (EXIT, ERR)\n   - Signal numbers (2 for INT, 15 for TERM)\n   - Case-insensitive names (int, SIGINT)\n   - Error cases (invalid signals, wrong usage)\n\n4. **All 27 tests passing** (13 unit + 14 integration)\n\n5. **Committed and closed bead** with full documentation\n\n### Key insight:\nFollowing the pattern from previous builtins (read, return, shift, local), the trap implementation was already complete - just needed activation through Runtime integration and proper testing!\n\n
+
+---

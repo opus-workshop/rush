@@ -26,7 +26,7 @@ mod read;
 pub mod trap;  // Public so runtime and executor can access TrapSignal
 mod unset;
 mod printf;
-// mod eval;
+mod eval;
 // mod exec;
 mod builtin;
 // mod kill;
@@ -80,7 +80,7 @@ impl Builtins {
         commands.insert("unset".to_string(), unset::builtin_unset);
         commands.insert("printf".to_string(), printf::builtin_printf);
         commands.insert("read".to_string(), read::builtin_read);
-        // commands.insert("eval".to_string(), eval::builtin_eval);
+        commands.insert("eval".to_string(), eval::builtin_eval);
         // commands.insert("exec".to_string(), exec::builtin_exec);
         commands.insert("builtin".to_string(), builtin::builtin_builtin);
         // commands.insert("kill".to_string(), kill::builtin_kill);
