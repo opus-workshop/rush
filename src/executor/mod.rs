@@ -1220,6 +1220,14 @@ impl Executor {
 
                 let pid = child.id();
 
+                // Put the background process in its own process group
+                // This is required for proper job control and signal handling
+                let child_pid = Pid::from_raw(pid as i32);
+                if let Err(e) = setpgid(child_pid, child_pid) {
+                    // Non-fatal: log but continue
+                    eprintln!("Warning: Failed to set process group for background job '{}': {}", command.name, e);
+                }
+
                 // Add to job manager
                 let job_id = self.runtime.job_manager().add_job(pid, command_str);
 
@@ -1520,23 +1528,53 @@ impl Executor {
         let mut expanded_args = Vec::new();
 
         for arg in args {
+            // Determine if this argument should be subject to IFS splitting
+            // Only unquoted variables and command substitutions should be split
+            let should_split_ifs = matches!(
+                arg,
+                Argument::Variable(_) | Argument::BracedVariable(_) | Argument::CommandSubstitution(_)
+            );
+            
             // First resolve the argument (e.g., variable substitution)
             let resolved = self.resolve_argument(arg)?;
 
-            // Then check if it's a glob pattern and expand it
-            if glob_expansion::should_expand_glob(&resolved) {
-                match glob_expansion::expand_globs(&resolved, self.runtime.get_cwd()) {
-                    Ok(matches) => {
-                        expanded_args.extend(matches);
-                    }
-                    Err(e) => {
-                        // If glob expansion fails (no matches), return the error
-                        return Err(anyhow!(e));
+            if should_split_ifs {
+                // Apply IFS splitting first
+                let fields = self.runtime.split_by_ifs(&resolved);
+                
+                // Then check each field for glob patterns
+                for field in fields {
+                    if glob_expansion::should_expand_glob(field) {
+                        match glob_expansion::expand_globs(field, self.runtime.get_cwd()) {
+                            Ok(matches) => {
+                                expanded_args.extend(matches);
+                            }
+                            Err(e) => {
+                                // If glob expansion fails (no matches), return the error
+                                return Err(anyhow!(e));
+                            }
+                        }
+                    } else {
+                        // Not a glob pattern, just add the field
+                        expanded_args.push(field.to_string());
                     }
                 }
             } else {
-                // Not a glob pattern, just add the resolved value
-                expanded_args.push(resolved);
+                // No IFS splitting for quoted arguments - just check for glob expansion
+                if glob_expansion::should_expand_glob(&resolved) {
+                    match glob_expansion::expand_globs(&resolved, self.runtime.get_cwd()) {
+                        Ok(matches) => {
+                            expanded_args.extend(matches);
+                        }
+                        Err(e) => {
+                            // If glob expansion fails (no matches), return the error
+                            return Err(anyhow!(e));
+                        }
+                    }
+                } else {
+                    // Not a glob pattern, just add the resolved value
+                    expanded_args.push(resolved);
+                }
             }
         }
 
