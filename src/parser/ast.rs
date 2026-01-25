@@ -9,7 +9,10 @@ pub enum Statement {
     FunctionDef(FunctionDef),
     IfStatement(IfStatement),
     ForLoop(ForLoop),
+    WhileLoop(WhileLoop),
+    UntilLoop(UntilLoop),
     MatchExpression(MatchExpression),
+    CaseStatement(CaseStatement),
     ConditionalAnd(ConditionalAnd),
     ConditionalOr(ConditionalOr),
     Subshell(Vec<Statement>),
@@ -67,6 +70,18 @@ pub struct ForLoop {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WhileLoop {
+    pub condition: Vec<Statement>,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UntilLoop {
+    pub condition: Vec<Statement>,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MatchExpression {
     pub value: Expression,
     pub arms: Vec<MatchArm>,
@@ -75,6 +90,18 @@ pub struct MatchExpression {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaseStatement {
+    pub word: Expression,
+    pub arms: Vec<CaseArm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaseArm {
+    pub patterns: Vec<String>,  // Multiple patterns separated by |
     pub body: Vec<Statement>,
 }
 
@@ -208,10 +235,10 @@ pub struct Redirect {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RedirectKind {
-    Stdout,          // >
-    StdoutAppend,    // >>
-    Stdin,           // <
-    Stderr,          // 2>
-    StderrToStdout,  // 2>&1
-    Both,            // &>
+    Stdout,         // >
+    StdoutAppend,   // >>
+    Stdin,          // <
+    Stderr,         // 2>
+    StderrToStdout, // 2>&1
+    Both,           // &>
 }

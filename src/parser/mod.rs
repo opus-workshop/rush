@@ -1,8 +1,8 @@
 pub mod ast;
 
 use crate::lexer::Token;
-use ast::*;
 use anyhow::{anyhow, Result};
+use ast::*;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -31,7 +31,7 @@ impl Parser {
             }
 
             statements.push(self.parse_conditional_statement()?);
-            
+
             // Handle semicolon as statement separator
             if self.match_token(&Token::Semicolon) {
                 self.advance();
@@ -80,6 +80,8 @@ impl Parser {
             Some(Token::Fn) => self.parse_function_def(),
             Some(Token::If) => self.parse_if_statement(),
             Some(Token::For) => self.parse_for_loop(),
+            Some(Token::While) => self.parse_while_loop(),
+            Some(Token::Until) => self.parse_until_loop(),
             Some(Token::Match) => self.parse_match_expression(),
             Some(Token::LeftParen) => self.parse_subshell(),
             _ => self.parse_command_or_pipeline(),
@@ -125,7 +127,7 @@ impl Parser {
                 Statement::Subshell(_) => {
                     // For subshells in pipelines, we need different handling
                     return Err(anyhow!("Subshells in pipelines require special handling - use the full statement form"));
-                },
+                }
                 _ => return Err(anyhow!("Only commands can be used in pipelines")),
             };
 
@@ -252,7 +254,9 @@ impl Parser {
                 Ok(Argument::Literal(unquoted.to_string()))
             }
             Some(Token::Identifier(s)) => Ok(Argument::Literal(s.clone())),
-            Some(Token::Variable(s)) | Some(Token::SpecialVariable(s)) => Ok(Argument::Variable(s.clone())),
+            Some(Token::Variable(s)) | Some(Token::SpecialVariable(s)) => {
+                Ok(Argument::Variable(s.clone()))
+            }
             Some(Token::BracedVariable(s)) => Ok(Argument::BracedVariable(s.clone())),
             Some(Token::CommandSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
             Some(Token::BacktickSubstitution(s)) => Ok(Argument::CommandSubstitution(s.clone())),
@@ -467,6 +471,114 @@ impl Parser {
         }))
     }
 
+    fn parse_while_loop(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::While)?;
+
+        // Parse condition statements until 'do'
+        let mut condition = Vec::new();
+        while !matches!(self.peek(), Some(Token::Do)) {
+            // Skip newlines in condition
+            if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+                continue;
+            }
+            
+            // Parse a statement in the condition
+            condition.push(self.parse_statement()?);
+            
+            // Handle optional semicolons or newlines between condition statements
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        if condition.is_empty() {
+            return Err(anyhow!("While loop must have a condition"));
+        }
+
+        self.expect_token(&Token::Do)?;
+        
+        // Skip newline after 'do'
+        if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        // Parse body statements until 'done'
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Some(Token::Done)) {
+            // Skip newlines in body
+            if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+                continue;
+            }
+            
+            body.push(self.parse_statement()?);
+            
+            // Handle optional semicolons or newlines between body statements
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(&Token::Done)?;
+
+        Ok(Statement::WhileLoop(WhileLoop { condition, body }))
+    }
+
+    fn parse_until_loop(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::Until)?;
+
+        // Parse condition statements until 'do'
+        let mut condition = Vec::new();
+        while !matches!(self.peek(), Some(Token::Do)) {
+            // Skip newlines in condition
+            if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+                continue;
+            }
+            
+            // Parse a statement in the condition
+            condition.push(self.parse_statement()?);
+            
+            // Handle optional semicolons or newlines between condition statements
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        if condition.is_empty() {
+            return Err(anyhow!("Until loop must have a condition"));
+        }
+
+        self.expect_token(&Token::Do)?;
+        
+        // Skip newline after 'do'
+        if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        // Parse body statements until 'done'
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Some(Token::Done)) {
+            // Skip newlines in body
+            if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+                continue;
+            }
+            
+            body.push(self.parse_statement()?);
+            
+            // Handle optional semicolons or newlines between body statements
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(&Token::Done)?;
+
+        Ok(Statement::UntilLoop(UntilLoop { condition, body }))
+    }
+
     fn parse_match_expression(&mut self) -> Result<Statement> {
         self.expect_token(&Token::Match)?;
 
@@ -565,11 +677,7 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(anyhow!(
-                "Expected {:?}, found {:?}",
-                expected,
-                self.peek()
-            ))
+            Err(anyhow!("Expected {:?}, found {:?}", expected, self.peek()))
         }
     }
 
@@ -701,6 +809,52 @@ mod tests {
                 assert_eq!(assignment.name, "x");
             }
             _ => panic!("Expected assignment"),
+        }
+    }
+
+    #[test]
+    fn test_parse_while_loop() {
+        let tokens = Lexer::tokenize("while true; do echo hi; done").unwrap();
+        println!("Tokens: {:?}", tokens);
+        let mut parser = Parser::new(tokens);
+        let result = parser.parse();
+        match result {
+            Ok(statements) => {
+                println!("Parsed successfully: {:?}", statements);
+                assert_eq!(statements.len(), 1);
+                match &statements[0] {
+                    Statement::WhileLoop(_) => {},
+                    _ => panic!("Expected while loop"),
+                }
+            }
+            Err(e) => {
+                panic!("Parse error: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_while_loop_with_newlines() {
+        let code = r#"
+        i=0
+        while [ $i -lt 5 ]; do
+            echo $i
+            i=$((i+1))
+        done
+    "#;
+        let tokens = Lexer::tokenize(code).unwrap();
+        println!("Tokens: {:?}", tokens);
+        let mut parser = Parser::new(tokens);
+        match parser.parse() {
+            Ok(statements) => {
+                println!("Parsed successfully!");
+                for stmt in &statements {
+                    println!("  {:?}", stmt);
+                }
+            }
+            Err(e) => {
+                panic!("Parse error: {}", e);
+            }
         }
     }
 }

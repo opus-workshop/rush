@@ -25,6 +25,24 @@ pub enum Token {
     #[token("in")]
     In,
 
+    #[token("while")]
+    While,
+
+    #[token("do")]
+    Do,
+
+    #[token("done")]
+    Done,
+
+    #[token("until")]
+    Until,
+
+    #[token("case")]
+    Case,
+
+    #[token("esac")]
+    Esac,
+
     // Operators and punctuation
     #[token("=")]
     Equals,
@@ -187,7 +205,7 @@ fn parse_command_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> {
     let input = lex.source();
     let mut depth = 1;
     let mut pos = lex.span().end;
-    
+
     while pos < input.len() && depth > 0 {
         let ch = input.as_bytes()[pos] as char;
         if ch == '(' && pos > 0 && input.as_bytes()[pos - 1] as char == '$' {
@@ -197,7 +215,7 @@ fn parse_command_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> {
         }
         pos += 1;
     }
-    
+
     if depth == 0 {
         // Extract the command including the $() delimiters
         let result = input[start..pos].to_string();
@@ -214,7 +232,7 @@ fn parse_backtick_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> 
     let start = lex.span().start;
     let input = lex.source();
     let mut pos = lex.span().end;
-    
+
     // Find matching backtick
     while pos < input.len() {
         let ch = input.as_bytes()[pos] as char;
@@ -230,7 +248,7 @@ fn parse_backtick_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> 
             pos += 1;
         }
     }
-    
+
     None // Unclosed backtick
 }
 
@@ -472,5 +490,26 @@ mod tests {
         } else {
             panic!("Expected SpecialVariable token for $_, got {:?}", tokens[0]);
         }
+    }
+
+    #[test]
+    fn test_while_keyword() {
+        let tokens = Lexer::tokenize("while").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::While);
+    }
+
+    #[test]
+    fn test_do_keyword() {
+        let tokens = Lexer::tokenize("do").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Do);
+    }
+
+    #[test]
+    fn test_done_keyword() {
+        let tokens = Lexer::tokenize("done").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Done);
     }
 }

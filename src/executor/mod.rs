@@ -1165,7 +1165,14 @@ impl Executor {
 
     fn execute_subshell(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
         // Clone the runtime to create an isolated environment
-        let child_runtime = self.runtime.clone();
+        let mut child_runtime = self.runtime.clone();
+
+        // Increment SHLVL in the subshell
+        let current_shlvl = child_runtime
+            .get_variable("SHLVL")
+            .and_then(|s| s.parse::<i32>().ok())
+            .unwrap_or(1);
+        child_runtime.set_variable("SHLVL".to_string(), (current_shlvl + 1).to_string());
 
         // Create a new executor with the cloned runtime
         let mut child_executor = Executor {
