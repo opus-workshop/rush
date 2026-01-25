@@ -1,43 +1,43 @@
+use crate::correction::Corrector;
 use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
-use crate::correction::Corrector;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::env;
+use std::path::PathBuf;
 
 mod cat;
 mod find;
-mod git_status;
 mod git_log;
+mod git_status;
 // mod git_diff;  // Temporarily disabled due to compilation errors
-mod grep;
-mod help;
-mod ls;
-mod mkdir;
-mod undo;
-mod jobs;
-mod set;
 mod alias;
-mod test;
-mod type_builtin;
-mod shift;
-mod local;
-pub mod return_builtin;  // Public so executor can access ReturnSignal
-mod read;
-pub mod trap;  // Public so runtime and executor can access TrapSignal
-mod unset;
-mod printf;
+pub mod break_builtin; // Public so executor can access BreakSignal
+mod builtin;
+mod command;
+pub mod continue_builtin; // Public so executor can access ContinueSignal
 mod eval;
 mod exec;
-mod builtin;
-mod kill;
-pub mod break_builtin;  // Public so executor can access BreakSignal
-pub mod continue_builtin;  // Public so executor can access ContinueSignal
-mod json;
-mod command;
 mod fetch;
+mod grep;
+mod help;
+mod jobs;
+mod json;
+mod kill;
+mod local;
+mod ls;
+mod mkdir;
+mod printf;
+mod read;
 mod readonly;
+pub mod return_builtin; // Public so executor can access ReturnSignal
+mod set;
+mod shift;
+mod test;
+pub mod trap; // Public so runtime and executor can access TrapSignal
+mod type_builtin;
+mod undo;
+mod unset;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -142,7 +142,7 @@ impl Builtins {
                 return cat::builtin_cat_with_stdin(&args, runtime, stdin_data);
             }
         }
-        
+
         // Special handling for grep with stdin
         if name == "grep" {
             if let Some(stdin_data) = stdin {
@@ -190,7 +190,8 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
             // TODO: Implement previous directory tracking
             runtime.get_cwd().clone()
         } else if path.starts_with('~') {
-            let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+            let home =
+                dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
             home.join(path.trim_start_matches("~/"))
         } else {
             PathBuf::from(path)
@@ -207,9 +208,9 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
         // Provide path suggestions
         let corrector = Corrector::new();
         let suggestions = corrector.suggest_path(&absolute, runtime.get_cwd());
-        
+
         let mut error_msg = format!("cd: no such file or directory: {:?}", absolute);
-        
+
         if !suggestions.is_empty() {
             error_msg.push_str("\n\nDid you mean?");
             for suggestion in suggestions.iter().take(3) {
@@ -222,7 +223,7 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
                 ));
             }
         }
-        
+
         return Err(anyhow!(error_msg));
     }
 
@@ -232,10 +233,10 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
 
     // Update runtime's cwd
     runtime.set_cwd(absolute.clone());
-    
+
     // Also update the process's actual current directory so other parts can see it
     env::set_current_dir(&absolute)?;
-    
+
     Ok(ExecutionResult::success(String::new()))
 }
 
@@ -355,11 +356,11 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
         return Err(anyhow!("source: usage: source <file>"));
     }
 
-    use std::fs;
-    use std::io::{BufRead, BufReader};
+    use crate::executor::Executor;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
-    use crate::executor::Executor;
+    use std::fs;
+    use std::io::{BufRead, BufReader};
 
     let file_path = &args[0];
     let path = if file_path.starts_with('~') {
@@ -387,7 +388,7 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
 
     // Enter function context for sourced scripts (allows return)
     runtime.enter_function_context();
-    
+
     // We need an executor to run the commands, but we can't access it from here
     // So we'll return the file contents as a special marker that main.rs can handle
     // For now, execute line by line in a basic way
@@ -411,7 +412,7 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
                         let mut executor = Executor::new();
                         // Copy runtime state (this is not ideal but works for source)
                         *executor.runtime_mut() = runtime.clone();
-                        
+
                         match executor.execute(statements) {
                             Ok(result) => {
                                 // Copy back runtime state to preserve variable changes
@@ -426,14 +427,16 @@ pub(crate) fn builtin_source(args: &[String], runtime: &mut Runtime) -> Result<E
                             }
                             Err(e) => {
                                 // Check if this is a return signal from sourced script
-                                if let Some(return_signal) = e.downcast_ref::<return_builtin::ReturnSignal>() {
+                                if let Some(return_signal) =
+                                    e.downcast_ref::<return_builtin::ReturnSignal>()
+                                {
                                     // Early return from sourced script
                                     runtime.exit_function_context();
                                     return Ok(ExecutionResult {
                                         output: Output::Text(String::new()),
                                         stderr: String::new(),
                                         exit_code: return_signal.exit_code,
-        error: None,
+                                        error: None,
                                     });
                                 }
                                 eprintln!("{}:{}: {}", path.display(), line_num + 1, e);
@@ -464,8 +467,8 @@ mod tests {
     #[test]
     fn test_echo() {
         let mut runtime = Runtime::new();
-        let result = builtin_echo(&["hello".to_string(), "world".to_string()], &mut runtime)
-            .unwrap();
+        let result =
+            builtin_echo(&["hello".to_string(), "world".to_string()], &mut runtime).unwrap();
         assert_eq!(result.stdout(), "hello world\n");
     }
 
@@ -532,7 +535,12 @@ mod tests {
     #[test]
     fn test_colon_with_many_arguments() {
         let mut runtime = Runtime::new();
-        let args = vec!["foo".to_string(), "bar".to_string(), "baz".to_string(), "qux".to_string()];
+        let args = vec![
+            "foo".to_string(),
+            "bar".to_string(),
+            "baz".to_string(),
+            "qux".to_string(),
+        ];
         let result = builtin_colon(&args, &mut runtime).unwrap();
         assert_eq!(result.exit_code, 0);
     }

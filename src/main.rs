@@ -105,16 +105,20 @@ fn run_script(
     script_args: Vec<String>,
     signal_handler: SignalHandler,
 ) -> Result<()> {
+    // Initialize environment variables
+    init_environment_variables()?;
+    
     // Read the script file
     let script_content = fs::read_to_string(script_path)
         .map_err(|e| anyhow::anyhow!("Failed to read script '{}': {}", script_path, e))?;
 
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
+    // Set runtime variables from environment
+    init_runtime_variables(executor.runtime_mut());
+
     // Set up positional parameters ($1, $2, etc.) and $#, $@, $*
-    executor
-        .runtime_mut()
-        .set_positional_params(script_args.clone());
+    executor.runtime_mut().set_positional_params(script_args.clone());
 
     // Set $0 to script name
     executor

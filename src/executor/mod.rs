@@ -17,6 +17,7 @@ use std::process::Command as StdCommand;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use nix::unistd::{setpgid, Pid};
 
 pub struct Executor {
     runtime: Runtime,
@@ -135,7 +136,10 @@ impl Executor {
             Statement::FunctionDef(func) => self.execute_function_def(func),
             Statement::IfStatement(if_stmt) => self.execute_if_statement(if_stmt),
             Statement::ForLoop(for_loop) => self.execute_for_loop(for_loop),
+            Statement::WhileLoop(while_loop) => self.execute_while_loop(while_loop),
+            Statement::UntilLoop(until_loop) => self.execute_until_loop(until_loop),
             Statement::MatchExpression(match_expr) => self.execute_match(match_expr),
+            Statement::CaseStatement(case_stmt) => self.execute_case(case_stmt),
             Statement::ConditionalAnd(cond_and) => self.execute_conditional_and(cond_and),
             Statement::ConditionalOr(cond_or) => self.execute_conditional_or(cond_or),
             Statement::Subshell(statements) => self.execute_subshell(statements),
@@ -521,6 +525,17 @@ impl Executor {
                 }
             })?;
 
+        // Put the child process in its own process group
+        // This is required for proper job control and signal handling
+        let child_pid = Pid::from_raw(child.id() as i32);
+
+        // Call setpgid to put the process in its own group (PGID = PID)
+        // This must be done immediately after spawn, before the process runs
+        if let Err(e) = setpgid(child_pid, child_pid) {
+            // Non-fatal: log but continue
+            eprintln!("Warning: Failed to set process group for '{}': {}", command.name, e);
+        }
+
         // Wait a bit to see if command completes quickly
         thread::sleep(Duration::from_millis(crate::progress::PROGRESS_THRESHOLD_MS));
         
@@ -865,6 +880,174 @@ impl Executor {
         result
     }
 
+    fn execute_while_loop(&mut self, while_loop: WhileLoop) -> Result<ExecutionResult> {
+        // Enter loop context for break/continue
+        self.runtime.enter_loop();
+
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut last_exit_code = 0;
+
+        let result = (|| -> Result<ExecutionResult> {
+            loop {
+                // Evaluate condition
+                let mut condition_exit_code = 0;
+                for statement in &while_loop.condition {
+                    match self.execute_statement(statement.clone()) {
+                        Ok(result) => {
+                            condition_exit_code = result.exit_code;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                // While loop continues while condition is true (exit code 0)
+                if condition_exit_code != 0 {
+                    break;
+                }
+
+                // Execute body
+                for statement in &while_loop.body {
+                    match self.execute_statement(statement.clone()) {
+                        Ok(result) => {
+                            accumulated_stdout.push_str(&result.stdout());
+                            accumulated_stderr.push_str(&result.stderr);
+                            last_exit_code = result.exit_code;
+                        }
+                        Err(e) => {
+                            // Check if this is a break signal
+                            if let Some(break_signal) = e.downcast_ref::<crate::builtins::break_builtin::BreakSignal>() {
+                                // First, add any accumulated output from the break signal itself
+                                accumulated_stdout.push_str(&break_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&break_signal.accumulated_stderr);
+
+                                if break_signal.levels == 1 {
+                                    // Break from this loop, return accumulated output
+                                    return Ok(ExecutionResult {
+                                        output: Output::Text(accumulated_stdout),
+                                        stderr: accumulated_stderr,
+                                        exit_code: last_exit_code,
+                                        error: None,
+                                    });
+                                } else {
+                                    // Propagate to outer loop with decreased level and accumulated output
+                                    return Err(anyhow::Error::new(crate::builtins::break_builtin::BreakSignal {
+                                        levels: break_signal.levels - 1,
+                                        accumulated_stdout: accumulated_stdout.clone(),
+                                        accumulated_stderr: accumulated_stderr.clone(),
+                                    }));
+                                }
+                            }
+
+                            // Check if this is a continue signal
+                            if let Some(continue_signal) = e.downcast_ref::<crate::builtins::continue_builtin::ContinueSignal>() {
+                                // First, add any accumulated output from the continue signal itself
+                                accumulated_stdout.push_str(&continue_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&continue_signal.accumulated_stderr);
+
+                                if continue_signal.levels == 1 {
+                                    // Continue in this loop - skip to next iteration
+                                    break; // Break out of the statement loop, continue with next item
+                                } else {
+                                    // Propagate to outer loop with decreased level and accumulated output
+                                    return Err(anyhow::Error::new(crate::builtins::continue_builtin::ContinueSignal {
+                                        levels: continue_signal.levels - 1,
+                                        accumulated_stdout: accumulated_stdout.clone(),
+                                        accumulated_stderr: accumulated_stderr.clone(),
+                                    }));
+                                }
+                            }
+
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+            Ok(ExecutionResult {
+                output: Output::Text(accumulated_stdout),
+                stderr: accumulated_stderr,
+                exit_code: last_exit_code,
+                error: None,
+            })
+        })();
+
+        self.runtime.exit_loop();
+        result
+    }
+
+    fn execute_until_loop(&mut self, until_loop: UntilLoop) -> Result<ExecutionResult> {
+        // Enter loop context for break/continue
+        self.runtime.enter_loop();
+
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut last_exit_code = 0;
+
+        let result = (|| -> Result<ExecutionResult> {
+            loop {
+                // Evaluate condition
+                let mut condition_exit_code = 0;
+                for statement in &until_loop.condition {
+                    match self.execute_statement(statement.clone()) {
+                        Ok(result) => {
+                            condition_exit_code = result.exit_code;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                // Until loop continues until condition is true (exit code 0)
+                // So we break when exit code is 0
+                if condition_exit_code == 0 {
+                    break;
+                }
+
+                // Execute body
+                for statement in &until_loop.body {
+                    match self.execute_statement(statement.clone()) {
+                        Ok(result) => {
+                            accumulated_stdout.push_str(&result.stdout());
+                            accumulated_stderr.push_str(&result.stderr);
+                            last_exit_code = result.exit_code;
+                        }
+                        Err(e) => {
+                            // Check if this is a break signal
+                            if let Some(break_signal) = e.downcast_ref::<crate::builtins::break_builtin::BreakSignal>() {
+                                accumulated_stdout.push_str(&break_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&break_signal.accumulated_stderr);
+                                self.runtime.exit_loop();
+                                return Ok(ExecutionResult {
+                                    output: Output::Text(accumulated_stdout),
+                                    stderr: accumulated_stderr,
+                                    exit_code: last_exit_code,
+                                    error: None,
+                                });
+                            }
+
+                            // Check if this is a continue signal
+                            if let Some(continue_signal) = e.downcast_ref::<crate::builtins::continue_builtin::ContinueSignal>() {
+                                accumulated_stdout.push_str(&continue_signal.accumulated_stdout);
+                                accumulated_stderr.push_str(&continue_signal.accumulated_stderr);
+                                break; // Break inner loop to continue outer loop
+                            }
+
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+            Ok(ExecutionResult {
+                output: Output::Text(accumulated_stdout),
+                stderr: accumulated_stderr,
+                exit_code: last_exit_code,
+                error: None,
+            })
+        })();
+
+        self.runtime.exit_loop();
+        result
+    }
+
     fn execute_match(&mut self, match_expr: MatchExpression) -> Result<ExecutionResult> {
         let value = self.evaluate_expression(match_expr.value)?;
 
@@ -878,6 +1061,59 @@ impl Executor {
         }
 
         Ok(ExecutionResult::default())
+    }
+    fn execute_case(&mut self, case_stmt: CaseStatement) -> Result<ExecutionResult> {
+        // Evaluate the word to match against
+        let word_value = self.evaluate_expression(case_stmt.word)?;
+        let word = word_value.trim();
+
+        let mut last_exit_code = 0;
+        let mut matched = false;
+
+        // Try each case arm in order
+        for arm in case_stmt.arms {
+            // Check if any of the patterns match
+            for pattern_str in &arm.patterns {
+                if self.case_pattern_matches(pattern_str, word) {
+                    matched = true;
+
+                    // Execute the body statements
+                    for statement in &arm.body {
+                        let result = self.execute_statement(statement.clone())?;
+                        last_exit_code = result.exit_code;
+                    }
+
+                    // Break from this arm after execution (POSIX: only first match executes)
+                    break;
+                }
+            }
+
+            // If we found a match, don't check remaining arms
+            if matched {
+                break;
+            }
+        }
+
+        // POSIX: exit code is last command in executed list, or 0 if no match
+        Ok(ExecutionResult {
+            output: Output::Text(String::new()),
+            stderr: String::new(),
+            exit_code: if matched { last_exit_code } else { 0 },
+            error: None,
+        })
+    }
+
+    /// Match a pattern against a word for case statements
+    /// Supports glob-style patterns: *, ?, [...]
+    fn case_pattern_matches(&self, pattern: &str, word: &str) -> bool {
+        // Use glob crate's Pattern for matching
+        match glob::Pattern::new(pattern) {
+            Ok(glob_pattern) => glob_pattern.matches(word),
+            Err(_) => {
+                // If pattern is invalid, fall back to literal match
+                pattern == word
+            }
+        }
     }
 
     fn execute_conditional_and(&mut self, cond_and: ConditionalAnd) -> Result<ExecutionResult> {
@@ -993,9 +1229,7 @@ impl Executor {
                 // Return success with job information
                 Ok(ExecutionResult::success(format!("[{}] {}\n", job_id, pid)))
             }
-            _ => {
-                Err(anyhow!("Only simple commands can be run in background for now"))
-            }
+            _ => Err(anyhow!("Only simple commands can be run in background for now")),
         }
     }
 
@@ -1014,6 +1248,8 @@ impl Executor {
                     format!("{} {}", cmd.name, args_str)
                 }
             }
+            Statement::WhileLoop(_) => "while loop".to_string(),
+            Statement::UntilLoop(_) => "until loop".to_string(),
             _ => "complex command".to_string(),
         }
     }
