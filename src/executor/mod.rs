@@ -507,15 +507,39 @@ impl Executor {
             });
         }
 
+        // Collect data for suggestions before spawning (needed for error handling closure)
+        let builtin_names: Vec<String> = self.builtins.builtin_names();
+        let alias_names: Vec<String> = self.runtime
+            .get_all_aliases()
+            .keys()
+            .cloned()
+            .collect();
+        let history_commands: Vec<String> = self.runtime
+            .history()
+            .entries()
+            .iter()
+            .rev()
+            .take(100) // Use last 100 commands for suggestions
+            .map(|e| e.command.clone())
+            .collect();
+        let current_dir = self.runtime.get_cwd().to_path_buf();
+        let command_name = command.name.clone();
+
         // Spawn the command
         let mut child = cmd.spawn()
             .map_err(|e| {
                 // If command not found, provide suggestions
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    let builtin_names: Vec<String> = self.builtins.builtin_names();
-                    let suggestions = self.corrector.suggest_command(&command.name, &builtin_names);
+                    // Use context-aware suggestions with history
+                    let suggestions = self.corrector.suggest_command_with_context(
+                        &command_name,
+                        &builtin_names,
+                        &alias_names,
+                        &history_commands,
+                        &current_dir,
+                    );
                     
-                    let mut error_msg = format!("Command not found: '{}'", command.name);
+                    let mut error_msg = format!("Command not found: '{}'", command_name);
                     
                     if !suggestions.is_empty() {
                         error_msg.push_str("\n\nDid you mean?");
@@ -535,42 +559,25 @@ impl Executor {
                     
                     anyhow!(error_msg)
                 } else {
-                    anyhow!("Failed to execute '{}': {}", command.name, e)
+                    anyhow!("Failed to execute '{}': {}", command_name, e)
                 }
             })?;
 
-        // Wait a bit to see if command completes quickly
-        thread::sleep(Duration::from_millis(crate::progress::PROGRESS_THRESHOLD_MS));
-        
-        // Check if command is still running
-        let progress = match child.try_wait() {
-            Ok(Some(_)) => None, // Command already finished
-            _ => {
-                // Command still running, show progress indicator only if enabled
-                if self.show_progress {
-                    Some(ProgressIndicator::new(format!("Running {}", command.name)))
-                } else {
-                    None
-                }
-            }
-        };
-
-        // Wait for command to complete, checking for signals
+        // Wait for command to complete
         let (stdout_str, stderr_str, exit_code) = if should_inherit_io {
-            // Interactive mode - IO is inherited, just wait for exit status
+            // Interactive mode - IO is inherited, use polling with deferred progress indicator
+            let mut progress: Option<ProgressIndicator> = None;
+            let start = std::time::Instant::now();
+
             loop {
                 // Check for signals
                 if let Some(handler) = &self.signal_handler {
                     if handler.should_shutdown() {
-                        // Kill the child process
                         let _ = child.kill();
                         let _ = child.wait();
-                        
-                        // Stop progress indicator if it was started
                         if let Some(prog) = progress {
                             prog.stop();
                         }
-                        
                         return Err(anyhow!("Command interrupted by signal"));
                     }
                 }
@@ -578,63 +585,38 @@ impl Executor {
                 // Try to get the status
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        // Child finished
+                        if let Some(prog) = progress {
+                            prog.stop();
+                        }
                         break (String::new(), String::new(), status.code().unwrap_or(1));
                     }
                     Ok(None) => {
-                        // Still running, sleep briefly and check again
-                        thread::sleep(Duration::from_millis(100));
+                        // Start progress indicator only after threshold
+                        if progress.is_none()
+                            && self.show_progress
+                            && start.elapsed().as_millis() >= crate::progress::PROGRESS_THRESHOLD_MS as u128
+                        {
+                            progress = Some(ProgressIndicator::new(format!("Running {}", command.name)));
+                        }
+                        // Short sleep to avoid busy-waiting
+                        thread::sleep(Duration::from_millis(1));
                     }
                     Err(e) => {
+                        if let Some(prog) = progress {
+                            prog.stop();
+                        }
                         return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
                     }
                 }
             }
         } else {
-            // Non-interactive mode - capture output
-            let output = loop {
-                // Check for signals
-                if let Some(handler) = &self.signal_handler {
-                    if handler.should_shutdown() {
-                        // Kill the child process
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        
-                        // Stop progress indicator if it was started (for interactive mode)
-                        if let Some(prog) = progress {
-                            prog.stop();
-                        }
-                        
-                        return Err(anyhow!("Command interrupted by signal"));
-                    }
-                }
+            // Non-interactive mode - use blocking wait (most efficient)
+            let output = child.wait_with_output()
+                .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
 
-                // Try to get the output
-                match child.try_wait() {
-                    Ok(Some(_)) => {
-                        // Child finished, get output
-                        break child.wait_with_output()
-                            .map_err(|e| anyhow!("Failed to wait for '{}': {}", command.name, e))?;
-                    }
-                    Ok(None) => {
-                        // Still running, sleep briefly and check again
-                        thread::sleep(Duration::from_millis(100));
-                    }
-                    Err(e) => {
-                        return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
-                    }
-                }
-            };
-
-            // Stop progress indicator if it was started (for interactive mode)
-            if let Some(prog) = progress {
-                prog.stop();
-            }
-
-            // Handle stderr to stdout redirection in output
             let mut stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-            
+
             if stderr_to_stdout && !stderr_str.is_empty() {
                 stdout_str.push_str(&stderr_str);
             }
@@ -703,7 +685,20 @@ impl Executor {
                         Err(e) => {
                             if e.kind() == std::io::ErrorKind::NotFound {
                                 let builtin_names: Vec<String> = builtins.builtin_names();
-                                let suggestions = corrector.suggest_command(&command.name, &builtin_names);
+                                
+                                // Get aliases for suggestions
+                                let alias_names: Vec<String> = runtime_snapshot
+                                    .get_all_aliases()
+                                    .keys()
+                                    .cloned()
+                                    .collect();
+                                
+                                // Use alias-aware suggestions
+                                let suggestions = corrector.suggest_command_with_aliases(
+                                    &command.name,
+                                    &builtin_names,
+                                    &alias_names,
+                                );
                                 
                                 let mut error_msg = format!("Command not found: '{}'", command.name);
                                 
@@ -1386,6 +1381,8 @@ impl Executor {
                     } else {
                         return Ok("rush".to_string());
                     }
+                } else if var_name == "?" {
+                    return Ok(self.runtime.get_last_exit_code().to_string());
                 } else if let Ok(index) = var_name.parse::<usize>() {
                     // $1, $2, etc. - positional parameters
                     if index > 0 {
