@@ -17,7 +17,8 @@ use std::process::Command as StdCommand;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use nix::unistd::{setpgid, Pid};
+use nix::unistd::{setpgid, getpid, Pid};
+use std::os::unix::process::CommandExt;
 
 pub struct Executor {
     runtime: Runtime,
@@ -492,7 +493,20 @@ impl Executor {
             // Redirect stderr to stdout for the process
             cmd.stderr(Stdio::piped());
         }
-        
+
+        // Use pre_exec to set the process group before the child executes
+        // This is required for proper job control and signal handling
+        unsafe {
+            cmd.pre_exec(|| {
+                // Put this process in its own process group (PGID = PID)
+                let pid = getpid();
+                setpgid(pid, pid).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("setpgid failed: {}", e))
+                })?;
+                Ok(())
+            });
+        }
+
         // Spawn the command
         let mut child = cmd.spawn()
             .map_err(|e| {

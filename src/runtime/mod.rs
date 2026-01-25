@@ -1,53 +1,53 @@
+use crate::builtins::trap::{TrapHandlers, TrapSignal};
+use crate::history::History;
+use crate::jobs::JobManager;
 use crate::parser::ast::FunctionDef;
 use crate::parser::ast::{VarExpansion, VarExpansionOp};
-use crate::history::History;
 use crate::undo::UndoManager;
-use crate::jobs::JobManager;
-use crate::builtins::trap::{TrapHandlers, TrapSignal};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
 use std::path::PathBuf;
-use anyhow::{anyhow, Result};
 
 /// Shell options that control execution behavior
 #[derive(Clone, Default)]
 pub struct ShellOptions {
-    pub errexit: bool,      // Exit on error (set -e)
-    pub pipefail: bool,     // Pipeline fails if any command fails (set -o pipefail)
-    pub nounset: bool,      // Error on undefined variable (set -u)
-    pub xtrace: bool,       // Print commands before executing (set -x)
-    pub noclobber: bool,    // Prevent overwriting files (set -C)
-    pub verbose: bool,      // Print input lines as they are read (set -v)
+    pub errexit: bool,   // Exit on error (set -e)
+    pub pipefail: bool,  // Pipeline fails if any command fails (set -o pipefail)
+    pub nounset: bool,   // Error on undefined variable (set -u)
+    pub xtrace: bool,    // Print commands before executing (set -x)
+    pub noclobber: bool, // Prevent overwriting files (set -C)
+    pub verbose: bool,   // Print input lines as they are read (set -v)
 }
 
 /// Runtime environment for the shell
 #[derive(Clone)]
 pub struct Runtime {
     variables: HashMap<String, String>,
-    readonly_vars: HashSet<String>,  // Track readonly variables
+    readonly_vars: HashSet<String>, // Track readonly variables
     functions: HashMap<String, FunctionDef>,
     aliases: HashMap<String, String>,
     cwd: PathBuf,
     scopes: Vec<HashMap<String, String>>,
     call_stack: Vec<String>,
     max_call_depth: usize,
-    history: Option<History>,  // Lazy initialization
-    undo_manager: Option<UndoManager>,  // Lazy initialization
+    history: Option<History>,          // Lazy initialization
+    undo_manager: Option<UndoManager>, // Lazy initialization
     job_manager: JobManager,
     pub options: ShellOptions,
-    positional_params: Vec<String>,  // Track $1, $2, etc. for shift builtin
-    positional_stack: Vec<Vec<String>>,  // Stack for function scopes
-    function_depth: usize,  // Track function call depth for return builtin
-    loop_depth: usize,  // Track loop nesting depth for break/continue builtins
-    trap_handlers: TrapHandlers,  // Signal trap handlers
+    positional_params: Vec<String>, // Track $1, $2, etc. for shift builtin
+    positional_stack: Vec<Vec<String>>, // Stack for function scopes
+    function_depth: usize,          // Track function call depth for return builtin
+    loop_depth: usize,              // Track loop nesting depth for break/continue builtins
+    trap_handlers: TrapHandlers,    // Signal trap handlers
     // Permanent file descriptor redirections (set by exec builtin)
     permanent_stdout: Option<i32>,
     permanent_stderr: Option<i32>,
     permanent_stdin: Option<i32>,
     // Special variables tracking
-    last_bg_pid: Option<u32>,  // Track PID of last background job ($!)
-    last_arg: String,  // Track last argument of previous command ($_)
+    last_bg_pid: Option<u32>, // Track PID of last background job ($!)
+    last_arg: String,         // Track last argument of previous command ($_)
     // Directory stack for pushd/popd/dirs builtins
     dir_stack: Vec<PathBuf>,
 }
@@ -71,8 +71,8 @@ impl Runtime {
             scopes: Vec::new(),
             call_stack: Vec::new(),
             max_call_depth: 100,
-            history: None,  // Lazy initialization
-            undo_manager: None,  // Lazy initialization
+            history: None,      // Lazy initialization
+            undo_manager: None, // Lazy initialization
             job_manager: JobManager::new(),
             options: ShellOptions::default(),
             positional_params: Vec::new(),
@@ -90,7 +90,58 @@ impl Runtime {
 
         // Initialize $? to 0
         runtime.set_last_exit_code(0);
+        
+        // Initialize IFS to default value (space, tab, newline)
+        runtime.set_variable("IFS".to_string(), " \t\n".to_string());
+        
         runtime
+    }
+
+    /// Get the IFS (Internal Field Separator) variable value
+    /// Defaults to space, tab, and newline if not set
+    pub fn get_ifs(&self) -> String {
+        self.get_variable("IFS").unwrap_or_else(|| " \t\n".to_string())
+    }
+    
+    /// Split a string by IFS characters
+    /// Returns a vector of fields after splitting
+    /// 
+    /// If IFS is empty, no splitting occurs.
+    /// Leading/trailing IFS whitespace characters are removed.
+    /// Consecutive IFS whitespace characters are treated as a single separator.
+    pub fn split_by_ifs<'a>(&self, s: &'a str) -> Vec<&'a str> {
+        let ifs = self.get_ifs();
+        
+        if ifs.is_empty() {
+            // Empty IFS means no splitting
+            return vec![s];
+        }
+        
+        // Split by any character in IFS
+        let mut fields = Vec::new();
+        let mut current_field_start = 0;
+        let mut in_field = false;
+        
+        for (i, ch) in s.char_indices() {
+            if ifs.contains(ch) {
+                if in_field {
+                    fields.push(&s[current_field_start..i]);
+                    in_field = false;
+                }
+            } else {
+                if !in_field {
+                    current_field_start = i;
+                    in_field = true;
+                }
+            }
+        }
+        
+        // Add the last field if we ended in one
+        if in_field {
+            fields.push(&s[current_field_start..]);
+        }
+        
+        fields
     }
 
     pub fn set_variable(&mut self, name: String, value: String) {
@@ -257,7 +308,10 @@ impl Runtime {
     // Call stack management
     pub fn push_call(&mut self, name: String) -> Result<(), String> {
         if self.call_stack.len() >= self.max_call_depth {
-            return Err(format!("Maximum recursion depth exceeded ({})", self.max_call_depth));
+            return Err(format!(
+                "Maximum recursion depth exceeded ({})",
+                self.max_call_depth
+            ));
         }
         self.call_stack.push(name);
         Ok(())
@@ -281,7 +335,7 @@ impl Runtime {
     pub fn in_function_context(&self) -> bool {
         self.function_depth > 0
     }
-    
+
     /// Alias for in_function_context (for backward compatibility with local builtin)
     pub fn in_function(&self) -> bool {
         self.in_function_context()
@@ -332,7 +386,11 @@ impl Runtime {
         if self.history.is_none() {
             self.history = Some(History::default());
         }
-        self.history.as_mut().unwrap().load().map_err(|e| e.to_string())
+        self.history
+            .as_mut()
+            .unwrap()
+            .load()
+            .map_err(|e| e.to_string())
     }
 
     pub fn add_to_history(&mut self, command: String) -> Result<(), String> {
@@ -368,14 +426,10 @@ impl Runtime {
     /// Expand a variable with operators like ${VAR:-default}
     pub fn expand_variable(&mut self, expansion: &VarExpansion) -> Result<String> {
         let var_value = self.get_variable(&expansion.name);
-        
+
         match &expansion.operator {
-            VarExpansionOp::Simple => {
-                Ok(var_value.unwrap_or_default())
-            }
-            VarExpansionOp::UseDefault(default) => {
-                Ok(var_value.unwrap_or_else(|| default.clone()))
-            }
+            VarExpansionOp::Simple => Ok(var_value.unwrap_or_default()),
+            VarExpansionOp::UseDefault(default) => Ok(var_value.unwrap_or_else(|| default.clone())),
             VarExpansionOp::AssignDefault(default) => {
                 if let Some(value) = var_value {
                     Ok(value)
@@ -385,9 +439,7 @@ impl Runtime {
                 }
             }
             VarExpansionOp::ErrorIfUnset(error_msg) => {
-                var_value.ok_or_else(|| {
-                    anyhow!("{}: {}", expansion.name, error_msg)
-                })
+                var_value.ok_or_else(|| anyhow!("{}: {}", expansion.name, error_msg))
             }
             VarExpansionOp::RemoveShortestPrefix(pattern) => {
                 let value = var_value.unwrap_or_default();
@@ -481,13 +533,13 @@ impl Runtime {
     }
 
     // Positional parameter management
-    
+
     /// Set all positional parameters ($1, $2, etc.)
     pub fn set_positional_params(&mut self, params: Vec<String>) {
         self.positional_params = params;
         self.update_positional_variables();
     }
-    
+
     /// Get a specific positional parameter by index (1-based)
     pub fn get_positional_param(&self, index: usize) -> Option<String> {
         if index == 0 {
@@ -497,12 +549,12 @@ impl Runtime {
             self.positional_params.get(index - 1).cloned()
         }
     }
-    
+
     /// Get all positional parameters
     pub fn get_positional_params(&self) -> &[String] {
         &self.positional_params
     }
-    
+
     /// Shift positional parameters by n positions
     pub fn shift_params(&mut self, n: usize) -> Result<()> {
         if n > self.positional_params.len() {
@@ -512,23 +564,23 @@ impl Runtime {
                 self.positional_params.len()
             ));
         }
-        
+
         // Remove first n parameters
         self.positional_params.drain(0..n);
-        
+
         // Update $1, $2, $#, $@, $* variables
         self.update_positional_variables();
-        
+
         Ok(())
     }
-    
+
     /// Push positional parameters onto stack (for function calls)
     pub fn push_positional_scope(&mut self, params: Vec<String>) {
         self.positional_stack.push(self.positional_params.clone());
         self.positional_params = params;
         self.update_positional_variables();
     }
-    
+
     /// Pop positional parameters from stack (after function returns)
     pub fn pop_positional_scope(&mut self) {
         if let Some(params) = self.positional_stack.pop() {
@@ -536,21 +588,24 @@ impl Runtime {
             self.update_positional_variables();
         }
     }
-    
+
     /// Get the count of positional parameters (for $#)
     pub fn param_count(&self) -> usize {
         self.positional_params.len()
     }
-    
+
     /// Update $1, $2, $#, $@, $* variables based on current positional params
     fn update_positional_variables(&mut self) {
         // Get old count BEFORE updating $#
-        let old_count = self.variables.get("#")
+        let old_count = self
+            .variables
+            .get("#")
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(0);
 
         // Update $# (parameter count)
-        self.variables.insert("#".to_string(), self.positional_params.len().to_string());
+        self.variables
+            .insert("#".to_string(), self.positional_params.len().to_string());
 
         // Update $@ and $* (all parameters as space-separated string)
         let all_params = self.positional_params.join(" ");
@@ -569,32 +624,32 @@ impl Runtime {
     }
 
     // Permanent file descriptor redirection management (for exec builtin)
-    
+
     /// Set permanent stdout redirection file descriptor
     pub fn set_permanent_stdout(&mut self, fd: Option<i32>) {
         self.permanent_stdout = fd;
     }
-    
+
     /// Get permanent stdout redirection file descriptor
     pub fn get_permanent_stdout(&self) -> Option<i32> {
         self.permanent_stdout
     }
-    
+
     /// Set permanent stderr redirection file descriptor
     pub fn set_permanent_stderr(&mut self, fd: Option<i32>) {
         self.permanent_stderr = fd;
     }
-    
+
     /// Get permanent stderr redirection file descriptor
     pub fn get_permanent_stderr(&self) -> Option<i32> {
         self.permanent_stderr
     }
-    
+
     /// Set permanent stdin redirection file descriptor
     pub fn set_permanent_stdin(&mut self, fd: Option<i32>) {
         self.permanent_stdin = fd;
     }
-    
+
     /// Get permanent stdin redirection file descriptor
     pub fn get_permanent_stdin(&self) -> Option<i32> {
         self.permanent_stdin
