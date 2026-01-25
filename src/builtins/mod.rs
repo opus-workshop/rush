@@ -30,6 +30,7 @@ mod mkdir;
 mod printf;
 mod read;
 mod readonly;
+mod rm;
 pub mod return_builtin; // Public so executor can access ReturnSignal
 mod set;
 mod shift;
@@ -101,6 +102,7 @@ impl Builtins {
         commands.insert("json_query".to_string(), json::builtin_json_query);
         commands.insert("fetch".to_string(), fetch::builtin_fetch);
         commands.insert("readonly".to_string(), readonly::builtin_readonly);
+        commands.insert("rm".to_string(), rm::builtin_rm);
 
         Self { commands }
     }
