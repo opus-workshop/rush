@@ -14,6 +14,7 @@ use std::process::{Command as StdCommand, Stdio};
 /// - Proper exit code propagation (last command's exit code)
 /// - Works with both builtins and external commands
 /// - pipefail option: pipeline fails if any command fails
+/// - PIPESTATUS array tracking each command's exit code
 pub fn execute_pipeline(
     pipeline: Pipeline,
     runtime: &mut Runtime,
@@ -27,6 +28,8 @@ pub fn execute_pipeline(
         // Single command, execute normally
         let result = execute_single_command(&pipeline.commands[0], runtime, builtins)?;
         runtime.set_last_exit_code(result.exit_code);
+        // Set PIPESTATUS for single command
+        runtime.set_pipestatus(vec![result.exit_code]);
         return Ok(result);
     }
 
@@ -34,6 +37,7 @@ pub fn execute_pipeline(
     let mut previous_output = Vec::new();
     let mut first_failed_exit_code = None;
     let mut combined_stderr = String::new();
+    let mut pipestatus = Vec::new();
 
     for (i, command) in pipeline.commands.iter().enumerate() {
         let is_first = i == 0;
@@ -49,6 +53,9 @@ pub fn execute_pipeline(
                 Some(&previous_output)
             },
         )?;
+
+        // Track exit code for PIPESTATUS
+        pipestatus.push(result.exit_code);
 
         // Track first non-zero exit code for pipefail
         if runtime.options.pipefail && result.exit_code != 0 && first_failed_exit_code.is_none() {
@@ -74,6 +81,8 @@ pub fn execute_pipeline(
 
             // Set $? to the pipeline's exit code
             runtime.set_last_exit_code(pipeline_exit_code);
+            // Set PIPESTATUS array
+            runtime.set_pipestatus(pipestatus);
 
             return Ok(ExecutionResult {
                 output: Output::Text(result.stdout()),

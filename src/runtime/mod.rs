@@ -215,6 +215,28 @@ impl Runtime {
             .unwrap_or(0)
     }
 
+    /// Set the PIPESTATUS array (exit codes of each pipeline command)
+    pub fn set_pipestatus(&mut self, codes: Vec<i32>) {
+        // Store as space-separated string for POSIX compatibility
+        let status_str = codes.iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.variables.insert("PIPESTATUS".to_string(), status_str);
+    }
+
+    /// Get the PIPESTATUS array as a vector of exit codes
+    pub fn get_pipestatus(&self) -> Vec<i32> {
+        self.variables
+            .get("PIPESTATUS")
+            .map(|s| {
+                s.split_whitespace()
+                    .filter_map(|c| c.parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn define_function(&mut self, func: FunctionDef) {
         self.functions.insert(func.name.clone(), func);
     }
@@ -766,5 +788,59 @@ impl Runtime {
     /// Clear the directory stack
     pub fn clear_dir_stack(&mut self) {
         self.dir_stack.clear();
+    }
+
+    /// Reset runtime state between command executions
+    /// Clears variables, scopes, call stack, positional params, etc.
+    /// Preserves history, undo_manager, and job_manager for reuse
+    pub fn reset(&mut self) -> Result<()> {
+        // Clear variables (except special ones we want to preserve)
+        self.variables.clear();
+        self.readonly_vars.clear();
+        
+        // Clear functions and aliases
+        self.functions.clear();
+        self.aliases.clear();
+        
+        // Reset scopes and call stack
+        self.scopes.clear();
+        self.call_stack.clear();
+        
+        // Reset positional parameters
+        self.positional_params.clear();
+        self.positional_stack.clear();
+        
+        // Reset depths
+        self.function_depth = 0;
+        self.loop_depth = 0;
+        
+        // Clear trap handlers
+        self.trap_handlers = TrapHandlers::new();
+        
+        // Clear permanent redirections
+        self.permanent_stdout = None;
+        self.permanent_stderr = None;
+        self.permanent_stdin = None;
+        
+        // Clear special variables
+        self.last_bg_pid = None;
+        self.last_arg = String::new();
+        
+        // Clear directory stack
+        self.dir_stack.clear();
+        
+        // Reset cwd to current directory
+        self.cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        
+        // Reset shell options to defaults
+        self.options = ShellOptions::default();
+        
+        // Reinitialize required variables
+        self.set_last_exit_code(0);
+        self.set_variable("IFS".to_string(), " \t\n".to_string());
+        
+        // Keep history, undo_manager, and job_manager (they persist across commands)
+        
+        Ok(())
     }
 }
