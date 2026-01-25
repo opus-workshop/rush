@@ -1,5 +1,5 @@
 use anyhow::Result;
-use signal_hook::consts::{SIGINT, SIGTERM, SIGHUP};
+use signal_hook::consts::{SIGCHLD, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU};
 use signal_hook::iterator::Signals;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
@@ -9,12 +9,16 @@ use std::thread;
 static SIGNAL_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 /// The signal that was received (0 if none)
-static SIGNAL_NUMBER: AtomicI32 = AtomicI32::new(0);
+pub static SIGNAL_NUMBER: AtomicI32 = AtomicI32::new(0);
+
+/// Flag indicating if a terminal stop signal was received
+pub static TERMINAL_STOP: AtomicBool = AtomicBool::new(false);
 
 /// Signal handler state shared between main thread and signal handler thread
 #[derive(Clone)]
 pub struct SignalHandler {
     shutdown_flag: Arc<AtomicBool>,
+    sigchld_flag: Arc<AtomicBool>,
 }
 
 impl SignalHandler {
@@ -22,12 +26,13 @@ impl SignalHandler {
     pub fn new() -> Self {
         Self {
             shutdown_flag: Arc::new(AtomicBool::new(false)),
+            sigchld_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Setup signal handlers for SIGINT, SIGTERM, and SIGHUP
     pub fn setup(&self) -> Result<()> {
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP])?;
+        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP, SIGTSTP, SIGTTIN, SIGTTOU])?;
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
 
         thread::spawn(move || {
@@ -47,6 +52,24 @@ impl SignalHandler {
                         SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
                         SIGNAL_NUMBER.store(SIGHUP, Ordering::SeqCst);
                         shutdown_flag.store(true, Ordering::SeqCst);
+                    }
+                    SIGTSTP => {
+                        // Terminal stop signal (Ctrl+Z)
+                        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+                        SIGNAL_NUMBER.store(SIGTSTP, Ordering::SeqCst);
+                        TERMINAL_STOP.store(true, Ordering::SeqCst);
+                    }
+                    SIGTTIN => {
+                        // Background process tried to read from terminal
+                        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+                        SIGNAL_NUMBER.store(SIGTTIN, Ordering::SeqCst);
+                        TERMINAL_STOP.store(true, Ordering::SeqCst);
+                    }
+                    SIGTTOU => {
+                        // Background process tried to write to terminal
+                        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
+                        SIGNAL_NUMBER.store(SIGTTOU, Ordering::SeqCst);
+                        TERMINAL_STOP.store(true, Ordering::SeqCst);
                     }
                     _ => {}
                 }
@@ -71,11 +94,27 @@ impl SignalHandler {
         self.shutdown_flag.load(Ordering::SeqCst)
     }
 
+    /// Check if SIGCHLD was received
+    pub fn sigchld_received(&self) -> bool {
+        self.sigchld_flag.load(Ordering::SeqCst)
+    }
+
+    /// Clear the SIGCHLD flag
+    pub fn clear_sigchld(&self) {
+        self.sigchld_flag.store(false, Ordering::SeqCst);
+    }
+
     /// Reset the signal state
     pub fn reset(&self) {
         SIGNAL_RECEIVED.store(false, Ordering::SeqCst);
         SIGNAL_NUMBER.store(0, Ordering::SeqCst);
+        TERMINAL_STOP.store(false, Ordering::SeqCst);
         self.shutdown_flag.store(false, Ordering::SeqCst);
+    }
+
+    /// Check if a terminal stop signal was received
+    pub fn terminal_stop(&self) -> bool {
+        TERMINAL_STOP.load(Ordering::SeqCst)
     }
 
     /// Get the exit code for the received signal
@@ -84,6 +123,9 @@ impl SignalHandler {
             SIGINT => 130,   // Standard exit code for SIGINT (128 + 2)
             SIGTERM => 143,  // Standard exit code for SIGTERM (128 + 15)
             SIGHUP => 129,   // Standard exit code for SIGHUP (128 + 1)
+            SIGTSTP => 148,  // Standard exit code for SIGTSTP (128 + 20)
+            SIGTTIN => 149,  // Standard exit code for SIGTTIN (128 + 21)
+            SIGTTOU => 150,  // Standard exit code for SIGTTOU (128 + 22)
             _ => 1,
         }
     }
