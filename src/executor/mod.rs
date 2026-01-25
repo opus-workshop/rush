@@ -770,7 +770,7 @@ impl Executor {
 
     fn execute_assignment(&mut self, assignment: Assignment) -> Result<ExecutionResult> {
         let value = self.evaluate_expression(assignment.value)?;
-        self.runtime.set_variable(assignment.name, value);
+        self.runtime.set_variable_checked(assignment.name, value)?;
         Ok(ExecutionResult::default())
     }
 

@@ -187,8 +187,12 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
     } else {
         let path = &args[0];
         if path == "-" {
-            // TODO: Implement previous directory tracking
-            runtime.get_cwd().clone()
+            // cd - goes to OLDPWD
+            if let Some(oldpwd) = runtime.get_variable("OLDPWD") {
+                PathBuf::from(oldpwd)
+            } else {
+                return Err(anyhow!("cd: OLDPWD not set"));
+            }
         } else if path.starts_with('~') {
             let home =
                 dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
@@ -231,11 +235,24 @@ pub(crate) fn builtin_cd(args: &[String], runtime: &mut Runtime) -> Result<Execu
         return Err(anyhow!("cd: not a directory: {:?}", absolute));
     }
 
+    // Save current PWD to OLDPWD before changing
+    let current_pwd = runtime.get_cwd().to_string_lossy().to_string();
+    runtime.set_variable("OLDPWD".to_string(), current_pwd.clone());
+
     // Update runtime's cwd
     runtime.set_cwd(absolute.clone());
 
     // Also update the process's actual current directory so other parts can see it
     env::set_current_dir(&absolute)?;
+
+    // Update PWD variable to new directory
+    let new_pwd = absolute.to_string_lossy().to_string();
+    runtime.set_variable("PWD".to_string(), new_pwd.clone());
+
+    // If cd -, print the directory (POSIX requirement)
+    if !args.is_empty() && args[0] == "-" {
+        return Ok(ExecutionResult::success(new_pwd + "\n"));
+    }
 
     Ok(ExecutionResult::success(String::new()))
 }

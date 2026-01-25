@@ -161,6 +161,10 @@ pub enum Token {
     Path(String),
 
     // Flags
+    // Bare dash (used in cd - for previous directory)
+    #[token("-")]
+    Dash,
+
     #[regex(r"-[a-zA-Z0-9]+", |lex| lex.slice().to_string())]
     ShortFlag(String),
 

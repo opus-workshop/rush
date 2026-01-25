@@ -385,6 +385,35 @@ fn init_runtime_variables(runtime: &mut runtime::Runtime) {
     if let Ok(home) = env::var("HOME") {
         runtime.set_variable("HOME".to_string(), home);
     }
+
+    // Set PATH from environment (required for command execution)
+    if let Ok(path) = env::var("PATH") {
+        runtime.set_variable("PATH".to_string(), path);
+    }
+
+    // Set PWD to current working directory
+    if let Ok(pwd) = env::current_dir() {
+        runtime.set_variable("PWD".to_string(), pwd.to_string_lossy().to_string());
+    }
+
+    // Set PPID (parent process ID) - readonly on Unix systems
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::parent_id;
+        runtime.set_variable("PPID".to_string(), parent_id().to_string());
+        runtime.mark_readonly("PPID".to_string());
+    }
+
+    // Set SHLVL (shell nesting level)
+    // Read from environment, default to 0, then increment by 1
+    let shlvl = env::var("SHLVL")
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0)
+        + 1;
+    runtime.set_variable("SHLVL".to_string(), shlvl.to_string());
+    // Also update environment variable for child processes
+    env::set_var("SHLVL", shlvl.to_string());
 }
 
 fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
