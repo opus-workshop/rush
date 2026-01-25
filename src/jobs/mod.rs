@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
-use nix::sys::signal::{kill, Signal};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
@@ -77,19 +77,21 @@ impl Job {
         Ok(())
     }
 
-    /// Send SIGCONT to continue a stopped job
+    /// Send SIGCONT to continue a stopped job (sends to process group)
     pub fn continue_job(&mut self) -> Result<(), String> {
-        let pid = Pid::from_raw(self.pid as i32);
-        kill(pid, Signal::SIGCONT)
+        // Send to process group by using negative PID
+        let pgid = Pid::from_raw(-(self.pgid as i32));
+        kill(pgid, Signal::SIGCONT)
             .map_err(|e| format!("Failed to continue job {}: {}", self.id, e))?;
         self.status = JobStatus::Running;
         Ok(())
     }
 
-    /// Send SIGTERM to terminate the job
+    /// Send SIGTERM to terminate the job (sends to process group)
     pub fn terminate(&mut self) -> Result<(), String> {
-        let pid = Pid::from_raw(self.pid as i32);
-        kill(pid, Signal::SIGTERM)
+        // Send to process group by using negative PID
+        let pgid = Pid::from_raw(-(self.pgid as i32));
+        kill(pgid, Signal::SIGTERM)
             .map_err(|e| format!("Failed to terminate job {}: {}", self.id, e))?;
         self.status = JobStatus::Terminated;
         Ok(())
@@ -140,15 +142,13 @@ impl JobManager {
     /// Get a job by PID
     pub fn get_job_by_pid(&self, pid: u32) -> Option<Job> {
         let jobs = self.jobs.lock().unwrap();
-        jobs.values()
-            .find(|j| j.pid == pid)
-            .map(|j| Job {
-                id: j.id,
-                pid: j.pid,
-                pgid: j.pgid,
-                command: j.command.clone(),
-                status: j.status,
-            })
+        jobs.values().find(|j| j.pid == pid).map(|j| Job {
+            id: j.id,
+            pid: j.pid,
+            pgid: j.pgid,
+            command: j.command.clone(),
+            status: j.status,
+        })
     }
 
     /// List all jobs
@@ -173,12 +173,44 @@ impl JobManager {
         }
     }
 
+    /// Reap any zombie processes and update job statuses
+    /// This is called from the SIGCHLD signal handler
+    /// Uses WNOHANG to avoid blocking
+    pub fn reap_zombies(&self) {
+        let mut jobs = self.jobs.lock().unwrap();
+
+        // Check all jobs for status changes
+        for job in jobs.values_mut() {
+            let pid = Pid::from_raw(job.pid as i32);
+
+            match waitpid(pid, Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED)) {
+                Ok(WaitStatus::Exited(_, _)) => {
+                    job.status = JobStatus::Done;
+                }
+                Ok(WaitStatus::Signaled(_, _, _)) => {
+                    job.status = JobStatus::Terminated;
+                }
+                Ok(WaitStatus::Stopped(_, _)) => {
+                    job.status = JobStatus::Stopped;
+                }
+                Ok(WaitStatus::StillAlive) => {
+                    // Process is still running, no change needed
+                }
+                Ok(_) => {
+                    // Other statuses, keep current
+                }
+                Err(_) => {
+                    // Process doesn't exist anymore
+                    job.status = JobStatus::Done;
+                }
+            }
+        }
+    }
+
     /// Remove completed/terminated jobs
     pub fn cleanup_jobs(&self) {
         let mut jobs = self.jobs.lock().unwrap();
-        jobs.retain(|_, job| {
-            job.status != JobStatus::Done && job.status != JobStatus::Terminated
-        });
+        jobs.retain(|_, job| job.status != JobStatus::Done && job.status != JobStatus::Terminated);
     }
 
     /// Bring a job to foreground (remove from job list)
@@ -210,15 +242,13 @@ impl JobManager {
     /// Get the most recent job (for %+ or %% syntax)
     pub fn get_current_job(&self) -> Option<Job> {
         let jobs = self.jobs.lock().unwrap();
-        jobs.values()
-            .max_by_key(|j| j.id)
-            .map(|j| Job {
-                id: j.id,
-                pid: j.pid,
-                pgid: j.pgid,
-                command: j.command.clone(),
-                status: j.status,
-            })
+        jobs.values().max_by_key(|j| j.id).map(|j| Job {
+            id: j.id,
+            pid: j.pid,
+            pgid: j.pgid,
+            command: j.command.clone(),
+            status: j.status,
+        })
     }
 
     /// Get the previous job (for %- syntax)
@@ -238,6 +268,110 @@ impl JobManager {
             })
         } else {
             None
+        }
+    }
+
+    /// Parse job specification according to POSIX rules
+    ///
+    /// Supports:
+    /// - %n: job number n
+    /// - %% or %+: current job (most recent)
+    /// - %-: previous job (second most recent)
+    /// - %string: job whose command begins with string
+    /// - %?string: job whose command contains string
+    /// - n (without %): job number n
+    ///
+    /// Returns an error if:
+    /// - The job spec doesn't match any job
+    /// - The job spec is ambiguous (matches multiple jobs)
+    /// - The job spec is invalid
+    pub fn parse_job_spec(&self, spec: &str) -> Result<Job, String> {
+        // Handle plain number (without %)
+        if !spec.starts_with('%') {
+            if let Ok(job_id) = spec.parse::<usize>() {
+                return self.get_job(job_id)
+                    .ok_or_else(|| format!("No such job: {}", job_id));
+            }
+            return Err(format!("Invalid job specification: {}", spec));
+        }
+
+        let spec = &spec[1..]; // Remove %
+
+        match spec {
+            "" | "%" | "+" => {
+                // Current job
+                self.get_current_job()
+                    .ok_or_else(|| "No current job".to_string())
+            }
+            "-" => {
+                // Previous job
+                self.get_previous_job()
+                    .ok_or_else(|| "No previous job".to_string())
+            }
+            _ => {
+                // Check for %?string (contains)
+                if let Some(search_str) = spec.strip_prefix('?') {
+                    if search_str.is_empty() {
+                        return Err("Invalid job specification: %?".to_string());
+                    }
+                    return self.find_job_containing(search_str);
+                }
+
+                // Try parsing as job ID
+                if let Ok(job_id) = spec.parse::<usize>() {
+                    return self.get_job(job_id)
+                        .ok_or_else(|| format!("No such job: {}", job_id));
+                }
+
+                // Try matching by command prefix
+                self.find_job_starting_with(spec)
+            }
+        }
+    }
+
+    /// Find a job whose command starts with the given string
+    fn find_job_starting_with(&self, prefix: &str) -> Result<Job, String> {
+        let jobs = self.jobs.lock().unwrap();
+        let matching: Vec<_> = jobs.values()
+            .filter(|j| j.command.starts_with(prefix))
+            .collect();
+
+        match matching.len() {
+            0 => Err(format!("No such job: %{}", prefix)),
+            1 => {
+                let job = matching[0];
+                Ok(Job {
+                    id: job.id,
+                    pid: job.pid,
+                    pgid: job.pgid,
+                    command: job.command.clone(),
+                    status: job.status,
+                })
+            }
+            _ => Err(format!("Ambiguous job specification: %{}", prefix)),
+        }
+    }
+
+    /// Find a job whose command contains the given string
+    fn find_job_containing(&self, substring: &str) -> Result<Job, String> {
+        let jobs = self.jobs.lock().unwrap();
+        let matching: Vec<_> = jobs.values()
+            .filter(|j| j.command.contains(substring))
+            .collect();
+
+        match matching.len() {
+            0 => Err(format!("No job contains '{}'", substring)),
+            1 => {
+                let job = matching[0];
+                Ok(Job {
+                    id: job.id,
+                    pid: job.pid,
+                    pgid: job.pgid,
+                    command: job.command.clone(),
+                    status: job.status,
+                })
+            }
+            _ => Err(format!("Ambiguous job specification: %?{}", substring)),
         }
     }
 }

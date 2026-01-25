@@ -30,10 +30,11 @@ impl SignalHandler {
         }
     }
 
-    /// Setup signal handlers for SIGINT, SIGTERM, and SIGHUP
+    /// Setup signal handlers for SIGINT, SIGTERM, SIGHUP, and SIGCHLD
     pub fn setup(&self) -> Result<()> {
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP, SIGTSTP, SIGTTIN, SIGTTOU])?;
+        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP, SIGTTIN, SIGTTOU])?;
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
+        let sigchld_flag = Arc::clone(&self.sigchld_flag);
 
         thread::spawn(move || {
             for sig in signals.forever() {
@@ -70,6 +71,10 @@ impl SignalHandler {
                         SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
                         SIGNAL_NUMBER.store(SIGTTOU, Ordering::SeqCst);
                         TERMINAL_STOP.store(true, Ordering::SeqCst);
+                    }
+                    SIGCHLD => {
+                        // Set flag to indicate a child process has changed state
+                        sigchld_flag.store(true, Ordering::SeqCst);
                     }
                     _ => {}
                 }

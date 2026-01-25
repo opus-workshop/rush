@@ -63,7 +63,7 @@ fn parse_signal(sig_str: &str) -> Result<Option<Signal>> {
         "SIGSYS" | "SYS" => Signal::SIGSYS,
         _ => return Err(anyhow!("kill: {}: invalid signal specification", sig_str)),
     };
-    
+
     Ok(Some(signal))
 }
 
@@ -71,16 +71,18 @@ fn parse_signal(sig_str: &str) -> Result<Option<Signal>> {
 ///
 /// Usage:
 /// - `kill PID...` - Send SIGTERM to PIDs
-/// - `kill -SIGNAL PID...` - Send specified signal to PIDs
-/// - `kill -N PID...` - Send signal number N to PIDs
+/// - `kill %JOBSPEC...` - Send SIGTERM to job specs
+/// - `kill -SIGNAL PID...` - Send specified signal to PIDs/jobs
+/// - `kill -N PID...` - Send signal number N to PIDs/jobs
 ///
 /// Examples:
 /// - `kill 1234` - sends SIGTERM to PID 1234
+/// - `kill %1` - sends SIGTERM to job 1
 /// - `kill -9 1234` - sends SIGKILL to PID 1234
-/// - `kill -INT 1234` - sends SIGINT to PID 1234
+/// - `kill -INT %1` - sends SIGINT to job 1
 /// - `kill 1234 5678` - sends SIGTERM to both PIDs
 #[cfg(unix)]
-pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
+pub fn builtin_kill(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {
         return Ok(ExecutionResult {
             output: Output::Text(String::new()),
@@ -102,7 +104,7 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
         if arg.starts_with('-') && arg.len() > 1 {
             // Check if it's a negative number or a signal name
             let without_dash = &arg[1..];
-            
+
             // If it starts with a non-digit, it's definitely a signal name
             if !without_dash.chars().next().unwrap().is_ascii_digit() {
                 // This is a signal name, parse it or error
@@ -117,12 +119,12 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
                             output: Output::Text(String::new()),
                             stderr: format!("{}\n", e),
                             exit_code: 1,
-        error: None,            
+                            error: None,
                         });
                     }
                 }
             }
-            
+
             // Otherwise, try parsing as a signal number first, then as negative PID
             match parse_signal(arg) {
                 Ok(sig_opt) => {
@@ -134,6 +136,25 @@ pub fn builtin_kill(args: &[String], _runtime: &mut Runtime) -> Result<Execution
                     // Fall through to try as PID (will fail with "invalid process ID" for negative)
                 }
             }
+        }
+
+        // Check if this is a job specification
+        if arg.starts_with('%') {
+            match runtime.job_manager().parse_job_spec(arg) {
+                Ok(job) => {
+                    pids.push(job.pid as i32);
+                }
+                Err(e) => {
+                    return Ok(ExecutionResult {
+                        output: Output::Text(String::new()),
+                        stderr: format!("kill: {}\n", e),
+                        exit_code: 1,
+                        error: None,
+                    });
+                }
+            }
+            i += 1;
+            continue;
         }
 
         // Try to parse as PID
@@ -215,7 +236,7 @@ pub fn builtin_kill(_args: &[String], _runtime: &mut Runtime) -> Result<Executio
         output: Output::Text(String::new()),
         stderr: "kill: not supported on this platform\n".to_string(),
         exit_code: 1,
-        error: None,            
+        error: None,
     })
 }
 
@@ -312,8 +333,9 @@ mod tests {
         // Send signal 0 to self multiple times (just checking process exists)
         let result = builtin_kill(
             &["-0".to_string(), my_pid.to_string(), my_pid.to_string()],
-            &mut runtime
-        ).unwrap();
+            &mut runtime,
+        )
+        .unwrap();
 
         assert_eq!(result.exit_code, 0);
     }
@@ -338,7 +360,8 @@ mod tests {
         let my_pid = std::process::id();
 
         // Try with invalid signal name
-        let result = builtin_kill(&["-INVALID".to_string(), my_pid.to_string()], &mut runtime).unwrap();
+        let result =
+            builtin_kill(&["-INVALID".to_string(), my_pid.to_string()], &mut runtime).unwrap();
 
         // Should fail
         assert_eq!(result.exit_code, 1);
@@ -400,8 +423,9 @@ mod tests {
         // Try to kill self (should succeed) and a nonexistent PID (should fail)
         let result = builtin_kill(
             &["-0".to_string(), my_pid.to_string(), "999999".to_string()],
-            &mut runtime
-        ).unwrap();
+            &mut runtime,
+        )
+        .unwrap();
 
         // Should have partial failure
         assert_eq!(result.exit_code, 1);

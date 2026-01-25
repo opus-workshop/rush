@@ -1,6 +1,6 @@
 use crate::executor::{ExecutionResult, Output};
-use crate::runtime::Runtime;
 use crate::jobs::{Job, JobStatus};
+use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 
 /// List all background jobs
@@ -75,7 +75,9 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     // Determine which job to foreground
     let job = if args.is_empty() {
         // Default to current job (most recent)
-        runtime.job_manager().get_current_job()
+        runtime
+            .job_manager()
+            .get_current_job()
             .ok_or_else(|| anyhow!("fg: no current job"))?
     } else {
         let job_spec = &args[0];
@@ -87,7 +89,9 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
 
     // If the job is stopped, continue it
     if job.status == JobStatus::Stopped {
-        runtime.job_manager().continue_job(job_id)
+        runtime
+            .job_manager()
+            .continue_job(job_id)
             .map_err(|e: String| anyhow!(e))?;
     }
 
@@ -108,7 +112,9 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                 WaitStatus::Signaled(_, _, _) => 128 + 15, // SIGTERM
                 WaitStatus::Stopped(_, _) => {
                     // Job was stopped again, add it back
-                    runtime.job_manager().add_job(pid.as_raw() as u32, job.command.clone());
+                    runtime
+                        .job_manager()
+                        .add_job(pid.as_raw() as u32, job.command.clone());
                     1
                 }
                 _ => 0,
@@ -132,7 +138,9 @@ pub fn builtin_bg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     // Determine which job to background
     let job = if args.is_empty() {
         // Default to current job (most recent)
-        runtime.job_manager().get_current_job()
+        runtime
+            .job_manager()
+            .get_current_job()
             .ok_or_else(|| anyhow!("bg: no current job"))?
     } else {
         let job_spec = &args[0];
@@ -145,56 +153,23 @@ pub fn builtin_bg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     }
 
     // Continue the job
-    runtime.job_manager().continue_job(job.id)
+    runtime
+        .job_manager()
+        .continue_job(job.id)
         .map_err(|e: String| anyhow!(e))?;
 
-    Ok(ExecutionResult::success(format!("[{}] {}\n", job.id, job.command)))
+    Ok(ExecutionResult::success(format!(
+        "[{}] {}\n",
+        job.id, job.command
+    )))
 }
 
-/// Parse job specification (e.g., %1, %%, %+, %-, %sleep)
+/// Parse job specification (e.g., %1, %%, %+, %-, %sleep, %?string)
 fn parse_job_spec(spec: &str, runtime: &Runtime) -> Result<Job> {
-    if !spec.starts_with('%') {
-        // Try parsing as job ID
-        if let Ok(job_id) = spec.parse::<usize>() {
-            return runtime.job_manager().get_job(job_id)
-                .ok_or_else(|| anyhow!("No such job: {}", job_id));
-        }
-        return Err(anyhow!("Invalid job specification: {}", spec));
-    }
-
-    let spec = &spec[1..]; // Remove %
-
-    match spec {
-        "" | "%" | "+" => {
-            // Current job
-            runtime.job_manager().get_current_job()
-                .ok_or_else(|| anyhow!("No current job"))
-        }
-        "-" => {
-            // Previous job
-            runtime.job_manager().get_previous_job()
-                .ok_or_else(|| anyhow!("No previous job"))
-        }
-        _ => {
-            // Try parsing as job ID
-            if let Ok(job_id) = spec.parse::<usize>() {
-                runtime.job_manager().get_job(job_id)
-                    .ok_or_else(|| anyhow!("No such job: {}", job_id))
-            } else {
-                // Try matching by command prefix
-                let jobs = runtime.job_manager().list_jobs();
-                let matching: Vec<_> = jobs.into_iter()
-                    .filter(|j| j.command.starts_with(spec))
-                    .collect();
-
-                match matching.len() {
-                    0 => Err(anyhow!("No such job: %{}", spec)),
-                    1 => Ok(matching[0].clone()),
-                    _ => Err(anyhow!("Ambiguous job specification: %{}", spec)),
-                }
-            }
-        }
-    }
+    runtime
+        .job_manager()
+        .parse_job_spec(spec)
+        .map_err(|e| anyhow!(e))
 }
 
 #[cfg(test)]
@@ -212,7 +187,9 @@ mod tests {
     fn test_jobs_with_job() {
         let mut runtime = Runtime::new();
         // Add a fake job
-        runtime.job_manager().add_job(12345, "sleep 100".to_string());
+        runtime
+            .job_manager()
+            .add_job(12345, "sleep 100".to_string());
 
         let result = builtin_jobs(&[], &mut runtime).unwrap();
         assert!(result.stdout().contains("[1]"));
@@ -222,7 +199,9 @@ mod tests {
     #[test]
     fn test_jobs_with_pid_flag() {
         let mut runtime = Runtime::new();
-        runtime.job_manager().add_job(12345, "sleep 100".to_string());
+        runtime
+            .job_manager()
+            .add_job(12345, "sleep 100".to_string());
 
         let result = builtin_jobs(&["-l".to_string()], &mut runtime).unwrap();
         assert!(result.stdout().contains("12345"));

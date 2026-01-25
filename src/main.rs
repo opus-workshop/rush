@@ -1,35 +1,44 @@
-mod lexer;
-mod parser;
-mod executor;
-mod runtime;
 mod builtins;
 mod completion;
-mod history;
 mod context;
-mod output;
-mod git;
-mod undo;
 mod correction;
-mod progress;
-mod signal;
+mod executor;
+mod git;
 mod glob_expansion;
+mod history;
 mod jobs;
+mod lexer;
+mod output;
+mod parser;
+mod progress;
+mod runtime;
+mod signal;
 mod terminal;
+mod undo;
 
+use anyhow::Result;
 use completion::Completer;
 use executor::Executor;
 use lexer::Lexer;
 use parser::Parser;
-use signal::SignalHandler;
 use reedline::{Prompt, PromptHistorySearch, PromptHistorySearchStatus, Reedline, Signal};
-use anyhow::Result;
-use std::sync::{Arc, RwLock};
+use signal::SignalHandler;
+use std::borrow::Cow;
 use std::env;
 use std::fs;
-use std::borrow::Cow;
 use std::io::{BufRead, BufReader};
+use std::sync::{Arc, RwLock};
+use nix::unistd::{setpgid, getpid};
 
 fn main() -> Result<()> {
+    // Put the shell in its own process group for proper job control
+    // This must be done before setting up signal handlers
+    let shell_pid = getpid();
+    if let Err(e) = setpgid(shell_pid, shell_pid) {
+        // Non-fatal warning - continue anyway
+        eprintln!("Warning: Failed to set shell process group: {}", e);
+    }
+
     // Setup signal handlers early
     let signal_handler = SignalHandler::new();
     if let Err(e) = signal_handler.setup() {
@@ -37,19 +46,19 @@ fn main() -> Result<()> {
     }
 
     let args: Vec<String> = env::args().collect();
-    
+
     // Parse flags
     let mut is_login_shell = false;
     let mut skip_rc = false;
     let mut filtered_args = Vec::new();
-    
+
     // Check if invoked as login shell (argv[0] starts with -)
     if let Some(arg0) = args.first() {
         if arg0.starts_with('-') || arg0.ends_with("/-rush") {
             is_login_shell = true;
         }
     }
-    
+
     // Parse command-line flags
     let mut i = 1;
     while i < args.len() {
@@ -91,7 +100,11 @@ fn main() -> Result<()> {
     run_interactive_with_init(signal_handler, is_login_shell, skip_rc)
 }
 
-fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: SignalHandler) -> Result<()> {
+fn run_script(
+    script_path: &str,
+    script_args: Vec<String>,
+    signal_handler: SignalHandler,
+) -> Result<()> {
     // Read the script file
     let script_content = fs::read_to_string(script_path)
         .map_err(|e| anyhow::anyhow!("Failed to read script '{}': {}", script_path, e))?;
@@ -99,10 +112,14 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
     // Set up positional parameters ($1, $2, etc.) and $#, $@, $*
-    executor.runtime_mut().set_positional_params(script_args.clone());
+    executor
+        .runtime_mut()
+        .set_positional_params(script_args.clone());
 
     // Set $0 to script name
-    executor.runtime_mut().set_variable("0".to_string(), script_path.to_string());
+    executor
+        .runtime_mut()
+        .set_variable("0".to_string(), script_path.to_string());
 
     // Execute the script line by line
     let mut last_exit_code = 0;
@@ -111,6 +128,12 @@ fn run_script(script_path: &str, script_args: Vec<String>, signal_handler: Signa
         if signal_handler.should_shutdown() {
             eprintln!("\nScript interrupted by signal");
             std::process::exit(signal_handler.exit_code());
+        }
+
+        // Check for SIGCHLD and reap any zombie processes
+        if signal_handler.sigchld_received() {
+            executor.runtime_mut().job_manager().reap_zombies();
+            signal_handler.clear_sigchld();
         }
 
         let line = line.trim();
@@ -271,16 +294,20 @@ fn run_interactive(signal_handler: SignalHandler) -> Result<()> {
     }
 }
 
-fn run_interactive_with_init(signal_handler: SignalHandler, is_login: bool, skip_rc: bool) -> Result<()> {
+fn run_interactive_with_init(
+    signal_handler: SignalHandler,
+    is_login: bool,
+    skip_rc: bool,
+) -> Result<()> {
     // Initialize environment variables
     init_environment_variables()?;
-    
+
     // Create executor early so we can source files
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
-    
+
     // Set runtime variables from environment
     init_runtime_variables(executor.runtime_mut());
-    
+
     // Source profile files based on login shell and flags
     if is_login && !skip_rc {
         // Login shell: source ~/.rush_profile
@@ -291,7 +318,7 @@ fn run_interactive_with_init(signal_handler: SignalHandler, is_login: bool, skip
             }
         }
     }
-    
+
     // Interactive shell: source ~/.rushrc (unless --no-rc)
     if !skip_rc {
         if let Some(home) = dirs::home_dir() {
@@ -301,7 +328,7 @@ fn run_interactive_with_init(signal_handler: SignalHandler, is_login: bool, skip
             }
         }
     }
-    
+
     // Now run interactive mode
     if atty::is(atty::Stream::Stdin) {
         run_interactive_with_reedline(signal_handler)
@@ -315,12 +342,12 @@ fn init_environment_variables() -> Result<()> {
     if let Ok(exe) = env::current_exe() {
         env::set_var("SHELL", exe);
     }
-    
+
     // Set $TERM if not already set
     if env::var("TERM").is_err() {
         env::set_var("TERM", "xterm-256color");
     }
-    
+
     // Set $USER if not already set
     if env::var("USER").is_err() {
         if let Ok(user) = env::var("LOGNAME") {
@@ -329,14 +356,14 @@ fn init_environment_variables() -> Result<()> {
             env::set_var("USER", user);
         }
     }
-    
+
     // Set $HOME if not already set
     if env::var("HOME").is_err() {
         if let Some(home) = dirs::home_dir() {
             env::set_var("HOME", home);
         }
     }
-    
+
     Ok(())
 }
 
@@ -367,8 +394,7 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
     let runtime = Arc::new(RwLock::new(runtime::Runtime::new()));
     let completer = Box::new(Completer::new(builtins.clone(), runtime.clone()));
 
-    let mut line_editor = Reedline::create()
-        .with_completer(completer);
+    let mut line_editor = Reedline::create().with_completer(completer);
     let prompt = RushPrompt::new();
 
     loop {
@@ -378,9 +404,15 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
             std::process::exit(signal_handler.exit_code());
         }
 
+        // Check for SIGCHLD and reap any zombie processes
+        if signal_handler.sigchld_received() {
+            executor.runtime_mut().job_manager().reap_zombies();
+            signal_handler.clear_sigchld();
+        }
+
         // Update job statuses and cleanup completed jobs
         executor.runtime_mut().job_manager().update_all_jobs();
-        
+
         // Print notifications for completed jobs
         let jobs = executor.runtime_mut().job_manager().list_jobs();
         for job in jobs {
@@ -390,7 +422,7 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
                 println!("[{}] Terminated\t{}", job.id, job.command);
             }
         }
-        
+
         // Cleanup completed/terminated jobs
         executor.runtime_mut().job_manager().cleanup_jobs();
 
@@ -448,6 +480,12 @@ fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
         if signal_handler.should_shutdown() {
             eprintln!("\nInterrupted by signal");
             std::process::exit(signal_handler.exit_code());
+        }
+
+        // Check for SIGCHLD and reap any zombie processes
+        if signal_handler.sigchld_received() {
+            executor.runtime_mut().job_manager().reap_zombies();
+            signal_handler.clear_sigchld();
         }
 
         let line = line?;
@@ -520,9 +558,7 @@ fn execute_line_with_context(
     _script_path: &str,
     _line_num: usize,
 ) -> Result<executor::ExecutionResult> {
-    execute_line(line, executor).map_err(|e| {
-        anyhow::anyhow!("{}", e)
-    })
+    execute_line(line, executor).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 #[cfg(test)]
@@ -547,17 +583,17 @@ mod tests {
     fn test_script_arguments() {
         use std::fs;
         use std::io::Write;
-        
+
         // Create a temporary script
         let script_path = "/tmp/rush_test_args.rush";
         let mut file = fs::File::create(script_path).unwrap();
         writeln!(file, "#!/usr/bin/env rush").unwrap();
         writeln!(file, "echo $1").unwrap();
         writeln!(file, "echo $2").unwrap();
-        
+
         // Test would go here, but requires running the binary
         // This is more of an integration test
-        
+
         // Cleanup
         fs::remove_file(script_path).ok();
     }

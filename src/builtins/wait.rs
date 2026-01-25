@@ -175,46 +175,12 @@ fn wait_for_pid_blocking(pid: u32) -> Result<i32> {
     }
 }
 
-/// Parse job specification (e.g., %1, %%, %+, %-, %sleep)
-/// This is duplicated from jobs.rs to avoid circular dependencies
+/// Parse job specification (e.g., %1, %%, %+, %-, %sleep, %?string)
 fn parse_job_spec(spec: &str, runtime: &Runtime) -> Result<crate::jobs::Job> {
-    if !spec.starts_with('%') {
-        return Err(anyhow!("Invalid job specification: {}", spec));
-    }
-
-    let spec = &spec[1..]; // Remove %
-
-    match spec {
-        "" | "%" | "+" => {
-            // Current job
-            runtime.job_manager().get_current_job()
-                .ok_or_else(|| anyhow!("wait: no current job"))
-        }
-        "-" => {
-            // Previous job
-            runtime.job_manager().get_previous_job()
-                .ok_or_else(|| anyhow!("wait: no previous job"))
-        }
-        _ => {
-            // Try parsing as job ID
-            if let Ok(job_id) = spec.parse::<usize>() {
-                runtime.job_manager().get_job(job_id)
-                    .ok_or_else(|| anyhow!("wait: no such job: {}", job_id))
-            } else {
-                // Try matching by command prefix
-                let jobs = runtime.job_manager().list_jobs();
-                let matching: Vec<_> = jobs.into_iter()
-                    .filter(|j| j.command.starts_with(spec))
-                    .collect();
-
-                match matching.len() {
-                    0 => Err(anyhow!("wait: no such job: %{}", spec)),
-                    1 => Ok(matching[0].clone()),
-                    _ => Err(anyhow!("wait: ambiguous job specification: %{}", spec)),
-                }
-            }
-        }
-    }
+    runtime
+        .job_manager()
+        .parse_job_spec(spec)
+        .map_err(|e| anyhow!("wait: {}", e))
 }
 
 #[cfg(test)]
