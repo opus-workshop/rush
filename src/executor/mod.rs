@@ -539,17 +539,6 @@ impl Executor {
                 }
             })?;
 
-        // Put the child process in its own process group
-        // This is required for proper job control and signal handling
-        let child_pid = Pid::from_raw(child.id() as i32);
-
-        // Call setpgid to put the process in its own group (PGID = PID)
-        // This must be done immediately after spawn, before the process runs
-        if let Err(e) = setpgid(child_pid, child_pid) {
-            // Non-fatal: log but continue
-            eprintln!("Warning: Failed to set process group for '{}': {}", command.name, e);
-        }
-
         // Wait a bit to see if command completes quickly
         thread::sleep(Duration::from_millis(crate::progress::PROGRESS_THRESHOLD_MS));
         
@@ -1229,18 +1218,22 @@ impl Executor {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null());
 
+                // Use pre_exec to set the process group before the child executes
+                unsafe {
+                    cmd.pre_exec(|| {
+                        // Put this process in its own process group (PGID = PID)
+                        let pid = getpid();
+                        setpgid(pid, pid).map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::Other, format!("setpgid failed: {}", e))
+                        })?;
+                        Ok(())
+                    });
+                }
+
                 let child = cmd.spawn()
                     .map_err(|e| anyhow!("Failed to spawn background process '{}': {}", command.name, e))?;
 
                 let pid = child.id();
-
-                // Put the background process in its own process group
-                // This is required for proper job control and signal handling
-                let child_pid = Pid::from_raw(pid as i32);
-                if let Err(e) = setpgid(child_pid, child_pid) {
-                    // Non-fatal: log but continue
-                    eprintln!("Warning: Failed to set process group for background job '{}': {}", command.name, e);
-                }
 
                 // Add to job manager
                 let job_id = self.runtime.job_manager().add_job(pid, command_str);
