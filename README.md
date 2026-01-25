@@ -209,6 +209,40 @@ cargo test -- --nocapture
 
 Current test suite: **50 tests, all passing** ✅
 
+### POSIX Compliance Testing
+
+Rush includes a comprehensive POSIX compliance test suite with 250+ tests covering all major POSIX shell features:
+
+```bash
+# Run POSIX tests via shell script
+cd tests/posix && ./run_tests.sh
+
+# Run POSIX tests via cargo test
+cargo test --test posix_compliance_tests
+
+# Run full suite (slow, comprehensive)
+cargo test --test posix_compliance_tests test_posix_full_suite -- --ignored --nocapture
+
+# Run specific test category
+cargo test --test posix_compliance_tests test_posix_builtins
+```
+
+**Test Coverage:**
+- Builtin Commands (50+ tests)
+- Control Flow (40+ tests)
+- I/O Redirection (30+ tests)
+- Variables & Expansion (50+ tests)
+- Pipelines & Job Control (30+ tests)
+- Signal Handling (20+ tests)
+- Shell Functions (30+ tests)
+
+**Documentation:**
+- [POSIX Test Suite Guide](docs/POSIX_TEST_SUITE.md) - Complete testing documentation
+- [Compliance Report](tests/posix/COMPLIANCE_REPORT.md) - Detailed compliance analysis
+- [Test Suite README](tests/posix/README.md) - Quick start guide
+
+**Target Compliance:** 90%+ POSIX.1-2017 compliance
+
 ## Benchmarking
 
 Rush includes comprehensive performance benchmarks to ensure we meet our performance targets:
