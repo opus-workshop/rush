@@ -134,7 +134,56 @@ todos = rush("grep --json 'TODO|FIXME' src/**/*.rs")
 
 ## Installation
 
-### From Source (Recommended)
+### macOS (Homebrew)
+
+```bash
+brew tap opus-workshop/rush
+brew install rush
+```
+
+### Pre-built Binaries
+
+Download the latest release from the [releases page](https://github.com/opus-workshop/rush/releases):
+
+```bash
+# Linux x86_64
+curl -LO https://github.com/opus-workshop/rush/releases/latest/download/rush-linux-x86_64.tar.gz
+tar xzf rush-linux-x86_64.tar.gz
+sudo mv rush /usr/local/bin/
+
+# macOS ARM (Apple Silicon)
+curl -LO https://github.com/opus-workshop/rush/releases/latest/download/rush-macos-aarch64.tar.gz
+tar xzf rush-macos-aarch64.tar.gz
+sudo mv rush /usr/local/bin/
+
+# macOS Intel
+curl -LO https://github.com/opus-workshop/rush/releases/latest/download/rush-macos-x86_64.tar.gz
+tar xzf rush-macos-x86_64.tar.gz
+sudo mv rush /usr/local/bin/
+```
+
+#### Verify Download
+
+SHA256 checksums are provided for all binaries:
+
+```bash
+# Download checksums
+curl -LO https://github.com/opus-workshop/rush/releases/latest/download/SHA256SUMS.txt
+
+# Verify (Linux)
+sha256sum -c SHA256SUMS.txt --ignore-missing
+
+# Verify (macOS)
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+### Cargo Install
+
+```bash
+cargo install --git https://github.com/opus-workshop/rush
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/opus-workshop/rush.git
@@ -145,8 +194,19 @@ sudo cp target/release/rush /usr/local/bin/
 
 ### Requirements
 
-- Rust 1.70+ (uses edition 2021)
-- Unix-like OS (macOS, Linux)
+- **Binary downloads**: No dependencies (statically linked available for Linux)
+- **Cargo install / source build**: Rust 1.70+
+- **OS**: macOS (Intel/ARM), Linux (x86_64)
+
+### Set as Default Shell
+
+```bash
+# Add to allowed shells
+echo "/usr/local/bin/rush" | sudo tee -a /etc/shells
+
+# Change your shell
+chsh -s /usr/local/bin/rush
+```
 
 ## Usage Examples
 
