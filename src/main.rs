@@ -358,9 +358,11 @@ fn run_interactive_with_init(
 }
 
 fn init_environment_variables() -> Result<()> {
-    // Set $SHELL to current executable
-    if let Ok(exe) = env::current_exe() {
-        env::set_var("SHELL", exe);
+    // Set $SHELL only if not already set (avoids expensive current_exe() readlink)
+    if env::var("SHELL").is_err() {
+        if let Ok(exe) = env::current_exe() {
+            env::set_var("SHELL", exe);
+        }
     }
 
     // Set $TERM if not already set
@@ -368,7 +370,7 @@ fn init_environment_variables() -> Result<()> {
         env::set_var("TERM", "xterm-256color");
     }
 
-    // Set $USER if not already set
+    // Set $USER if not already set (avoids expensive whoami syscall)
     if env::var("USER").is_err() {
         if let Ok(user) = env::var("LOGNAME") {
             env::set_var("USER", user);
