@@ -1860,4 +1860,53 @@ mod tests {
             _ => panic!("Expected FunctionDef, got {:?}", statements[0]),
         }
     }
+
+    #[test]
+    fn test_parse_case_basic() {
+        let tokens = Lexer::tokenize("case $x in foo) echo matched;; esac").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::CaseStatement(case_stmt) => {
+                assert_eq!(case_stmt.arms.len(), 1);
+                assert_eq!(case_stmt.arms[0].patterns, vec!["foo"]);
+                assert_eq!(case_stmt.arms[0].body.len(), 1);
+            }
+            _ => panic!("Expected CaseStatement, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_case_multiple_patterns() {
+        let tokens =
+            Lexer::tokenize("case $x in a|b) echo ab;; *) echo other;; esac").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::CaseStatement(case_stmt) => {
+                assert_eq!(case_stmt.arms.len(), 2);
+                assert_eq!(case_stmt.arms[0].patterns, vec!["a", "b"]);
+                assert_eq!(case_stmt.arms[1].patterns, vec!["*"]);
+            }
+            _ => panic!("Expected CaseStatement, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_case_with_variable_assignment() {
+        let tokens =
+            Lexer::tokenize("x=foo; case $x in foo) echo matched;; esac").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 2);
+        match &statements[1] {
+            Statement::CaseStatement(_) => {} // ok
+            _ => panic!("Expected CaseStatement, got {:?}", statements[1]),
+        }
+    }
 }

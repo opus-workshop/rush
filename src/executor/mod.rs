@@ -2416,4 +2416,55 @@ mod tests {
         let result = run_line(&mut executor, "f() { echo one; echo two; }; f");
         assert_eq!(result.stdout(), "one\ntwo\n");
     }
+
+    #[test]
+    fn test_case_basic_match() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "x=foo; case $x in foo) echo matched;; esac",
+        );
+        assert_eq!(result.stdout().trim(), "matched");
+    }
+
+    #[test]
+    fn test_case_wildcard_default() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "x=c; case $x in a|b) echo ab;; *) echo other;; esac",
+        );
+        assert_eq!(result.stdout().trim(), "other");
+    }
+
+    #[test]
+    fn test_case_multiple_patterns() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "x=b; case $x in a|b) echo ab;; *) echo other;; esac",
+        );
+        assert_eq!(result.stdout().trim(), "ab");
+    }
+
+    #[test]
+    fn test_case_no_match() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "x=z; case $x in a) echo a;; b) echo b;; esac",
+        );
+        assert_eq!(result.stdout().trim(), "");
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn test_case_nested() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "x=foo; case $x in foo) y=bar; case $y in bar) echo nested;; esac;; esac",
+        );
+        assert_eq!(result.stdout().trim(), "nested");
+    }
 }
