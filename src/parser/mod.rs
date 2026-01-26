@@ -1783,4 +1783,81 @@ mod tests {
             _ => panic!("Expected ForLoop"),
         }
     }
+
+    #[test]
+    fn test_parse_posix_function_def() {
+        let tokens = Lexer::tokenize("foo() { echo hello; }").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::FunctionDef(func) => {
+                assert_eq!(func.name, "foo");
+                assert!(func.params.is_empty());
+                assert_eq!(func.body.len(), 1);
+            }
+            _ => panic!("Expected FunctionDef, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_posix_function_def_and_call() {
+        let tokens = Lexer::tokenize("foo() { echo hello; }; foo").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 2);
+        assert!(matches!(&statements[0], Statement::FunctionDef(_)));
+        assert!(matches!(&statements[1], Statement::Command(_)));
+    }
+
+    #[test]
+    fn test_parse_bash_function_keyword() {
+        let tokens = Lexer::tokenize("function bar { echo hi; }").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::FunctionDef(func) => {
+                assert_eq!(func.name, "bar");
+                assert!(func.params.is_empty());
+                assert_eq!(func.body.len(), 1);
+            }
+            _ => panic!("Expected FunctionDef, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_bash_function_keyword_with_parens() {
+        let tokens = Lexer::tokenize("function baz() { echo hi; }").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::FunctionDef(func) => {
+                assert_eq!(func.name, "baz");
+                assert!(func.params.is_empty());
+            }
+            _ => panic!("Expected FunctionDef, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_with_multiple_statements() {
+        let tokens = Lexer::tokenize("f() { echo one; echo two; }").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::FunctionDef(func) => {
+                assert_eq!(func.name, "f");
+                assert_eq!(func.body.len(), 2);
+            }
+            _ => panic!("Expected FunctionDef, got {:?}", statements[0]),
+        }
+    }
 }

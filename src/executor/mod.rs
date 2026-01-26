@@ -2339,4 +2339,81 @@ mod tests {
         let result = run_line(&mut executor, "for x in only; do echo $x; done");
         assert_eq!(result.stdout(), "only\n");
     }
+
+    // --- Function definition tests ---
+
+    #[test]
+    fn test_function_def_posix_basic() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "foo() { echo hello; }");
+        let result = run_line(&mut executor, "foo");
+        assert_eq!(result.stdout().trim(), "hello");
+    }
+
+    #[test]
+    fn test_function_def_posix_inline() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "foo() { echo hello; }; foo");
+        assert_eq!(result.stdout().trim(), "hello");
+    }
+
+    #[test]
+    fn test_function_positional_params() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "greet() { echo hi $1; }");
+        let result = run_line(&mut executor, "greet world");
+        assert_eq!(result.stdout().trim(), "hi world");
+    }
+
+    #[test]
+    fn test_function_return_exit_code() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "ret5() { return 5; }; ret5; echo $?");
+        assert_eq!(result.stdout().trim(), "5");
+    }
+
+    #[test]
+    fn test_function_local_variables() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "f() { local x=inner; echo $x; }; x=outer; f; echo $x");
+        assert_eq!(result.stdout(), "inner\nouter\n");
+    }
+
+    #[test]
+    fn test_function_bash_keyword() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "function bar { echo bar-works; }; bar");
+        assert_eq!(result.stdout().trim(), "bar-works");
+    }
+
+    #[test]
+    fn test_function_bash_keyword_with_parens() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "function baz() { echo baz-works; }; baz");
+        assert_eq!(result.stdout().trim(), "baz-works");
+    }
+
+    #[test]
+    fn test_function_multiple_args() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "add() { echo $1 $2 $3; }");
+        let result = run_line(&mut executor, "add a b c");
+        assert_eq!(result.stdout().trim(), "a b c");
+    }
+
+    #[test]
+    fn test_function_calls_function() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "inner() { echo inner; }");
+        run_line(&mut executor, "outer() { inner; }");
+        let result = run_line(&mut executor, "outer");
+        assert_eq!(result.stdout().trim(), "inner");
+    }
+
+    #[test]
+    fn test_function_multiple_body_statements() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "f() { echo one; echo two; }; f");
+        assert_eq!(result.stdout(), "one\ntwo\n");
+    }
 }

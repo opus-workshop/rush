@@ -46,6 +46,9 @@ pub enum Token {
     #[token("until")]
     Until,
 
+    #[token("function")]
+    Function,
+
     #[token("case")]
     Case,
 
@@ -106,6 +109,9 @@ pub enum Token {
 
     #[token("]")]
     RightBracket,
+
+    #[token(";;")]
+    DoubleSemicolon,
 
     #[token(";")]
     Semicolon,
