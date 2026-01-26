@@ -4,20 +4,20 @@ use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Path to the daemon socket
+// ---------------------------------------------------------------------------
+// Daemon lifecycle helpers
+// ---------------------------------------------------------------------------
+
 fn socket_path() -> String {
     format!("{}/.rush/daemon.sock", std::env::var("HOME").unwrap_or_default())
 }
 
-/// Check if daemon is currently running
 fn is_daemon_running() -> bool {
     let path = socket_path();
     std::path::Path::new(&path).exists() && UnixStream::connect(&path).is_ok()
 }
 
-/// Start the daemon, wait for it to accept connections
 fn start_daemon() {
-    // Stop any existing daemon first
     let _ = Command::new("target/release/rushd")
         .arg("stop")
         .stdout(Stdio::null())
@@ -25,7 +25,6 @@ fn start_daemon() {
         .status();
     std::thread::sleep(Duration::from_millis(300));
 
-    // Start daemon
     let _ = Command::new("target/release/rushd")
         .arg("start")
         .stdout(Stdio::null())
@@ -33,7 +32,6 @@ fn start_daemon() {
         .spawn()
         .expect("Failed to start rushd");
 
-    // Wait for socket to appear and be connectable
     let path = socket_path();
     for _ in 0..50 {
         if std::path::Path::new(&path).exists() {
@@ -46,7 +44,6 @@ fn start_daemon() {
     panic!("Daemon failed to start within 5 seconds");
 }
 
-/// Stop the daemon
 fn stop_daemon() {
     let _ = Command::new("target/release/rushd")
         .arg("stop")
@@ -56,19 +53,17 @@ fn stop_daemon() {
     std::thread::sleep(Duration::from_millis(300));
 }
 
-/// Execute a command via the daemon using DaemonClient
-fn execute_via_daemon(cmd: &str) -> i32 {
-    let mut client = rush::daemon::DaemonClient::new()
-        .expect("Failed to create daemon client");
-    let args = vec!["-c".to_string(), cmd.to_string()];
-    // Note: execute_command calls process::exit on success in the real client,
-    // but we need to get the result without exiting. We'll use the lower-level
-    // protocol directly instead.
-    execute_via_protocol(cmd)
+fn ensure_daemon() {
+    if !is_daemon_running() {
+        start_daemon();
+    }
 }
 
-/// Execute a command via raw protocol (avoids process::exit in DaemonClient)
-fn execute_via_protocol(cmd: &str) -> i32 {
+// ---------------------------------------------------------------------------
+// Daemon protocol (bincode over unix socket)
+// ---------------------------------------------------------------------------
+
+fn execute_via_daemon(cmd: &str) -> i32 {
     use rush::daemon::protocol::{Message, SessionInit, write_message, read_message};
 
     let path = socket_path();
@@ -83,17 +78,18 @@ fn execute_via_protocol(cmd: &str) -> i32 {
     let mut env = HashMap::new();
     env.insert("PATH".to_string(), std::env::var("PATH").unwrap_or_default());
 
-    let session_init = SessionInit {
+    let init = SessionInit {
         working_dir,
         env,
         args: vec!["-c".to_string(), cmd.to_string()],
         stdin_mode: "null".to_string(),
     };
 
-    let msg = Message::SessionInit(session_init);
-    write_message(&mut stream, &msg, 1).expect("Failed to write message");
+    write_message(&mut stream, &Message::SessionInit(init), 1)
+        .expect("Failed to write message");
 
-    let (response, _msg_id) = read_message(&mut stream).expect("Failed to read response");
+    let (response, _) = read_message(&mut stream)
+        .expect("Failed to read response");
 
     match response {
         Message::ExecutionResult(result) => result.exit_code,
@@ -101,30 +97,30 @@ fn execute_via_protocol(cmd: &str) -> i32 {
     }
 }
 
-/// Benchmark warm daemon execution (daemon already running, repeated commands)
-fn bench_daemon_warm(c: &mut Criterion) {
-    if !is_daemon_running() {
-        start_daemon();
-    }
+// ===========================================================================
+// 1. DAEMON EXECUTION (primary benchmark)
+//    This is what matters — pre-warmed workers, bincode IPC, no process spawn.
+// ===========================================================================
 
-    let mut group = c.benchmark_group("daemon_warm");
+fn bench_daemon_execution(c: &mut Criterion) {
+    ensure_daemon();
+
+    let mut group = c.benchmark_group("daemon");
     group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
+    group.sample_size(100);
 
-    let commands = vec![
-        ("exit", "exit"),
+    for (name, cmd) in [
+        ("true", "true"),
         ("echo_hello", "echo hello"),
-        ("true_builtin", "true"),
-    ];
-
-    for (name, cmd) in &commands {
+        ("arithmetic", "echo $((2+3))"),
+        ("pipe", "echo hello | cat"),
+    ] {
         group.bench_with_input(
-            BenchmarkId::new("daemon", name),
-            cmd,
+            BenchmarkId::new("exec", name),
+            &cmd,
             |b, cmd| {
                 b.iter(|| {
-                    let exit_code = execute_via_protocol(black_box(cmd));
-                    black_box(exit_code);
+                    black_box(execute_via_daemon(black_box(cmd)));
                 });
             },
         );
@@ -133,59 +129,54 @@ fn bench_daemon_warm(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark direct execution (rush -c, no daemon)
-fn bench_direct_execution(c: &mut Criterion) {
-    let mut group = c.benchmark_group("direct_execution");
+// ===========================================================================
+// 2. DAEMON THROUGHPUT
+//    Sequential burst — how many commands/sec can the daemon sustain?
+// ===========================================================================
+
+fn bench_daemon_throughput(c: &mut Criterion) {
+    ensure_daemon();
+
+    let mut group = c.benchmark_group("daemon_throughput");
     group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
+    group.sample_size(20);
 
-    let commands = vec![
-        ("exit", "exit"),
-        ("echo_hello", "echo hello"),
-        ("true_builtin", "true"),
-    ];
-
-    for (name, cmd) in &commands {
-        group.bench_with_input(
-            BenchmarkId::new("direct", name),
-            cmd,
-            |b, cmd| {
-                b.iter(|| {
-                    let output = Command::new("target/release/rush")
-                        .arg("-c")
-                        .arg(cmd)
-                        .output()
-                        .expect("Failed to execute rush");
-                    black_box(output);
-                });
-            },
-        );
+    for (name, cmd, batch) in [
+        ("100x_true", "true", 100),
+        ("100x_echo", "echo hello", 100),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                for _ in 0..batch {
+                    black_box(execute_via_daemon(black_box(cmd)));
+                }
+            });
+        });
     }
 
     group.finish();
 }
 
-/// Benchmark daemon cold start (stop, restart, execute first command)
+// ===========================================================================
+// 3. DAEMON COLD START
+//    Stop daemon, restart, time the first command. Measures fork+init cost.
+// ===========================================================================
+
 fn bench_daemon_cold_start(c: &mut Criterion) {
     let mut group = c.benchmark_group("daemon_cold_start");
     group.measurement_time(Duration::from_secs(30));
-    group.sample_size(10); // Cold starts are expensive
+    group.sample_size(10);
 
-    group.bench_function("first_command_after_restart", |b| {
+    group.bench_function("first_command", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                // Stop daemon
                 stop_daemon();
-
-                // Start daemon
                 start_daemon();
 
-                // Time the first command
                 let start = Instant::now();
-                let exit_code = execute_via_protocol("exit");
+                black_box(execute_via_daemon("true"));
                 total += start.elapsed();
-                black_box(exit_code);
             }
             total
         });
@@ -194,119 +185,78 @@ fn bench_daemon_cold_start(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark daemon overhead = daemon_time - direct_time
-/// Runs both back-to-back for each iteration to measure the delta
-fn bench_daemon_overhead(c: &mut Criterion) {
-    if !is_daemon_running() {
-        start_daemon();
-    }
+// ===========================================================================
+// 4. COLD STARTUP — rush -c (single reference point)
+//    Process spawn → rush binary load → lex/parse/exec → exit.
+//    This is the baseline that the daemon amortizes away.
+// ===========================================================================
 
-    let mut group = c.benchmark_group("daemon_overhead");
+fn bench_cold_startup(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cold_startup");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(50);
 
-    // Compare daemon vs direct for the same command
-    group.bench_function("daemon_echo", |b| {
-        b.iter(|| {
-            let exit_code = execute_via_protocol(black_box("echo hello"));
-            black_box(exit_code);
-        });
-    });
-
-    group.bench_function("direct_echo", |b| {
-        b.iter(|| {
-            let output = Command::new("target/release/rush")
-                .arg("-c")
-                .arg("echo hello")
-                .output()
-                .expect("Failed to execute rush");
-            black_box(output);
-        });
-    });
-
-    group.finish();
-}
-
-/// Benchmark daemon throughput (sequential requests as fast as possible)
-fn bench_daemon_throughput(c: &mut Criterion) {
-    if !is_daemon_running() {
-        start_daemon();
+    for (name, cmd) in [
+        ("true", "true"),
+        ("echo_hello", "echo hello"),
+    ] {
+        group.bench_with_input(
+            BenchmarkId::new("rush_c", name),
+            &cmd,
+            |b, cmd| {
+                b.iter(|| {
+                    black_box(
+                        Command::new("target/release/rush")
+                            .arg("-c")
+                            .arg(cmd)
+                            .output()
+                            .expect("Failed to execute rush"),
+                    );
+                });
+            },
+        );
     }
 
-    let mut group = c.benchmark_group("daemon_throughput");
-    group.measurement_time(Duration::from_secs(10));
-    group.sample_size(20);
-
-    // Measure how many requests we can do in a batch
-    group.bench_function("batch_100_exit", |b| {
-        b.iter(|| {
-            for _ in 0..100 {
-                let exit_code = execute_via_protocol("exit");
-                black_box(exit_code);
-            }
-        });
-    });
-
-    group.bench_function("batch_100_echo", |b| {
-        b.iter(|| {
-            for _ in 0..100 {
-                let exit_code = execute_via_protocol("echo hello");
-                black_box(exit_code);
-            }
-        });
-    });
-
     group.finish();
 }
 
-/// Shell comparison benchmarks
+// ===========================================================================
+// 5. SHELL COMPARISON — rush -c vs bash -c vs zsh -c
+//    Context only — measures process spawn overhead across shells.
+// ===========================================================================
+
 fn bench_shell_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("shell_comparison");
     group.measurement_time(Duration::from_secs(10));
     group.sample_size(50);
 
-    let shells: Vec<(&str, &str)> = vec![
-        ("rush", "target/release/rush"),
-        ("bash", "/bin/bash"),
+    let mut shells: Vec<(&str, String)> = vec![
+        ("rush", "target/release/rush".to_string()),
+        ("bash", "/bin/bash".to_string()),
     ];
 
-    // Add zsh if available
-    let zsh_path = Command::new("which")
-        .arg("zsh")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string());
-
-    for (shell_name, shell_path) in &shells {
-        group.bench_with_input(
-            BenchmarkId::new("echo_hello", shell_name),
-            shell_path,
-            |b, path| {
-                b.iter(|| {
-                    let output = Command::new(path)
-                        .arg("-c")
-                        .arg("echo hello")
-                        .output()
-                        .expect("Failed to execute shell");
-                    black_box(output);
-                });
-            },
-        );
+    if let Ok(output) = Command::new("which").arg("zsh").output() {
+        if let Ok(path) = String::from_utf8(output.stdout) {
+            let path = path.trim().to_string();
+            if !path.is_empty() {
+                shells.push(("zsh", path));
+            }
+        }
     }
 
-    if let Some(ref zsh) = zsh_path {
+    for (name, path) in &shells {
         group.bench_with_input(
-            BenchmarkId::new("echo_hello", "zsh"),
-            zsh.as_str(),
+            BenchmarkId::new("echo_hello", name),
+            path.as_str(),
             |b, path| {
                 b.iter(|| {
-                    let output = Command::new(path)
-                        .arg("-c")
-                        .arg("echo hello")
-                        .output()
-                        .expect("Failed to execute shell");
-                    black_box(output);
+                    black_box(
+                        Command::new(path)
+                            .arg("-c")
+                            .arg("echo hello")
+                            .output()
+                            .expect("Failed to execute shell"),
+                    );
                 });
             },
         );
@@ -315,14 +265,15 @@ fn bench_shell_comparison(c: &mut Criterion) {
     group.finish();
 }
 
+// ===========================================================================
+
 criterion_group!(
-    daemon_benches,
-    bench_daemon_warm,
-    bench_direct_execution,
-    bench_daemon_cold_start,
-    bench_daemon_overhead,
-    bench_daemon_throughput,
-    bench_shell_comparison,
+    benches,
+    bench_daemon_execution,       // PRIMARY: daemon warm execution
+    bench_daemon_throughput,       // Sustained throughput
+    bench_daemon_cold_start,       // Cold start overhead
+    bench_cold_startup,            // rush -c reference (single variable)
+    bench_shell_comparison,        // Context: rush vs bash vs zsh
 );
 
-criterion_main!(daemon_benches);
+criterion_main!(benches);
