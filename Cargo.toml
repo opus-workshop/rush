@@ -45,8 +45,8 @@ grep-matcher = "0.1"
 grep-regex = "0.1"
 termcolor = "1"
 
-# Git integration
-git2 = "0.19"
+# Git integration (optional — disable with --no-default-features for smaller binary)
+git2 = { version = "0.19", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -89,7 +89,8 @@ name = "ai_agent_workloads"
 harness = false
 
 [features]
-default = []
+default = ["git-builtins"]
+git-builtins = ["git2"]
 embedded = []
 
 [profile.release]

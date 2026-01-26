@@ -3,6 +3,7 @@ mod completion;
 mod context;
 mod correction;
 mod executor;
+#[cfg(feature = "git-builtins")]
 mod git;
 mod glob_expansion;
 mod history;

@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 
 mod cat;
 mod find;
+#[cfg(feature = "git-builtins")]
 mod git_log;
+#[cfg(feature = "git-builtins")]
 mod git_status;
 // mod git_diff;  // Temporarily disabled due to compilation errors
 mod alias;
@@ -57,7 +59,10 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("find", find::builtin_find);
     m.insert("ls", ls::builtin_ls);
     m.insert("mkdir", mkdir::builtin_mkdir);
+    #[cfg(feature = "git-builtins")]
     m.insert("git", builtin_git);
+    #[cfg(not(feature = "git-builtins"))]
+    m.insert("git", builtin_git_external);
     m.insert("grep", grep::builtin_grep);
     m.insert("undo", undo::builtin_undo);
     m.insert("jobs", jobs::builtin_jobs);
@@ -304,6 +309,7 @@ pub(crate) fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<E
     Ok(ExecutionResult::success(String::new()))
 }
 
+#[cfg(feature = "git-builtins")]
 pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {
         // No subcommand provided - let external git handle it
@@ -319,32 +325,33 @@ pub(crate) fn builtin_git(args: &[String], runtime: &mut Runtime) -> Result<Exec
             // Call the optimized git log builtin
             git_log::builtin_git_log(&args[1..], runtime)
         }
-        // "diff" => {
-        //     // Call the optimized git diff builtin
-        //     git_diff::builtin_git_diff(&args[1..], runtime)
-        // }
         _ => {
             // For other git subcommands, spawn external git
-            use std::process::Command;
-
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(runtime.get_cwd())
-                .output()
-                .map_err(|e| anyhow!("Failed to execute git: {}", e))?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let exit_code = output.status.code().unwrap_or(1);
-
-            Ok(ExecutionResult {
-                output: Output::Text(stdout),
-                stderr,
-                exit_code,
-                error: None,
-            })
+            builtin_git_external(args, runtime)
         }
     }
+}
+
+/// Fallback: always shell out to external git (used when git-builtins feature is disabled)
+pub(crate) fn builtin_git_external(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(runtime.get_cwd())
+        .output()
+        .map_err(|e| anyhow!("Failed to execute git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(1);
+
+    Ok(ExecutionResult {
+        output: Output::Text(stdout),
+        stderr,
+        exit_code,
+        error: None,
+    })
 }
 
 pub(crate) fn builtin_true(_args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {

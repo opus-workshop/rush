@@ -163,7 +163,7 @@ fn execute_builtin(name: &str, args: Vec<String>, runtime: &mut Runtime) -> Resu
         "find" => super::find::builtin_find(&args, runtime),
         "ls" => super::ls::builtin_ls(&args, runtime),
         "mkdir" => super::mkdir::builtin_mkdir(&args, runtime),
-        "git" => super::builtin_git(&args, runtime),
+        "git" => super::builtin_git_external(&args, runtime),
         "grep" => super::grep::builtin_grep(&args, runtime),
         "undo" => super::undo::builtin_undo(&args, runtime),
         "jobs" => super::jobs::builtin_jobs(&args, runtime),

@@ -11,6 +11,7 @@ pub mod completion;
 pub mod history;
 pub mod context;
 pub mod output;
+#[cfg(feature = "git-builtins")]
 pub mod git;
 pub mod undo;
 pub mod correction;

@@ -41,7 +41,7 @@ pub fn builtin_builtin(args: &[String], runtime: &mut Runtime) -> Result<Executi
         "find" => super::find::builtin_find(&builtin_args, runtime),
         "ls" => super::ls::builtin_ls(&builtin_args, runtime),
         "mkdir" => super::mkdir::builtin_mkdir(&builtin_args, runtime),
-        "git" => super::builtin_git(&builtin_args, runtime),
+        "git" => super::builtin_git_external(&builtin_args, runtime),
         "grep" => super::grep::builtin_grep(&builtin_args, runtime),
         "undo" => super::undo::builtin_undo(&builtin_args, runtime),
         "jobs" => super::jobs::builtin_jobs(&builtin_args, runtime),

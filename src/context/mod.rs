@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "git-builtins")]
 use crate::git::GitContext;
 
 /// All supported project types with their marker files
@@ -172,6 +173,7 @@ impl ProjectCache {
 pub struct Context {
     project_type: ProjectType,
     project_root: Option<PathBuf>,
+    #[cfg(feature = "git-builtins")]
     git_context: Option<GitContext>,
     cache: ProjectCache,
 }
@@ -182,6 +184,7 @@ impl Context {
         Self {
             project_type: ProjectType::Unknown,
             project_root: None,
+            #[cfg(feature = "git-builtins")]
             git_context: None,
             cache: ProjectCache::new(),
         }
@@ -197,6 +200,7 @@ impl Context {
     /// Detect both project type and Git context
     pub fn detect_all(&mut self, path: &Path) {
         self.detect_project(path);
+        #[cfg(feature = "git-builtins")]
         self.detect_git(path);
     }
 
@@ -223,6 +227,7 @@ impl Context {
     }
 
     /// Detect Git context for the given path
+    #[cfg(feature = "git-builtins")]
     pub fn detect_git(&mut self, path: &Path) {
         self.git_context = Some(GitContext::new(path));
     }
@@ -238,6 +243,7 @@ impl Context {
     }
 
     /// Get the Git context if available
+    #[cfg(feature = "git-builtins")]
     pub fn get_git_context(&self) -> Option<&GitContext> {
         self.git_context.as_ref()
     }
@@ -254,10 +260,15 @@ impl Context {
 
     /// Check if we're in a Git repository
     pub fn is_git_repo(&self) -> bool {
-        self.git_context
-            .as_ref()
-            .map(|ctx| ctx.is_git_repo())
-            .unwrap_or(false)
+        #[cfg(feature = "git-builtins")]
+        {
+            self.git_context
+                .as_ref()
+                .map(|ctx| ctx.is_git_repo())
+                .unwrap_or(false)
+        }
+        #[cfg(not(feature = "git-builtins"))]
+        false
     }
 
     /// Get a combined context string for display (project type + git status)
@@ -270,6 +281,7 @@ impl Context {
         }
 
         // Add git status if available
+        #[cfg(feature = "git-builtins")]
         if let Some(git_ctx) = &self.git_context {
             let git_status = git_ctx.status_summary();
             let git_str = git_status.prompt_string();
@@ -470,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "git-builtins")]
     fn test_context_with_git() {
         let temp_dir = create_test_project(ProjectType::Rust);
         let ctx = Context::detect(temp_dir.path());

@@ -286,13 +286,14 @@ impl Completer {
     }
 
     /// Scan git branches in current repository
+    #[cfg(feature = "git-builtins")]
     fn scan_git_branches(&self) -> Vec<String> {
         let runtime = self.runtime.read().unwrap();
         let cwd = runtime.get_cwd();
-        
+
         if let Ok(repo) = git2::Repository::discover(cwd) {
             let mut branches = Vec::new();
-            
+
             if let Ok(refs) = repo.branches(Some(git2::BranchType::Local)) {
                 for (branch, _) in refs.flatten() {
                     if let Ok(Some(name)) = branch.name() {
@@ -300,11 +301,17 @@ impl Completer {
                     }
                 }
             }
-            
+
             branches
         } else {
             Vec::new()
         }
+    }
+
+    /// Scan git branches (stub when git-builtins feature is disabled)
+    #[cfg(not(feature = "git-builtins"))]
+    fn scan_git_branches(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// Get cargo subcommands
