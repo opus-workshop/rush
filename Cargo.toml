@@ -93,6 +93,10 @@ harness = false
 name = "ai_agent_workloads"
 harness = false
 
+[[bench]]
+name = "daemon_latency"
+harness = false
+
 [features]
 default = ["git-builtins"]
 git-builtins = ["git2"]
