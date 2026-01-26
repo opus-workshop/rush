@@ -13,6 +13,15 @@ pub enum Token {
     #[token("else")]
     Else,
 
+    #[token("then")]
+    Then,
+
+    #[token("elif")]
+    Elif,
+
+    #[token("fi")]
+    Fi,
+
     #[token("fn")]
     Fn,
 
@@ -219,15 +228,36 @@ pub enum Token {
 fn parse_command_substitution(lex: &mut logos::Lexer<Token>) -> Option<String> {
     let start = lex.span().start;
     let input = lex.source();
-    let mut depth = 1;
+    let mut depth = 1; // We've consumed "$(" so one open paren
     let mut pos = lex.span().end;
 
     while pos < input.len() && depth > 0 {
         let ch = input.as_bytes()[pos] as char;
-        if ch == '(' && pos > 0 && input.as_bytes()[pos - 1] as char == '$' {
-            depth += 1;
-        } else if ch == ')' {
-            depth -= 1;
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '\'' => {
+                // Skip single-quoted string
+                pos += 1;
+                while pos < input.len() && input.as_bytes()[pos] as char != '\'' {
+                    pos += 1;
+                }
+            }
+            '"' => {
+                // Skip double-quoted string
+                pos += 1;
+                while pos < input.len() {
+                    let c = input.as_bytes()[pos] as char;
+                    if c == '"' {
+                        break;
+                    }
+                    if c == '\\' {
+                        pos += 1; // skip escaped char
+                    }
+                    pos += 1;
+                }
+            }
+            _ => {}
         }
         pos += 1;
     }
@@ -584,5 +614,27 @@ mod tests {
         let tokens = Lexer::tokenize("echo ~root").unwrap();
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[1], Token::Path(ref s) if s == "~root"));
+    }
+
+    #[test]
+    fn test_arithmetic_expansion_simple() {
+        let tokens = Lexer::tokenize("echo $((1+2))").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::CommandSubstitution(cmd) = &tokens[1] {
+            assert_eq!(cmd, "$((1+2))");
+        } else {
+            panic!("Expected CommandSubstitution token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_arithmetic_expansion_with_spaces() {
+        let tokens = Lexer::tokenize("echo $((5 != 3))").unwrap();
+        assert_eq!(tokens.len(), 2);
+        if let Token::CommandSubstitution(cmd) = &tokens[1] {
+            assert_eq!(cmd, "$((5 != 3))");
+        } else {
+            panic!("Expected CommandSubstitution token, got {:?}", tokens[1]);
+        }
     }
 }

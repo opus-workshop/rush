@@ -24,6 +24,9 @@ pub struct Command {
     pub name: String,
     pub args: Vec<Argument>,
     pub redirects: Vec<Redirect>,
+    /// Prefix environment assignments (e.g., `FOO=bar cmd` sets FOO only for cmd)
+    #[serde(default)]
+    pub prefix_env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,9 +60,26 @@ pub struct Parameter {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IfStatement {
-    pub condition: Expression,
+    pub condition: IfCondition,
     pub then_block: Vec<Statement>,
+    pub elif_clauses: Vec<ElifClause>,
     pub else_block: Option<Vec<Statement>>,
+}
+
+/// Condition for an if statement: either shell-style (command exit code)
+/// or expression-style (Rust-like expression evaluation).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IfCondition {
+    /// Shell-style: condition is one or more commands; truthy if last exits 0
+    Commands(Vec<Statement>),
+    /// Rust-style: condition is an expression evaluated for truthiness
+    Expression(Expression),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ElifClause {
+    pub condition: Vec<Statement>,
+    pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -4,6 +4,7 @@ pub mod value;
 // Re-export Value type for convenience
 pub use value::Value;
 
+use crate::arithmetic;
 use crate::builtins::Builtins;
 use crate::correction::Corrector;
 use crate::glob_expansion;
@@ -166,6 +167,19 @@ impl Executor {
             }
         }
 
+        // Handle prefix environment assignments (e.g., FOO=bar cmd args)
+        // Save old values to restore after command execution
+        let saved_env: Vec<(String, Option<String>)> = command.prefix_env.iter()
+            .map(|(k, _)| (k.clone(), self.runtime.get_variable(k)))
+            .collect();
+
+        // Set prefix env vars before command execution
+        for (key, value) in &command.prefix_env {
+            let expanded_value = self.expand_string_value(value)?;
+            self.runtime.set_variable(key.clone(), expanded_value.clone());
+            self.runtime.set_env(key, &expanded_value);
+        }
+
         // Check if it's an alias and expand it
         let (command_name, command_args) = if let Some(alias_value) = self.runtime.get_alias(&command.name) {
             // Split the alias value into command and args
@@ -173,17 +187,17 @@ impl Executor {
             if parts.is_empty() {
                 return Err(anyhow!("Empty alias expansion for '{}'", command.name));
             }
-            
+
             // First part is the new command name
             let new_name = parts[0].to_string();
-            
+
             // Remaining parts become additional arguments (prepended to original args)
             let mut new_args = Vec::new();
             for part in parts.iter().skip(1) {
                 new_args.push(Argument::Literal(part.to_string()));
             }
             new_args.extend(command.args.clone());
-            
+
             (new_name, new_args)
         } else {
             (command.name.clone(), command.args.clone())
@@ -196,7 +210,9 @@ impl Executor {
             if let Some(last) = args.last() {
                 self.runtime.set_last_arg(last.clone());
             }
-            return self.execute_user_function(&command_name, args);
+            let result = self.execute_user_function(&command_name, args);
+            self.restore_prefix_env(&saved_env);
+            return result;
         }
 
         // Check if it's a builtin command
@@ -214,6 +230,7 @@ impl Executor {
             }
 
             self.runtime.set_last_exit_code(result.exit_code);
+            self.restore_prefix_env(&saved_env);
             return Ok(result);
         }
 
@@ -223,7 +240,45 @@ impl Executor {
         expanded_command.args = command_args;
         let result = self.execute_external_command(expanded_command)?;
         self.runtime.set_last_exit_code(result.exit_code);
+        self.restore_prefix_env(&saved_env);
         Ok(result)
+    }
+
+    /// Restore prefix environment variables to their previous values after command execution.
+    fn restore_prefix_env(&mut self, saved: &[(String, Option<String>)]) {
+        for (key, old_value) in saved {
+            match old_value {
+                Some(val) => {
+                    self.runtime.set_variable(key.clone(), val.clone());
+                    self.runtime.set_env(key, val);
+                }
+                None => {
+                    self.runtime.remove_variable(key);
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+
+    /// Expand a string value that may contain variable references ($VAR, ${VAR}, etc.)
+    fn expand_string_value(&self, value: &str) -> Result<String> {
+        if value.starts_with('$') {
+            // Variable reference - expand it
+            if value.starts_with("${") && value.ends_with('}') {
+                // Braced variable ${VAR}
+                let var_name = value.trim_start_matches("${").trim_end_matches('}');
+                Ok(self.runtime.get_variable(var_name).unwrap_or_default())
+            } else if value.starts_with("$(") {
+                // Command substitution
+                self.execute_command_substitution(value)
+            } else {
+                // Simple variable $VAR
+                let var_name = value.trim_start_matches('$');
+                Ok(self.runtime.get_variable(var_name).unwrap_or_default())
+            }
+        } else {
+            Ok(value.to_string())
+        }
     }
 
     fn apply_redirects(&self, mut result: ExecutionResult, redirects: &[Redirect]) -> Result<ExecutionResult> {
@@ -776,19 +831,74 @@ impl Executor {
     }
 
     fn execute_if_statement(&mut self, if_stmt: IfStatement) -> Result<ExecutionResult> {
-        let condition = self.evaluate_expression(if_stmt.condition)?;
+        match if_stmt.condition {
+            IfCondition::Commands(condition_stmts) => {
+                // Shell-style: evaluate condition by running commands
+                let condition_result = self.evaluate_condition_commands(&condition_stmts)?;
 
-        if self.is_truthy(&condition) {
-            for statement in if_stmt.then_block {
-                self.execute_statement(statement)?;
+                if condition_result {
+                    return self.execute_block(if_stmt.then_block);
+                }
+
+                // Try elif clauses
+                for elif in if_stmt.elif_clauses {
+                    let elif_result = self.evaluate_condition_commands(&elif.condition)?;
+                    if elif_result {
+                        return self.execute_block(elif.body);
+                    }
+                }
+
+                // Else block
+                if let Some(else_block) = if_stmt.else_block {
+                    return self.execute_block(else_block);
+                }
+
+                Ok(ExecutionResult::default())
             }
-        } else if let Some(else_block) = if_stmt.else_block {
-            for statement in else_block {
-                self.execute_statement(statement)?;
+            IfCondition::Expression(expr) => {
+                // Rust-style: evaluate expression for truthiness
+                let condition = self.evaluate_expression(expr)?;
+
+                if self.is_truthy(&condition) {
+                    self.execute_block(if_stmt.then_block)
+                } else if let Some(else_block) = if_stmt.else_block {
+                    self.execute_block(else_block)
+                } else {
+                    Ok(ExecutionResult::default())
+                }
             }
         }
+    }
 
-        Ok(ExecutionResult::default())
+    /// Evaluate a list of condition commands. Returns true if last command exits 0.
+    fn evaluate_condition_commands(&mut self, commands: &[Statement]) -> Result<bool> {
+        let mut last_exit_code = 0;
+        for statement in commands {
+            let result = self.execute_statement(statement.clone())?;
+            last_exit_code = result.exit_code;
+        }
+        Ok(last_exit_code == 0)
+    }
+
+    /// Execute a block of statements and return the combined result.
+    fn execute_block(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
+        let mut last_exit_code = 0;
+
+        for statement in statements {
+            let result = self.execute_statement(statement)?;
+            accumulated_stdout.push_str(&result.stdout());
+            accumulated_stderr.push_str(&result.stderr);
+            last_exit_code = result.exit_code;
+        }
+
+        Ok(ExecutionResult {
+            output: Output::Text(accumulated_stdout),
+            stderr: accumulated_stderr,
+            exit_code: last_exit_code,
+            error: None,
+        })
     }
 
     fn execute_for_loop(&mut self, for_loop: ForLoop) -> Result<ExecutionResult> {
@@ -1274,6 +1384,25 @@ impl Executor {
 
     fn evaluate_expression(&mut self, expr: Expression) -> Result<String> {
         match expr {
+            Expression::Literal(Literal::String(ref s))
+                if s.starts_with("$((") && s.ends_with("))") =>
+            {
+                // Arithmetic expansion in string literal context (e.g., i=$((i+1)))
+                let inner = &s[3..s.len() - 2];
+                let result = arithmetic::evaluate_mut(inner, &mut self.runtime)?;
+                Ok(result.to_string())
+            }
+            Expression::Literal(Literal::String(ref s))
+                if s.starts_with("$(") && s.ends_with(')') =>
+            {
+                // Command substitution in string literal context
+                self.execute_command_substitution(s)
+            }
+            Expression::Literal(Literal::String(ref s)) if s.starts_with('$') => {
+                // Variable expansion in string literal context
+                let var_name = s.trim_start_matches('$');
+                Ok(self.runtime.get_variable(var_name).unwrap_or_default())
+            }
             Expression::Literal(lit) => Ok(self.literal_to_string(lit)),
             Expression::Variable(name) => {
                 // Strip single $ from variable name (use strip_prefix to remove only one $)
@@ -1324,6 +1453,12 @@ impl Executor {
                 self.runtime.expand_variable(&expansion)
             }
             Expression::CommandSubstitution(cmd) => {
+                // Check for arithmetic expansion: $((expr))
+                if cmd.starts_with("$((") && cmd.ends_with("))") {
+                    let expr = &cmd[3..cmd.len() - 2];
+                    let result = arithmetic::evaluate_mut(expr, &mut self.runtime)?;
+                    return Ok(result.to_string());
+                }
                 // Strip $( and )
                 let cmd_str = cmd.trim_start_matches("$(").trim_end_matches(')');
                 // TODO: Parse and execute the command
@@ -1451,6 +1586,12 @@ impl Executor {
                 self.runtime.expand_variable(&expansion)
             }
             Argument::CommandSubstitution(cmd) => {
+                // Check for arithmetic expansion: $((expr))
+                if cmd.starts_with("$((") && cmd.ends_with("))") {
+                    let expr = &cmd[3..cmd.len() - 2];
+                    let result = arithmetic::evaluate_mut(expr, &mut self.runtime)?;
+                    return Ok(result.to_string());
+                }
                 // Execute command substitution and return output
                 Ok(self.execute_command_substitution(cmd)
                     .unwrap_or_else(|_| String::new()))
@@ -1607,9 +1748,16 @@ impl Executor {
 
     /// Execute a command substitution and return its stdout, trimmed
     fn execute_command_substitution(&self, cmd_str: &str) -> Result<String> {
+        // Check for arithmetic expansion: $((expr))
+        if cmd_str.starts_with("$((") && cmd_str.ends_with("))") {
+            let expr = &cmd_str[3..cmd_str.len() - 2];
+            let result = arithmetic::evaluate(expr, &self.runtime)?;
+            return Ok(result.to_string());
+        }
+
         use crate::lexer::Lexer;
         use crate::parser::Parser;
-        
+
         // Extract command from $(...) or `...`
         let command = if cmd_str.starts_with("$(") && cmd_str.ends_with(')') {
             &cmd_str[2..cmd_str.len() - 1]
@@ -1832,11 +1980,18 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                 .unwrap_or_else(|| var.clone())
         }
         Argument::CommandSubstitution(cmd) => {
+            // Check for arithmetic expansion: $((expr))
+            if cmd.starts_with("$((") && cmd.ends_with("))") {
+                let expr = &cmd[3..cmd.len() - 2];
+                return arithmetic::evaluate(expr, runtime)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|_| "0".to_string());
+            }
             // For parallel execution, we need to execute command substitution
             // Create a minimal executor for this
             use crate::lexer::Lexer;
             use crate::parser::Parser;
-            
+
             let command = if cmd.starts_with("$(") && cmd.ends_with(')') {
                 &cmd[2..cmd.len() - 1]
             } else if cmd.starts_with('`') && cmd.ends_with('`') {
@@ -2080,5 +2235,44 @@ mod tests {
             assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
             assert_eq!(executor.runtime_mut().get_ifs(), " \t\n");
         }
+    }
+
+    /// Helper: parse and execute a single line, returning the result
+    fn run_line(executor: &mut Executor, line: &str) -> ExecutionResult {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+
+        let tokens = Lexer::tokenize(line).expect("tokenize failed");
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().expect("parse failed");
+        executor.execute(statements).expect("execute failed")
+    }
+
+    #[test]
+    fn test_if_true_then_echo() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "if true; then echo yes; fi");
+        assert_eq!(result.stdout().trim(), "yes");
+    }
+
+    #[test]
+    fn test_if_false_else() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "if false; then echo yes; else echo no; fi");
+        assert_eq!(result.stdout().trim(), "no");
+    }
+
+    #[test]
+    fn test_if_elif() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "if false; then echo 1; elif true; then echo 2; fi");
+        assert_eq!(result.stdout().trim(), "2");
+    }
+
+    #[test]
+    fn test_nested_if() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "if true; then if true; then echo nested; fi; fi");
+        assert_eq!(result.stdout().trim(), "nested");
     }
 }
