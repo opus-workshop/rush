@@ -30,6 +30,7 @@ crossterm = "0.27"
 
 # Execution
 nix = { version = "0.29", features = ["process", "signal", "socket", "uio"] }
+libc = "0.2"
 os_pipe = "1.1"
 signal-hook = "0.3"
 
