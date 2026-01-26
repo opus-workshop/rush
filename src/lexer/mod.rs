@@ -164,6 +164,10 @@ pub enum Token {
     #[regex(r"\$[a-zA-Z][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Variable(String),
 
+    // Standalone tilde (for tilde expansion: ~ expands to $HOME)
+    #[token("~")]
+    Tilde,
+
     // File paths and arguments
     #[regex(r"[.~/][^\s|;&(){}]+", |lex| lex.slice().to_string())]
     Path(String),
@@ -559,5 +563,26 @@ mod tests {
         let tokens = Lexer::tokenize("./script.sh").unwrap();
         assert_eq!(tokens.len(), 1);
         assert!(matches!(tokens[0], Token::Path(ref s) if s == "./script.sh"));
+    }
+
+    #[test]
+    fn test_tilde_standalone() {
+        let tokens = Lexer::tokenize("echo ~").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[1], Token::Tilde);
+    }
+
+    #[test]
+    fn test_tilde_with_path() {
+        let tokens = Lexer::tokenize("cd ~/Documents").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(tokens[1], Token::Path(ref s) if s == "~/Documents"));
+    }
+
+    #[test]
+    fn test_tilde_user() {
+        let tokens = Lexer::tokenize("echo ~root").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(tokens[1], Token::Path(ref s) if s == "~root"));
     }
 }

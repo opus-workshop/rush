@@ -1456,7 +1456,7 @@ impl Executor {
                     .unwrap_or_else(|_| String::new()))
             }
             Argument::Flag(f) => Ok(f.clone()),
-            Argument::Path(p) => Ok(p.clone()),
+            Argument::Path(p) => Ok(expand_tilde(p)),
             Argument::Glob(g) => Ok(g.clone()),
         }
     }
@@ -1761,6 +1761,53 @@ impl Executor {
     }
 }
 
+/// Expand tilde (`~`) at the start of a path to the user's home directory.
+///
+/// - `~` expands to `$HOME`
+/// - `~/path` expands to `$HOME/path`
+/// - `~user` expands to that user's home directory (via passwd lookup)
+/// - Paths not starting with `~` are returned unchanged
+pub fn expand_tilde(path: &str) -> String {
+    if !path.starts_with('~') {
+        return path.to_string();
+    }
+
+    // Standalone ~ or ~/path
+    if path == "~" || path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            if path == "~" {
+                return home;
+            }
+            // ~/path -> $HOME/path
+            return format!("{}{}", home, &path[1..]);
+        }
+        return path.to_string();
+    }
+
+    // ~user or ~user/path
+    let rest = &path[1..];
+    let (username, suffix) = match rest.find('/') {
+        Some(pos) => (&rest[..pos], &rest[pos..]),
+        None => (rest, ""),
+    };
+
+    // Look up user's home directory via libc getpwnam
+    use std::ffi::CString;
+    if let Ok(c_username) = CString::new(username) {
+        // SAFETY: getpwnam is a standard POSIX function
+        let pw = unsafe { libc::getpwnam(c_username.as_ptr()) };
+        if !pw.is_null() {
+            let home_dir = unsafe { std::ffi::CStr::from_ptr((*pw).pw_dir) };
+            if let Ok(home) = home_dir.to_str() {
+                return format!("{}{}", home, suffix);
+            }
+        }
+    }
+
+    // If user lookup fails, return unchanged
+    path.to_string()
+}
+
 fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
     match arg {
         Argument::Literal(s) => s.clone(),
@@ -1813,7 +1860,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
             String::new()
         }
         Argument::Flag(f) => f.clone(),
-        Argument::Path(p) => p.clone(),
+        Argument::Path(p) => expand_tilde(p),
         Argument::Glob(g) => g.clone(),
     }
 }

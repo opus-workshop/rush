@@ -231,7 +231,7 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
             String::new()
         }
         Argument::Flag(f) => f.clone(),
-        Argument::Path(p) => p.clone(),
+        Argument::Path(p) => super::expand_tilde(p),
         Argument::Glob(g) => g.clone(),
     }
 }

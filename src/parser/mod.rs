@@ -266,6 +266,7 @@ impl Parser {
                 Ok(Argument::Flag(s.clone()))
             }
             Some(Token::Path(s)) => Ok(Argument::Path(s.clone())),
+            Some(Token::Tilde) => Ok(Argument::Path("~".to_string())),
             Some(Token::Integer(n)) => Ok(Argument::Literal(n.to_string())),
             Some(Token::Dot) => Ok(Argument::Path(".".to_string())),
             Some(Token::RightBracket) => Ok(Argument::Literal("]".to_string())),
