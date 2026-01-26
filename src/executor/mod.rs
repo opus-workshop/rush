@@ -1664,6 +1664,13 @@ impl Executor {
         }
     }
 
+    /// Reset executor state between command executions.
+    /// Clears runtime state (variables, scopes, call stack, etc.)
+    /// while preserving long-lived resources (history, job_manager, builtins, corrector).
+    pub fn reset(&mut self) -> Result<()> {
+        self.runtime.reset()
+    }
+
     pub fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.runtime
     }
@@ -1995,6 +2002,83 @@ impl ExecutionResult {
     pub fn push_stdout(&mut self, text: &str) {
         if let Output::Text(s) = &mut self.output {
             s.push_str(text);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_executor_reset_clears_runtime_state() {
+        let mut executor = Executor::new_embedded();
+
+        // Set some runtime state
+        executor.runtime_mut().set_variable("TEST_VAR".to_string(), "value".to_string());
+        executor.runtime_mut().set_last_exit_code(42);
+        executor.runtime_mut().set_alias("ll".to_string(), "ls -la".to_string());
+
+        // Verify state is set
+        assert_eq!(executor.runtime_mut().get_variable("TEST_VAR"), Some("value".to_string()));
+        assert_eq!(executor.runtime_mut().get_last_exit_code(), 42);
+
+        // Reset
+        executor.reset().unwrap();
+
+        // Verify state is cleared
+        assert_eq!(executor.runtime_mut().get_variable("TEST_VAR"), None);
+        assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
+        assert!(executor.runtime_mut().get_alias("ll").is_none());
+    }
+
+    #[test]
+    fn test_executor_reuse_no_state_leakage() {
+        let mut executor = Executor::new_embedded();
+
+        // Simulate first command: set a variable via assignment
+        executor.runtime_mut().set_variable("LEAKED".to_string(), "secret".to_string());
+        executor.runtime_mut().set_last_exit_code(1);
+
+        // Reset between commands
+        executor.reset().unwrap();
+
+        // After reset, the variable should not exist
+        assert_eq!(executor.runtime_mut().get_variable("LEAKED"), None);
+        assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
+    }
+
+    #[test]
+    fn test_executor_reset_preserves_functionality() {
+        let mut executor = Executor::new_embedded();
+
+        // Execute a command, then reset, then execute again
+        executor.runtime_mut().set_variable("X".to_string(), "1".to_string());
+        executor.reset().unwrap();
+
+        // After reset, executor should still be usable
+        executor.runtime_mut().set_variable("Y".to_string(), "2".to_string());
+        assert_eq!(executor.runtime_mut().get_variable("Y"), Some("2".to_string()));
+        assert_eq!(executor.runtime_mut().get_variable("X"), None);
+    }
+
+    #[test]
+    fn test_executor_reset_multiple_cycles() {
+        let mut executor = Executor::new_embedded();
+
+        // Simulate multiple request/reset cycles
+        for i in 0..5 {
+            let key = format!("VAR_{}", i);
+            executor.runtime_mut().set_variable(key.clone(), i.to_string());
+            assert_eq!(executor.runtime_mut().get_variable(&key), Some(i.to_string()));
+
+            executor.reset().unwrap();
+
+            // After reset, variable from this cycle should be gone
+            assert_eq!(executor.runtime_mut().get_variable(&key), None);
+            // IFS and $? should be re-initialized
+            assert_eq!(executor.runtime_mut().get_last_exit_code(), 0);
+            assert_eq!(executor.runtime_mut().get_ifs(), " \t\n");
         }
     }
 }

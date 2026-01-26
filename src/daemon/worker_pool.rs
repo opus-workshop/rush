@@ -85,7 +85,14 @@ impl Worker {
     }
 
     /// Worker process loop (runs in child process)
+    ///
+    /// Creates a single Executor instance and reuses it across requests,
+    /// calling reset() between commands to clear transient state while
+    /// preserving long-lived resources (history, job_manager, builtins, corrector).
     fn worker_loop(mut stream: UnixStream) -> ! {
+        // Create executor ONCE -- reuse across all requests
+        let mut executor = crate::executor::Executor::new_embedded();
+
         loop {
             // Wait for a request from the pool
             let (msg, msg_id) = match read_message(&mut stream) {
@@ -97,10 +104,15 @@ impl Worker {
             };
 
             // Handle the request
-            let exit_code = match msg {
+            match msg {
                 Message::SessionInit(init) => {
-                    // Execute the session
-                    match Self::execute_session(&init) {
+                    // Reset executor state before each request to prevent leakage
+                    if let Err(e) = executor.reset() {
+                        eprintln!("Worker: Failed to reset executor: {}", e);
+                    }
+
+                    // Execute the session with the reused executor
+                    match Self::execute_session_with_executor(&init, &mut executor) {
                         Ok(exec_result) => {
                             // Send result back to pool
                             let result = ExecutionResult {
@@ -115,8 +127,6 @@ impl Worker {
                                 eprintln!("Worker: Failed to send result: {}", e);
                                 std::process::exit(1);
                             }
-
-                            0
                         }
                         Err(e) => {
                             eprintln!("Worker: Execution error: {}", e);
@@ -134,8 +144,6 @@ impl Worker {
                                 eprintln!("Worker: Failed to send error result: {}", e);
                                 std::process::exit(1);
                             }
-
-                            1
                         }
                     }
                 }
@@ -145,18 +153,18 @@ impl Worker {
                 }
                 _ => {
                     eprintln!("Worker: Unexpected message type");
-                    1
                 }
             };
-
-            // TODO: Reset state between requests (will be implemented in rush-daemon-perf.3)
-            // For now, workers execute one request and continue
-            let _ = exit_code; // Suppress unused warning
         }
     }
 
-    /// Execute a session command (same logic as server.rs)
-    fn execute_session(init: &SessionInit) -> Result<crate::executor::ExecutionResult> {
+    /// Execute a session command using a reusable executor instance.
+    ///
+    /// The executor should already be reset before calling this method.
+    fn execute_session_with_executor(
+        init: &SessionInit,
+        executor: &mut crate::executor::Executor,
+    ) -> Result<crate::executor::ExecutionResult> {
         // Set working directory
         std::env::set_current_dir(&init.working_dir)
             .map_err(|e| anyhow!("Failed to set working directory to '{}': {}", init.working_dir, e))?;
@@ -169,9 +177,6 @@ impl Worker {
         // Parse and execute command
         if init.args.len() >= 2 && init.args[0] == "-c" {
             let command = &init.args[1];
-
-            // Create executor in embedded mode
-            let mut executor = crate::executor::Executor::new_embedded();
 
             // Parse
             let tokens = match crate::lexer::Lexer::tokenize(command) {
@@ -221,6 +226,13 @@ impl Worker {
                 error: None,
             })
         }
+    }
+
+    /// Execute a session command (creates a new executor per call).
+    /// Kept for backward compatibility; prefer execute_session_with_executor.
+    fn execute_session(init: &SessionInit) -> Result<crate::executor::ExecutionResult> {
+        let mut executor = crate::executor::Executor::new_embedded();
+        Self::execute_session_with_executor(init, &mut executor)
     }
 
     /// Check if worker is alive and responsive

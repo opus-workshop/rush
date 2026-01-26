@@ -844,3 +844,192 @@ impl Runtime {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_reset_clears_variables() {
+        let mut rt = Runtime::new();
+        rt.set_variable("FOO".to_string(), "bar".to_string());
+        rt.set_variable("BAZ".to_string(), "qux".to_string());
+        assert_eq!(rt.get_variable("FOO"), Some("bar".to_string()));
+
+        rt.reset().unwrap();
+
+        assert_eq!(rt.get_variable("FOO"), None);
+        assert_eq!(rt.get_variable("BAZ"), None);
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_functions() {
+        let mut rt = Runtime::new();
+        let func = FunctionDef {
+            name: "myfunc".to_string(),
+            params: vec![],
+            body: vec![],
+        };
+        rt.define_function(func);
+        assert!(rt.get_function("myfunc").is_some());
+
+        rt.reset().unwrap();
+
+        assert!(rt.get_function("myfunc").is_none());
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_aliases() {
+        let mut rt = Runtime::new();
+        rt.set_alias("ll".to_string(), "ls -la".to_string());
+        assert!(rt.get_alias("ll").is_some());
+
+        rt.reset().unwrap();
+
+        assert!(rt.get_alias("ll").is_none());
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_scopes_and_call_stack() {
+        let mut rt = Runtime::new();
+        rt.push_scope();
+        rt.set_variable("LOCAL".to_string(), "val".to_string());
+        rt.push_call("func1".to_string()).unwrap();
+
+        rt.reset().unwrap();
+
+        // After reset, setting a variable should go to global scope (no scopes)
+        rt.set_variable("X".to_string(), "1".to_string());
+        assert_eq!(rt.get_variable("X"), Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_positional_params() {
+        let mut rt = Runtime::new();
+        rt.set_positional_params(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(rt.param_count(), 3);
+
+        rt.reset().unwrap();
+
+        assert_eq!(rt.param_count(), 0);
+        assert!(rt.get_positional_params().is_empty());
+    }
+
+    #[test]
+    fn test_runtime_reset_resets_depths() {
+        let mut rt = Runtime::new();
+        rt.enter_function_context();
+        rt.enter_loop();
+        rt.enter_loop();
+        assert!(rt.in_function_context());
+        assert_eq!(rt.get_loop_depth(), 2);
+
+        rt.reset().unwrap();
+
+        assert!(!rt.in_function_context());
+        assert_eq!(rt.get_loop_depth(), 0);
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_shell_options() {
+        let mut rt = Runtime::new();
+        rt.set_option("e", true).unwrap();
+        rt.set_option("x", true).unwrap();
+        assert!(rt.options.errexit);
+        assert!(rt.options.xtrace);
+
+        rt.reset().unwrap();
+
+        assert!(!rt.options.errexit);
+        assert!(!rt.options.xtrace);
+    }
+
+    #[test]
+    fn test_runtime_reset_reinitializes_defaults() {
+        let mut rt = Runtime::new();
+        rt.set_last_exit_code(42);
+        rt.set_variable("IFS".to_string(), ",".to_string());
+
+        rt.reset().unwrap();
+
+        // $? should be 0 after reset
+        assert_eq!(rt.get_last_exit_code(), 0);
+        // IFS should be restored to default
+        assert_eq!(rt.get_ifs(), " \t\n");
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_readonly() {
+        let mut rt = Runtime::new();
+        rt.set_variable("CONST".to_string(), "value".to_string());
+        rt.mark_readonly("CONST".to_string());
+        assert!(rt.is_readonly("CONST"));
+
+        rt.reset().unwrap();
+
+        assert!(!rt.is_readonly("CONST"));
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_redirections() {
+        let mut rt = Runtime::new();
+        rt.set_permanent_stdout(Some(3));
+        rt.set_permanent_stderr(Some(4));
+        rt.set_permanent_stdin(Some(5));
+
+        rt.reset().unwrap();
+
+        assert_eq!(rt.get_permanent_stdout(), None);
+        assert_eq!(rt.get_permanent_stderr(), None);
+        assert_eq!(rt.get_permanent_stdin(), None);
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_special_vars() {
+        let mut rt = Runtime::new();
+        rt.set_last_bg_pid(12345);
+        rt.set_last_arg("hello".to_string());
+
+        rt.reset().unwrap();
+
+        assert_eq!(rt.get_last_bg_pid(), None);
+        assert_eq!(rt.get_last_arg(), "");
+    }
+
+    #[test]
+    fn test_runtime_reset_clears_dir_stack() {
+        let mut rt = Runtime::new();
+        rt.push_dir(PathBuf::from("/tmp"));
+        rt.push_dir(PathBuf::from("/home"));
+        assert_eq!(rt.get_dir_stack().len(), 2);
+
+        rt.reset().unwrap();
+
+        assert!(rt.get_dir_stack().is_empty());
+    }
+
+    #[test]
+    fn test_runtime_reset_no_state_leakage() {
+        let mut rt = Runtime::new();
+
+        // Simulate first command execution
+        rt.set_variable("SECRET".to_string(), "password123".to_string());
+        rt.set_last_exit_code(1);
+        rt.set_option("e", true).unwrap();
+        rt.set_alias("x".to_string(), "exit".to_string());
+        rt.enter_function_context();
+        rt.push_scope();
+        rt.set_variable("LOCAL".to_string(), "val".to_string());
+
+        // Reset between commands
+        rt.reset().unwrap();
+
+        // Verify no state leaked
+        assert_eq!(rt.get_variable("SECRET"), None);
+        assert_eq!(rt.get_variable("LOCAL"), None);
+        assert_eq!(rt.get_last_exit_code(), 0);
+        assert!(!rt.options.errexit);
+        assert!(rt.get_alias("x").is_none());
+        assert!(!rt.in_function_context());
+    }
+}
