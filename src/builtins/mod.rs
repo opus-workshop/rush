@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 mod cat;
 mod find;
@@ -42,10 +43,64 @@ mod unset;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
+/// Process-global builtin table. Initialized once on first access via LazyLock.
+/// Uses &'static str keys to avoid per-Executor String allocations.
+static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|| {
+    let mut m: HashMap<&'static str, BuiltinFn> = HashMap::with_capacity(48);
+    m.insert("cd", builtin_cd as BuiltinFn);
+    m.insert("pwd", builtin_pwd);
+    m.insert("echo", builtin_echo);
+    m.insert("exit", builtin_exit);
+    m.insert("export", builtin_export);
+    m.insert("source", builtin_source);
+    m.insert("cat", cat::builtin_cat);
+    m.insert("find", find::builtin_find);
+    m.insert("ls", ls::builtin_ls);
+    m.insert("mkdir", mkdir::builtin_mkdir);
+    m.insert("git", builtin_git);
+    m.insert("grep", grep::builtin_grep);
+    m.insert("undo", undo::builtin_undo);
+    m.insert("jobs", jobs::builtin_jobs);
+    m.insert("fg", jobs::builtin_fg);
+    m.insert("bg", jobs::builtin_bg);
+    m.insert("set", set::builtin_set);
+    m.insert("alias", alias::builtin_alias);
+    m.insert("unalias", alias::builtin_unalias);
+    m.insert("test", test::builtin_test);
+    m.insert("[", test::builtin_bracket);
+    m.insert("help", help::builtin_help);
+    m.insert("type", type_builtin::builtin_type);
+    m.insert("shift", shift::builtin_shift);
+    m.insert("local", local::builtin_local);
+    m.insert("true", builtin_true);
+    m.insert("false", builtin_false);
+    m.insert("return", return_builtin::builtin_return);
+    m.insert("trap", trap::builtin_trap);
+    m.insert("unset", unset::builtin_unset);
+    m.insert("printf", printf::builtin_printf);
+    m.insert("read", read::builtin_read);
+    m.insert("eval", eval::builtin_eval);
+    m.insert("exec", exec::builtin_exec);
+    m.insert("builtin", builtin::builtin_builtin);
+    m.insert("kill", kill::builtin_kill);
+    m.insert("break", break_builtin::builtin_break);
+    m.insert("continue", continue_builtin::builtin_continue);
+    m.insert(":", builtin_colon);
+    m.insert("command", command::builtin_command);
+    m.insert("json_get", json::builtin_json_get);
+    m.insert("json_set", json::builtin_json_set);
+    m.insert("json_query", json::builtin_json_query);
+    m.insert("fetch", fetch::builtin_fetch);
+    m.insert("readonly", readonly::builtin_readonly);
+    m.insert("rm", rm::builtin_rm);
+    m
+});
+
+/// Zero-cost wrapper around the process-global builtin table.
+/// Creating a Builtins instance does no allocation — the static map
+/// is initialized once on first use.
 #[derive(Clone)]
-pub struct Builtins {
-    commands: HashMap<String, BuiltinFn>,
-}
+pub struct Builtins;
 
 impl Default for Builtins {
     fn default() -> Self {
@@ -55,65 +110,16 @@ impl Default for Builtins {
 
 impl Builtins {
     pub fn new() -> Self {
-        let mut commands: HashMap<String, BuiltinFn> = HashMap::new();
-
-        commands.insert("cd".to_string(), builtin_cd);
-        commands.insert("pwd".to_string(), builtin_pwd);
-        commands.insert("echo".to_string(), builtin_echo);
-        commands.insert("exit".to_string(), builtin_exit);
-        commands.insert("export".to_string(), builtin_export);
-        commands.insert("source".to_string(), builtin_source);
-        commands.insert("cat".to_string(), cat::builtin_cat);
-        commands.insert("find".to_string(), find::builtin_find);
-        commands.insert("ls".to_string(), ls::builtin_ls);
-        commands.insert("mkdir".to_string(), mkdir::builtin_mkdir);
-        commands.insert("git".to_string(), builtin_git);
-        commands.insert("grep".to_string(), grep::builtin_grep);
-        commands.insert("undo".to_string(), undo::builtin_undo);
-        commands.insert("jobs".to_string(), jobs::builtin_jobs);
-        commands.insert("fg".to_string(), jobs::builtin_fg);
-        commands.insert("bg".to_string(), jobs::builtin_bg);
-        commands.insert("set".to_string(), set::builtin_set);
-        commands.insert("alias".to_string(), alias::builtin_alias);
-        commands.insert("unalias".to_string(), alias::builtin_unalias);
-        commands.insert("test".to_string(), test::builtin_test);
-        commands.insert("[".to_string(), test::builtin_bracket);
-        commands.insert("help".to_string(), help::builtin_help);
-        commands.insert("type".to_string(), type_builtin::builtin_type);
-        commands.insert("shift".to_string(), shift::builtin_shift);
-        commands.insert("local".to_string(), local::builtin_local);
-        commands.insert("true".to_string(), builtin_true);
-        commands.insert("false".to_string(), builtin_false);
-        commands.insert("return".to_string(), return_builtin::builtin_return);
-        commands.insert("trap".to_string(), trap::builtin_trap);
-        commands.insert("unset".to_string(), unset::builtin_unset);
-        commands.insert("printf".to_string(), printf::builtin_printf);
-        commands.insert("read".to_string(), read::builtin_read);
-        commands.insert("eval".to_string(), eval::builtin_eval);
-        commands.insert("exec".to_string(), exec::builtin_exec);
-        commands.insert("builtin".to_string(), builtin::builtin_builtin);
-        commands.insert("kill".to_string(), kill::builtin_kill);
-        commands.insert("break".to_string(), break_builtin::builtin_break);
-        commands.insert("continue".to_string(), continue_builtin::builtin_continue);
-        commands.insert(":".to_string(), builtin_colon);
-        commands.insert("command".to_string(), command::builtin_command);
-        commands.insert("json_get".to_string(), json::builtin_json_get);
-        commands.insert("json_set".to_string(), json::builtin_json_set);
-        commands.insert("json_query".to_string(), json::builtin_json_query);
-        commands.insert("fetch".to_string(), fetch::builtin_fetch);
-        commands.insert("readonly".to_string(), readonly::builtin_readonly);
-        commands.insert("rm".to_string(), rm::builtin_rm);
-
-        Self { commands }
+        Self
     }
 
     #[inline]
     pub fn is_builtin(&self, name: &str) -> bool {
-        self.commands.contains_key(name)
+        BUILTIN_MAP.contains_key(name)
     }
 
     pub fn builtin_names(&self) -> Vec<String> {
-        self.commands.keys().cloned().collect()
+        BUILTIN_MAP.keys().map(|k| k.to_string()).collect()
     }
 
     #[inline]
@@ -123,7 +129,7 @@ impl Builtins {
         args: Vec<String>,
         runtime: &mut Runtime,
     ) -> Result<ExecutionResult> {
-        if let Some(func) = self.commands.get(name) {
+        if let Some(func) = BUILTIN_MAP.get(name) {
             func(&args, runtime)
         } else {
             Err(anyhow!("Builtin '{}' not found", name))
