@@ -130,8 +130,8 @@ pub enum Token {
     #[regex(r"-?[0-9]+\.[0-9]+", |lex| lex.slice().parse().ok())]
     Float(f64),
 
-    // Identifiers and commands
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_-]*", |lex| lex.slice().to_string())]
+    // Identifiers and commands (dots allowed so filenames like README.md tokenize as one word)
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_.\-]*", |lex| lex.slice().to_string())]
     Identifier(String),
 
     // Command substitution - needs custom parsing for nested cases
@@ -515,5 +515,41 @@ mod tests {
         let tokens = Lexer::tokenize("done").unwrap();
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::Done);
+    }
+
+    #[test]
+    fn test_filename_with_dot() {
+        let tokens = Lexer::tokenize("cat README.md").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(tokens[0], Token::Identifier(_)));
+        assert!(matches!(tokens[1], Token::Identifier(ref s) if s == "README.md"));
+    }
+
+    #[test]
+    fn test_filename_multiple_dots() {
+        let tokens = Lexer::tokenize("echo file.tar.gz").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(tokens[1], Token::Identifier(ref s) if s == "file.tar.gz"));
+    }
+
+    #[test]
+    fn test_dot_alone_is_path() {
+        let tokens = Lexer::tokenize("echo .").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[1], Token::Dot);
+    }
+
+    #[test]
+    fn test_dotdot_is_path() {
+        let tokens = Lexer::tokenize("echo ..").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(tokens[1], Token::Path(ref s) if s == ".."));
+    }
+
+    #[test]
+    fn test_dot_slash_path() {
+        let tokens = Lexer::tokenize("./script.sh").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0], Token::Path(ref s) if s == "./script.sh"));
     }
 }

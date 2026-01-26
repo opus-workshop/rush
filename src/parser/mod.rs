@@ -164,9 +164,10 @@ impl Parser {
 
     fn parse_command(&mut self) -> Result<Command> {
         let name = match self.advance() {
-            Some(Token::Identifier(s)) => s.clone(),
+            Some(Token::Identifier(s)) | Some(Token::Path(s)) => s.clone(),
             Some(Token::LeftBracket) => "[".to_string(),
             Some(Token::Colon) => ":".to_string(),
+            Some(Token::Dot) => ".".to_string(),
             _ => return Err(anyhow!("Expected command name")),
         };
 
