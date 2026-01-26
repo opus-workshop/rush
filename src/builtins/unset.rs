@@ -125,6 +125,7 @@ mod tests {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("hello".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })],
         };
         runtime.define_function(func);
@@ -225,6 +226,7 @@ mod tests {
                     name: "echo".to_string(),
                     args: vec![Argument::Literal(name.to_string())],
                     redirects: vec![],
+                    prefix_env: vec![],
                 })],
             };
             runtime.define_function(func);

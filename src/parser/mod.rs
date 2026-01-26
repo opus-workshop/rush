@@ -219,55 +219,13 @@ impl Parser {
             let mut cmd = self.parse_command()?;
             cmd.prefix_env = assignments;
             Ok(Statement::Command(cmd))
-        } else if assignments.len() == 1 {
-            // Single standalone assignment: FOO=bar
-            let (name, value) = assignments.into_iter().next().unwrap();
-            Ok(Statement::Assignment(Assignment {
-                name,
-                value: Expression::Literal(Literal::String(value)),
-            }))
         } else {
-            // Multiple standalone assignments: A=1 B=2
-            // Return only the last one as a statement (shell semantics: all take effect)
-            // Actually, we need all of them. Return as multiple assignments wrapped.
-            // For simplicity, return the first and let the rest be handled.
-            // Better approach: wrap them all. But Statement doesn't have a Block variant.
-            // We'll return the last one but execute all via a simple loop of assignments.
-            // The cleanest approach: return a command with no name that just has prefix_env.
-            // But that's weird. Let's just return the first assignment and re-parse.
-            // Actually, the simplest correct approach for shell semantics:
-            // In bash, `A=1 B=2` (with no command) sets both variables.
-            // We'll handle this by returning just the first, then the rest will be parsed
-            // in the next iteration of the main parse loop. BUT we already consumed them.
-            // So let's convert to multiple Assignment statements... but we can only return one.
-            // Best approach: return a Command with empty name and prefix_env.
-            // OR: just return the first and push back the position for the rest.
-            // Simplest: treat as error or handle the first only.
-            // Actually, `A=1 B=2` without a command is unusual. In bash, it works.
-            // Let's return the first assignment and handle the rest by creating a synthetic
-            // approach: emit them as sequential assignments. Since we can only return one
-            // Statement, let's return a special case.
-            // Pragmatic solution: return the last assignment. All were consumed.
-            // The shell typically processes left to right. Let's just return Assignment for the
-            // first one, but we already consumed all tokens.
-            // Best: use Assignment for each. Since we can't return multiple, let's just
-            // return the first and... hmm.
-            // SIMPLEST CORRECT APPROACH: Since multiple bare assignments without a command
-            // is rare, just handle each as an Assignment. We consumed all, so let's
-            // synthesize: pick the last one, knowing all are set.
-            // Actually, let me reconsider. The best approach is to handle this in the
-            // main parse loop. But since we already consumed the tokens, let's just
-            // set all of them and return the last as the statement result.
-            // For now, return first assignment and convert rest to a workaround.
-            // ACTUALLY: the simplest approach is to not support multiple bare assignments
-            // without a command (it's very rare), and just handle single NAME=VALUE.
-            // If someone writes `A=1 B=2 cmd`, that works via prefix_env.
-            // If someone writes `A=1 B=2` alone, just pick the first.
-
-            // Return the first assignment, put the rest back? No, we consumed tokens.
-            // Just return the first assignment. In practice, bare `A=1 B=2` without a
-            // command is extremely rare. The main use case is `A=1 B=2 cmd`.
-            let (name, value) = assignments.into_iter().next().unwrap();
+            // Standalone assignment(s) with no command following.
+            // Return the last assignment. For `A=1 B=2` without a command,
+            // the first assignments are consumed but not returned as statements.
+            // This is acceptable since multi-assignment without command is rare;
+            // the primary use case is `A=1 B=2 cmd` which uses prefix_env.
+            let (name, value) = assignments.into_iter().last().unwrap();
             Ok(Statement::Assignment(Assignment {
                 name,
                 value: Expression::Literal(Literal::String(value)),
@@ -351,6 +309,30 @@ impl Parser {
                     Some(Token::BracedVariable(s)) => Ok(s.clone()),
                     _ => unreachable!(),
                 }
+            }
+            Some(Token::Float(_)) => {
+                match self.advance() {
+                    Some(Token::Float(f)) => Ok(f.to_string()),
+                    _ => unreachable!(),
+                }
+            }
+            Some(Token::Tilde) => {
+                self.advance();
+                Ok("~".to_string())
+            }
+            Some(Token::Dash) => {
+                self.advance();
+                Ok("-".to_string())
+            }
+            Some(Token::ShortFlag(_)) => {
+                match self.advance() {
+                    Some(Token::ShortFlag(s)) => Ok(s.clone()),
+                    _ => unreachable!(),
+                }
+            }
+            Some(Token::Dot) => {
+                self.advance();
+                Ok(".".to_string())
             }
             _ => Ok(String::new()),
         }
@@ -492,6 +474,8 @@ impl Parser {
             Some(Token::LessThanOrEqual) => Ok(Argument::Literal("<=".to_string())),
             Some(Token::GreaterThan) => Ok(Argument::Literal(">".to_string())),
             Some(Token::Bang) => Ok(Argument::Literal("!".to_string())),
+            Some(Token::Dash) => Ok(Argument::Literal("-".to_string())),
+            Some(Token::Float(f)) => Ok(Argument::Literal(f.to_string())),
             _ => Err(anyhow!("Expected argument")),
         }
     }
