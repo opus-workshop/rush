@@ -85,7 +85,9 @@ pub struct ElifClause {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ForLoop {
     pub variable: String,
-    pub iterable: Expression,
+    /// Word list to iterate over. Each argument is expanded individually
+    /// (variables, globs, etc.). Empty means iterate over positional params.
+    pub words: Vec<Argument>,
     pub body: Vec<Statement>,
 }
 

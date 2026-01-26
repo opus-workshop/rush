@@ -78,13 +78,22 @@ impl Parser {
         match self.peek() {
             Some(Token::Let) => self.parse_assignment(),
             Some(Token::Fn) => self.parse_function_def(),
+            Some(Token::Function) => self.parse_bash_function_def(),
             Some(Token::If) => self.parse_if_statement(),
             Some(Token::For) => self.parse_for_loop(),
             Some(Token::While) => self.parse_while_loop(),
             Some(Token::Until) => self.parse_until_loop(),
             Some(Token::Match) => self.parse_match_expression(),
+            Some(Token::Case) => self.parse_case_statement(),
             Some(Token::LeftParen) => self.parse_subshell(),
-            _ => self.parse_command_or_pipeline(),
+            _ => {
+                // Check for POSIX function definition: NAME() { ... }
+                if self.is_posix_function_def() {
+                    self.parse_posix_function_def()
+                } else {
+                    self.parse_command_or_pipeline()
+                }
+            }
         }
     }
 
@@ -365,6 +374,9 @@ impl Parser {
             && !self.match_token(&Token::Else)
             && !self.match_token(&Token::Do)
             && !self.match_token(&Token::Done)
+            && !self.match_token(&Token::Esac)
+            && !self.match_token(&Token::DoubleSemicolon)
+            && !self.match_token(&Token::RightBrace)
         {
             match self.peek() {
                 Some(Token::GreaterThan) => {
@@ -575,6 +587,82 @@ impl Parser {
         Ok(Statement::FunctionDef(FunctionDef { name, params, body }))
     }
 
+    /// Check if current position has POSIX function definition: NAME() { ... }
+    /// Looks ahead for Identifier followed by LeftParen RightParen
+    fn is_posix_function_def(&self) -> bool {
+        if let Some(Token::Identifier(name)) = self.tokens.get(self.position) {
+            // Must be a valid variable-like name (no dots/dashes)
+            let valid_name = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_');
+            valid_name
+                && self.tokens.get(self.position + 1) == Some(&Token::LeftParen)
+                && self.tokens.get(self.position + 2) == Some(&Token::RightParen)
+        } else {
+            false
+        }
+    }
+
+    /// Parse POSIX-style function definition: NAME() { body }
+    fn parse_posix_function_def(&mut self) -> Result<Statement> {
+        let name = match self.advance() {
+            Some(Token::Identifier(s)) => s.clone(),
+            _ => return Err(anyhow!("Expected function name")),
+        };
+
+        self.expect_token(&Token::LeftParen)?;
+        self.expect_token(&Token::RightParen)?;
+
+        // Skip optional newlines between () and {
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        self.expect_token(&Token::LeftBrace)?;
+
+        let body = self.parse_block()?;
+
+        self.expect_token(&Token::RightBrace)?;
+
+        Ok(Statement::FunctionDef(FunctionDef {
+            name,
+            params: vec![],
+            body,
+        }))
+    }
+
+    /// Parse bash-style function definition: function NAME { body } or function NAME() { body }
+    fn parse_bash_function_def(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::Function)?;
+
+        let name = match self.advance() {
+            Some(Token::Identifier(s)) => s.clone(),
+            _ => return Err(anyhow!("Expected function name after 'function'")),
+        };
+
+        // Optional () after function name
+        if self.match_token(&Token::LeftParen) {
+            self.advance();
+            self.expect_token(&Token::RightParen)?;
+        }
+
+        // Skip optional newlines between name/() and {
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        self.expect_token(&Token::LeftBrace)?;
+
+        let body = self.parse_block()?;
+
+        self.expect_token(&Token::RightBrace)?;
+
+        Ok(Statement::FunctionDef(FunctionDef {
+            name,
+            params: vec![],
+            body,
+        }))
+    }
+
     fn parse_parameters(&mut self) -> Result<Vec<Parameter>> {
         let mut params = Vec::new();
 
@@ -608,16 +696,16 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.match_token(&Token::RightBrace) && !self.is_at_end() {
-            // Skip newlines
-            while self.match_token(&Token::Newline) {
+            // Skip newlines and semicolons
+            while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf) | Some(Token::Semicolon)) {
                 self.advance();
             }
 
-            if self.match_token(&Token::RightBrace) {
+            if self.match_token(&Token::RightBrace) || self.is_at_end() {
                 break;
             }
 
-            statements.push(self.parse_statement()?);
+            statements.push(self.parse_conditional_statement()?);
         }
 
         Ok(statements)
@@ -808,22 +896,77 @@ impl Parser {
 
         let variable = match self.advance() {
             Some(Token::Identifier(s)) => s.clone(),
-            _ => return Err(anyhow!("Expected variable name")),
+            _ => return Err(anyhow!("Expected variable name after 'for'")),
         };
 
-        self.expect_token(&Token::In)?;
+        // Parse word list: `for VAR in WORDS; do BODY; done`
+        // or `for VAR; do BODY; done` (iterate over positional params)
+        // or `for VAR do BODY; done` (iterate over positional params)
+        let words = if self.match_token(&Token::In) {
+            self.advance(); // consume 'in'
+            self.parse_for_word_list()?
+        } else {
+            // No 'in' clause: iterate over positional params (empty word list)
+            vec![]
+        };
 
-        let iterable = self.parse_expression()?;
+        // Skip optional semicolons/newlines before 'do'
+        while matches!(self.peek(), Some(Token::Semicolon) | Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
 
-        self.expect_token(&Token::LeftBrace)?;
-        let body = self.parse_block()?;
-        self.expect_token(&Token::RightBrace)?;
+        self.expect_token(&Token::Do)?;
+
+        // Skip newlines after 'do'
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        // Parse body statements until 'done'
+        let mut body = Vec::new();
+        while !matches!(self.peek(), Some(Token::Done)) {
+            if self.is_at_end() {
+                return Err(anyhow!("Expected 'done' to close for loop"));
+            }
+
+            // Skip newlines in body
+            if matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+                continue;
+            }
+
+            body.push(self.parse_conditional_statement()?);
+
+            // Handle optional semicolons between body statements
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(&Token::Done)?;
 
         Ok(Statement::ForLoop(ForLoop {
             variable,
-            iterable,
+            words,
             body,
         }))
+    }
+
+    /// Parse the word list for a for loop (tokens between 'in' and ';'/newline/do).
+    /// Each word becomes an Argument that will be individually expanded at execution time.
+    fn parse_for_word_list(&mut self) -> Result<Vec<Argument>> {
+        let mut words = Vec::new();
+
+        while !self.is_at_end()
+            && !self.match_token(&Token::Semicolon)
+            && !self.match_token(&Token::Newline)
+            && !self.match_token(&Token::CrLf)
+            && !self.match_token(&Token::Do)
+        {
+            words.push(self.parse_argument()?);
+        }
+
+        Ok(words)
     }
 
     fn parse_while_loop(&mut self) -> Result<Statement> {
@@ -959,6 +1102,157 @@ impl Parser {
         self.expect_token(&Token::RightBrace)?;
 
         Ok(Statement::MatchExpression(MatchExpression { value, arms }))
+    }
+
+    /// Parse a POSIX case statement: case WORD in PATTERN) BODY;; ... esac
+    fn parse_case_statement(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::Case)?;
+
+        // Parse the word to match against
+        let word = self.parse_expression()?;
+
+        // Skip optional newlines
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        // Expect 'in' keyword
+        self.expect_token(&Token::In)?;
+
+        // Skip optional newlines after 'in'
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+
+        let mut arms = Vec::new();
+
+        // Parse case arms until 'esac'
+        while !matches!(self.peek(), Some(Token::Esac)) && !self.is_at_end() {
+            // Skip newlines between arms
+            while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+            }
+
+            if matches!(self.peek(), Some(Token::Esac)) {
+                break;
+            }
+
+            // Skip optional leading '(' before pattern (POSIX allows it)
+            if matches!(self.peek(), Some(Token::LeftParen)) {
+                self.advance();
+            }
+
+            // Parse patterns separated by '|'
+            let mut patterns = Vec::new();
+            loop {
+                let pattern = self.parse_case_pattern()?;
+                patterns.push(pattern);
+
+                // Check for '|' to separate multiple patterns
+                if self.match_token(&Token::Pipe) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            // Expect ')' after patterns
+            self.expect_token(&Token::RightParen)?;
+
+            // Skip optional newlines after ')'
+            while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+            }
+
+            // Parse body statements until ';;' or 'esac'
+            let mut body = Vec::new();
+            while !matches!(self.peek(), Some(Token::DoubleSemicolon) | Some(Token::Esac))
+                && !self.is_at_end()
+            {
+                // Skip newlines in body
+                while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                    self.advance();
+                }
+
+                if matches!(self.peek(), Some(Token::DoubleSemicolon) | Some(Token::Esac)) {
+                    break;
+                }
+
+                body.push(self.parse_conditional_statement()?);
+
+                // Handle optional semicolons between body statements
+                if matches!(self.peek(), Some(Token::Semicolon)) {
+                    self.advance();
+                }
+            }
+
+            arms.push(CaseArm { patterns, body });
+
+            // Consume ';;' if present (last arm before esac may not have it)
+            if matches!(self.peek(), Some(Token::DoubleSemicolon)) {
+                self.advance();
+            }
+
+            // Skip newlines after ';;'
+            while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+            }
+        }
+
+        self.expect_token(&Token::Esac)?;
+
+        Ok(Statement::CaseStatement(CaseStatement { word, arms }))
+    }
+
+    /// Parse a single case pattern (handles identifiers, *, strings, variables, globs)
+    fn parse_case_pattern(&mut self) -> Result<String> {
+        match self.peek() {
+            Some(Token::Identifier(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(s)
+            }
+            Some(Token::GlobPattern(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(s)
+            }
+            Some(Token::String(s)) | Some(Token::SingleQuotedString(s)) => {
+                let s = s.trim_matches('"').trim_matches('\'').to_string();
+                self.advance();
+                Ok(s)
+            }
+            Some(Token::Integer(n)) => {
+                let s = n.to_string();
+                self.advance();
+                Ok(s)
+            }
+            Some(Token::Variable(v)) => {
+                let v = v.clone();
+                self.advance();
+                Ok(v)
+            }
+            Some(Token::ShortFlag(f)) => {
+                // Patterns like -e, -f etc.
+                let f = f.clone();
+                self.advance();
+                Ok(f)
+            }
+            Some(Token::Path(p)) => {
+                let p = p.clone();
+                self.advance();
+                Ok(p)
+            }
+            Some(Token::Dot) => {
+                self.advance();
+                Ok(".".to_string())
+            }
+            Some(Token::Dash) => {
+                self.advance();
+                Ok("-".to_string())
+            }
+            _ => Err(anyhow!("Expected case pattern, found {:?}", self.peek())),
+        }
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern> {
@@ -1428,6 +1722,65 @@ mod tests {
             Err(e) => {
                 panic!("Parse error: {}", e);
             }
+        }
+    }
+
+    #[test]
+    fn test_parse_for_loop() {
+        let tokens = Lexer::tokenize("for x in a b c; do echo $x; done").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::ForLoop(for_loop) => {
+                assert_eq!(for_loop.variable, "x");
+                assert_eq!(for_loop.words.len(), 3);
+                assert_eq!(for_loop.body.len(), 1);
+            }
+            _ => panic!("Expected ForLoop, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_for_loop_no_in_clause() {
+        let tokens = Lexer::tokenize("for x; do echo $x; done").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::ForLoop(for_loop) => {
+                assert_eq!(for_loop.variable, "x");
+                assert!(for_loop.words.is_empty()); // no word list = positional params
+                assert_eq!(for_loop.body.len(), 1);
+            }
+            _ => panic!("Expected ForLoop, got {:?}", statements[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_for_loop() {
+        let tokens = Lexer::tokenize("for i in 1 2; do for j in a b; do echo $i $j; done; done").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::ForLoop(for_loop) => {
+                assert_eq!(for_loop.variable, "i");
+                assert_eq!(for_loop.words.len(), 2);
+                assert_eq!(for_loop.body.len(), 1);
+                // Body should contain another ForLoop
+                match &for_loop.body[0] {
+                    Statement::ForLoop(inner) => {
+                        assert_eq!(inner.variable, "j");
+                        assert_eq!(inner.words.len(), 2);
+                    }
+                    _ => panic!("Expected inner ForLoop"),
+                }
+            }
+            _ => panic!("Expected ForLoop"),
         }
     }
 }

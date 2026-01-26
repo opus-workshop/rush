@@ -379,8 +379,9 @@ impl Executor {
             self.runtime.set_variable(param.name.clone(), arg_value);
         }
 
-        // Set positional parameters ($1, $2, $#, $@, $*) for the function
-        self.runtime.set_positional_params(args.clone());
+        // Push positional parameters scope ($1, $2, $#, $@, $*) for the function
+        // This preserves the caller's positional params on a stack
+        self.runtime.push_positional_scope(args.clone());
 
         // Enter function context (allows return builtin)
         self.runtime.enter_function_context();
@@ -405,6 +406,7 @@ impl Executor {
                     } else {
                         // Some other error - propagate it
                         self.runtime.exit_function_context();
+                        self.runtime.pop_positional_scope();
                         self.runtime.pop_scope();
                         self.runtime.pop_call();
                         return Err(e);
@@ -415,6 +417,9 @@ impl Executor {
 
         // Exit function context
         self.runtime.exit_function_context();
+
+        // Restore caller's positional parameters
+        self.runtime.pop_positional_scope();
 
         // Clean up scope and call stack
         self.runtime.pop_scope();
@@ -902,10 +907,14 @@ impl Executor {
     }
 
     fn execute_for_loop(&mut self, for_loop: ForLoop) -> Result<ExecutionResult> {
-        let iterable = self.evaluate_expression(for_loop.iterable)?;
-
-        // For now, simple iteration over strings split by lines
-        let items: Vec<String> = iterable.lines().map(|s| s.to_string()).collect();
+        // Build the list of items to iterate over
+        let items: Vec<String> = if for_loop.words.is_empty() {
+            // No word list: iterate over positional parameters ($@)
+            self.runtime.get_positional_params().to_vec()
+        } else {
+            // Expand each word individually (handles variables, globs, etc.)
+            self.expand_and_resolve_arguments(&for_loop.words)?
+        };
 
         // Enter loop context for break/continue
         self.runtime.enter_loop();
@@ -1176,6 +1185,8 @@ impl Executor {
         let word_value = self.evaluate_expression(case_stmt.word)?;
         let word = word_value.trim();
 
+        let mut accumulated_stdout = String::new();
+        let mut accumulated_stderr = String::new();
         let mut last_exit_code = 0;
         let mut matched = false;
 
@@ -1189,6 +1200,8 @@ impl Executor {
                     // Execute the body statements
                     for statement in &arm.body {
                         let result = self.execute_statement(statement.clone())?;
+                        accumulated_stdout.push_str(&result.stdout());
+                        accumulated_stderr.push_str(&result.stderr);
                         last_exit_code = result.exit_code;
                     }
 
@@ -1205,8 +1218,8 @@ impl Executor {
 
         // POSIX: exit code is last command in executed list, or 0 if no match
         Ok(ExecutionResult {
-            output: Output::Text(String::new()),
-            stderr: String::new(),
+            output: Output::Text(accumulated_stdout),
+            stderr: accumulated_stderr,
             exit_code: if matched { last_exit_code } else { 0 },
             error: None,
         })
@@ -2274,5 +2287,56 @@ mod tests {
         let mut executor = Executor::new_embedded();
         let result = run_line(&mut executor, "if true; then if true; then echo nested; fi; fi");
         assert_eq!(result.stdout().trim(), "nested");
+    }
+
+    #[test]
+    fn test_for_loop_basic() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "for x in a b c; do echo $x; done");
+        assert_eq!(result.stdout(), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn test_for_loop_nested() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "for i in 1 2; do for j in a b; do echo $i$j; done; done",
+        );
+        // echo $i$j produces "1 a" because they are separate args
+        assert_eq!(result.stdout(), "1 a\n1 b\n2 a\n2 b\n");
+    }
+
+    #[test]
+    fn test_for_loop_break() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "for x in a b c; do echo $x; break; done");
+        assert_eq!(result.stdout(), "a\n");
+    }
+
+    #[test]
+    fn test_for_loop_continue() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "for x in a b c; do echo $x; continue; echo NOPE; done",
+        );
+        assert_eq!(result.stdout(), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn test_for_loop_variable_expansion() {
+        let mut executor = Executor::new_embedded();
+        // Set a variable, then iterate with it
+        run_line(&mut executor, "ITEMS=\"hello world\"");
+        let result = run_line(&mut executor, "for x in $ITEMS; do echo $x; done");
+        assert_eq!(result.stdout(), "hello\nworld\n");
+    }
+
+    #[test]
+    fn test_for_loop_single_word() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "for x in only; do echo $x; done");
+        assert_eq!(result.stdout(), "only\n");
     }
 }
