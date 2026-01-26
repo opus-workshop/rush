@@ -29,7 +29,6 @@ nu-ansi-term = "0.50"
 crossterm = "0.27"
 
 # Execution
-tokio = { version = "1", features = ["full"] }
 nix = { version = "0.29", features = ["process", "signal", "socket", "uio"] }
 os_pipe = "1.1"
 signal-hook = "0.3"
