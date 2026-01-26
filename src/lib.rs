@@ -1,6 +1,7 @@
 // Library interface for Rush shell
 // This allows benchmarks and tests to access internal modules
 
+pub mod arithmetic;
 pub mod lexer;
 pub mod parser;
 pub mod executor;
