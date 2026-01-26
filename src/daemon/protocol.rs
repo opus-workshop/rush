@@ -1,12 +1,12 @@
 //! Rush daemon protocol implementation
 //!
-//! Message format: Length-prefixed binary messages with JSON payloads
+//! Message format: Length-prefixed binary messages with bincode payloads
 //!
 //! ```text
-//! ┌────────────┬──────────────┬─────────────────────┐
-//! │   Length   │  Message ID  │   Payload (JSON)    │
-//! │  (4 bytes) │  (4 bytes)   │  (variable length)  │
-//! └────────────┴──────────────┴─────────────────────┘
+//! ┌────────────┬──────────────┬──────────────────────┐
+//! │   Length   │  Message ID  │  Payload (bincode)   │
+//! │  (4 bytes) │  (4 bytes)   │  (variable length)   │
+//! └────────────┴──────────────┴──────────────────────┘
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,6 @@ pub type MessageId = u32;
 
 /// Message envelope containing all possible message types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
 pub enum Message {
     /// Client initiates a new session
     SessionInit(SessionInit),
@@ -102,10 +101,10 @@ pub struct Shutdown {
 
 /// Encode a message into the wire format
 ///
-/// Format: [4-byte length][4-byte message ID][JSON payload]
+/// Format: [4-byte length][4-byte message ID][bincode payload]
 pub fn encode_message(message: &Message, message_id: MessageId) -> io::Result<Vec<u8>> {
-    // Serialize the message to JSON
-    let payload = serde_json::to_vec(message)
+    // Serialize the message to bincode
+    let payload = bincode::serialize(message)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     // Check size limit
@@ -159,13 +158,13 @@ pub fn decode_message<R: Read>(reader: &mut R) -> io::Result<(Message, MessageId
     reader.read_exact(&mut id_bytes)?;
     let message_id = u32::from_le_bytes(id_bytes);
 
-    // Read JSON payload
-    let json_len = (payload_len - 4) as usize;
-    let mut payload = vec![0u8; json_len];
+    // Read bincode payload
+    let data_len = (payload_len - 4) as usize;
+    let mut payload = vec![0u8; data_len];
     reader.read_exact(&mut payload)?;
 
     // Deserialize message
-    let message: Message = serde_json::from_slice(&payload)
+    let message: Message = bincode::deserialize(&payload)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     Ok((message, message_id))
