@@ -1,5 +1,6 @@
 use super::{ExecutionResult, Output};
 use crate::builtins::Builtins;
+use crate::glob_expansion;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
@@ -106,11 +107,7 @@ fn execute_pipeline_command(
 ) -> Result<ExecutionResult> {
     // Check if it's a builtin
     if builtins.is_builtin(&command.name) {
-        let args: Vec<String> = command
-            .args
-            .iter()
-            .map(|arg| resolve_argument(arg, runtime))
-            .collect();
+        let args = resolve_and_expand_arguments(&command.args, runtime);
 
         // Use execute_with_stdin to properly handle piped input
         builtins.execute_with_stdin(&command.name, args, runtime, stdin)
@@ -124,11 +121,7 @@ fn execute_external_pipeline_command(
     runtime: &Runtime,
     stdin: Option<&[u8]>,
 ) -> Result<ExecutionResult> {
-    let args: Vec<String> = command
-        .args
-        .iter()
-        .map(|arg| resolve_argument(arg, runtime))
-        .collect();
+    let args = resolve_and_expand_arguments(&command.args, runtime);
 
     let mut cmd = StdCommand::new(&command.name);
     cmd.args(&args)
@@ -239,5 +232,29 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
         }
         Argument::Flag(f) => f.clone(),
         Argument::Path(p) => p.clone(),
+        Argument::Glob(g) => g.clone(),
     }
+}
+
+/// Resolve arguments and expand globs for pipeline commands.
+/// This ensures glob expansion works in pipeline stages just like in regular commands.
+fn resolve_and_expand_arguments(args: &[Argument], runtime: &Runtime) -> Vec<String> {
+    let mut expanded = Vec::new();
+    for arg in args {
+        let should_expand = matches!(
+            arg,
+            Argument::Glob(_) | Argument::Path(_) | Argument::Variable(_)
+            | Argument::BracedVariable(_) | Argument::CommandSubstitution(_)
+        );
+        let resolved = resolve_argument(arg, runtime);
+        if should_expand && glob_expansion::should_expand_glob(&resolved) {
+            match glob_expansion::expand_globs(&resolved, runtime.get_cwd()) {
+                Ok(matches) => expanded.extend(matches),
+                Err(_) => expanded.push(resolved),
+            }
+        } else {
+            expanded.push(resolved);
+        }
+    }
+    expanded
 }

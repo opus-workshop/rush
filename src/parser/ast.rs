@@ -225,6 +225,7 @@ pub enum Argument {
     CommandSubstitution(String),
     Flag(String),
     Path(String),
+    Glob(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

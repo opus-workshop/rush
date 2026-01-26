@@ -130,6 +130,14 @@ pub enum Token {
     #[regex(r"-?[0-9]+\.[0-9]+", |lex| lex.slice().parse().ok())]
     Float(f64),
 
+    // Glob patterns (*, ?, [...] wildcards in filename context)
+    // Patterns with * or ? (e.g., *.rs, file?.txt, src/**/*.rs)
+    #[regex(r"[a-zA-Z0-9_.\-/]*[*?][a-zA-Z0-9_.*?\-/\[\]]*", |lex| lex.slice().to_string())]
+    // Bracket glob patterns (e.g., [abc].txt, file[0-9].txt)
+    // Must have content after ] to distinguish from test builtin [ ]
+    #[regex(r"[a-zA-Z0-9_.\-/]*\[[^\]]+\][a-zA-Z0-9_.*?\-/]+", |lex| lex.slice().to_string())]
+    GlobPattern(String),
+
     // Identifiers and commands (dots allowed so filenames like README.md tokenize as one word)
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_.\-]*", |lex| lex.slice().to_string())]
     Identifier(String),

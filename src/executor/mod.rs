@@ -153,8 +153,9 @@ impl Executor {
         if self.runtime.options.xtrace {
             let args_str = command.args.iter()
                 .map(|arg| match arg {
-                    Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | 
-                    Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) => s.clone(),
+                    Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) |
+                    Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) |
+                    Argument::Glob(s) => s.clone(),
                 })
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -1255,7 +1256,7 @@ impl Executor {
             Statement::Command(cmd) => {
                 let args_str = cmd.args.iter()
                     .map(|arg| match arg {
-                        Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) => s.clone(),
+                        Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) | Argument::Glob(s) => s.clone(),
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -1456,6 +1457,7 @@ impl Executor {
             }
             Argument::Flag(f) => Ok(f.clone()),
             Argument::Path(p) => Ok(p.clone()),
+            Argument::Glob(g) => Ok(g.clone()),
         }
     }
 
@@ -1545,14 +1547,23 @@ impl Executor {
                 arg,
                 Argument::Variable(_) | Argument::BracedVariable(_) | Argument::CommandSubstitution(_)
             );
-            
+
+            // Determine if this argument should have glob expansion
+            // Glob patterns from the lexer (Argument::Glob) and unquoted variables should expand
+            // Quoted strings (Argument::Literal from quoted tokens) should NOT expand
+            // Path is included because paths like /tmp/*.txt are tokenized as Path by the lexer
+            let should_expand = matches!(
+                arg,
+                Argument::Glob(_) | Argument::Path(_) | Argument::Variable(_) | Argument::BracedVariable(_) | Argument::CommandSubstitution(_)
+            );
+
             // First resolve the argument (e.g., variable substitution)
             let resolved = self.resolve_argument(arg)?;
 
             if should_split_ifs {
                 // Apply IFS splitting first
                 let fields = self.runtime.split_by_ifs(&resolved);
-                
+
                 // Then check each field for glob patterns
                 for field in fields {
                     if glob_expansion::should_expand_glob(field) {
@@ -1560,9 +1571,9 @@ impl Executor {
                             Ok(matches) => {
                                 expanded_args.extend(matches);
                             }
-                            Err(e) => {
-                                // If glob expansion fails (no matches), return the error
-                                return Err(anyhow!(e));
+                            Err(_) => {
+                                // No matches - return literal (POSIX behavior)
+                                expanded_args.push(field.to_string());
                             }
                         }
                     } else {
@@ -1570,22 +1581,24 @@ impl Executor {
                         expanded_args.push(field.to_string());
                     }
                 }
-            } else {
-                // No IFS splitting for quoted arguments - just check for glob expansion
+            } else if should_expand {
+                // Unquoted glob or path pattern - expand it
                 if glob_expansion::should_expand_glob(&resolved) {
                     match glob_expansion::expand_globs(&resolved, self.runtime.get_cwd()) {
                         Ok(matches) => {
                             expanded_args.extend(matches);
                         }
-                        Err(e) => {
-                            // If glob expansion fails (no matches), return the error
-                            return Err(anyhow!(e));
+                        Err(_) => {
+                            // No matches - return literal (POSIX behavior)
+                            expanded_args.push(resolved);
                         }
                     }
                 } else {
-                    // Not a glob pattern, just add the resolved value
                     expanded_args.push(resolved);
                 }
+            } else {
+                // Quoted literal or flag - no glob expansion
+                expanded_args.push(resolved);
             }
         }
 
@@ -1801,6 +1814,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
         }
         Argument::Flag(f) => f.clone(),
         Argument::Path(p) => p.clone(),
+        Argument::Glob(g) => g.clone(),
     }
 }
 
@@ -1809,15 +1823,23 @@ fn expand_and_resolve_arguments_static(args: &[Argument], runtime: &Runtime) -> 
     let mut expanded_args = Vec::new();
 
     for arg in args {
+        // Only expand globs for Argument::Glob, Path, and variable types (not quoted Literals)
+        // Path is included because paths like /tmp/*.txt are tokenized as Path by the lexer
+        let should_expand = matches!(
+            arg,
+            Argument::Glob(_) | Argument::Path(_) | Argument::Variable(_) | Argument::BracedVariable(_) | Argument::CommandSubstitution(_)
+        );
+
         let resolved = resolve_argument_static(arg, runtime);
 
-        if glob_expansion::should_expand_glob(&resolved) {
+        if should_expand && glob_expansion::should_expand_glob(&resolved) {
             match glob_expansion::expand_globs(&resolved, runtime.get_cwd()) {
                 Ok(matches) => {
                     expanded_args.extend(matches);
                 }
-                Err(e) => {
-                    return Err(anyhow!(e));
+                Err(_) => {
+                    // No matches - return literal (POSIX behavior)
+                    expanded_args.push(resolved);
                 }
             }
         } else {

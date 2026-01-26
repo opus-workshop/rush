@@ -164,7 +164,7 @@ impl Parser {
 
     fn parse_command(&mut self) -> Result<Command> {
         let name = match self.advance() {
-            Some(Token::Identifier(s)) | Some(Token::Path(s)) => s.clone(),
+            Some(Token::Identifier(s)) | Some(Token::Path(s)) | Some(Token::GlobPattern(s)) => s.clone(),
             Some(Token::LeftBracket) => "[".to_string(),
             Some(Token::Colon) => ":".to_string(),
             Some(Token::Dot) => ".".to_string(),
@@ -255,6 +255,7 @@ impl Parser {
                 Ok(Argument::Literal(unquoted.to_string()))
             }
             Some(Token::Identifier(s)) => Ok(Argument::Literal(s.clone())),
+            Some(Token::GlobPattern(s)) => Ok(Argument::Glob(s.clone())),
             Some(Token::Variable(s)) | Some(Token::SpecialVariable(s)) => {
                 Ok(Argument::Variable(s.clone()))
             }
