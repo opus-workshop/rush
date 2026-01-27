@@ -1,5 +1,8 @@
 # Rush
 
+[![CI](https://github.com/paiml/rush/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/paiml/rush/actions/workflows/integration-tests.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 A high-performance, POSIX-compliant shell written in Rust.
 
 Rush combines the compatibility of traditional shells with the speed and safety of Rust. Built-in commands run **17-427x faster** than their GNU counterparts, while maintaining full POSIX compliance for scripts and interactive use.
