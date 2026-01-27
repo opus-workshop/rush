@@ -32,6 +32,7 @@ mod local;
 mod ls;
 mod mkdir;
 mod printf;
+mod profile;
 mod read;
 mod readonly;
 mod rm;
