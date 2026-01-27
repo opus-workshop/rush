@@ -27,6 +27,7 @@ pub struct Executor {
     corrector: Corrector,
     signal_handler: Option<SignalHandler>,
     terminal_control: TerminalControl,
+    function_stack: Vec<String>,
     show_progress: bool,
 }
 
@@ -45,6 +46,7 @@ impl Executor {
             signal_handler: None,
             show_progress: true, // Default to true for CLI usage
             terminal_control: TerminalControl::new(),
+        function_stack: Vec::new(),
         }
     }
 
@@ -57,6 +59,7 @@ impl Executor {
             signal_handler: None,
             terminal_control: TerminalControl::new(),
             show_progress: false,
+            function_stack: Vec::new(),
         }
     }
 
@@ -68,6 +71,7 @@ impl Executor {
             signal_handler: Some(signal_handler),
             terminal_control: TerminalControl::new(),
             show_progress: true,
+            function_stack: Vec::new(),
         }
     }
 
@@ -1528,6 +1532,7 @@ impl Executor {
             signal_handler: None, // Subshells don't need their own signal handlers
             show_progress: self.show_progress, // Inherit progress setting from parent
             terminal_control: self.terminal_control.clone(),
+        function_stack: Vec::new(),
         };
 
         // Execute all statements in the subshell, catching ExitSignal
@@ -2100,6 +2105,7 @@ impl Executor {
             signal_handler: None,
             show_progress: false, // Don't show progress for substitutions
             terminal_control: self.terminal_control.clone(),
+        function_stack: Vec::new(),
         };
         
         // Execute the command and capture output
@@ -2411,9 +2417,10 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                         signal_handler: None,
                         show_progress: false,
                         terminal_control: TerminalControl::new(),
+                    function_stack: Vec::new(),
                     };
-                    if let Ok(result) = sub_executor.execute(statements) {
-                        return result.stdout().trim_end().to_string();
+                    if let Ok(exec_result) = sub_executor.execute(statements) {
+                        return exec_result.stdout().trim_end().to_string();
                     }
                 }
             }
@@ -2496,6 +2503,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),
+                        function_stack: Vec::new(),
                         };
                         if let Ok(exec_result) = sub_executor.execute(statements) {
                             result.push_str(exec_result.stdout().trim_end());
@@ -2530,6 +2538,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),
+                        function_stack: Vec::new(),
                         };
                         if let Ok(exec_result) = sub_executor.execute(statements) {
                             result.push_str(exec_result.stdout().trim_end());

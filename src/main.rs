@@ -2,6 +2,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod arithmetic;
+mod benchmark;
 mod builtins;
 mod completion;
 mod context;
@@ -48,6 +49,23 @@ fn main() -> Result<()> {
                 "-c" if i + 1 < args.len() => {
                     fast_execute_c(&args[i + 1]);
                     // fast_execute_c never returns (calls process::exit)
+                }
+                "--benchmark" if i + 1 < args.len() => {
+                    // Handle benchmark mode
+                    let mode = match args[i + 1].as_str() {
+                        "quick" => benchmark::BenchmarkMode::Quick,
+                        "full" => benchmark::BenchmarkMode::Full,
+                        "compare" => benchmark::BenchmarkMode::Compare,
+                        _ => {
+                            eprintln!("Invalid benchmark mode: {}. Use 'quick', 'full', or 'compare'", args[i + 1]);
+                            std::process::exit(1);
+                        }
+                    };
+                    if let Err(e) = benchmark::run_benchmark(mode) {
+                        eprintln!("Benchmark error: {}", e);
+                        std::process::exit(1);
+                    }
+                    std::process::exit(0);
                 }
                 "--login" | "-l" | "--no-rc" | "--norc" => { i += 1; }
                 _ => { i += 1; }
@@ -577,6 +595,7 @@ fn print_help() {
     println!("  rush --no-rc        Skip sourcing config files");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
+    println!("  rush --benchmark <mode> Run benchmarks (quick, full, compare)");
     println!("  rush -h, --help     Show this help message");
     println!();
     println!("Examples:");
@@ -586,6 +605,8 @@ fn print_help() {
     println!("  rush -c \"ls -la\"");
     println!("  rush -c \"cat file.txt | grep pattern\"");
     println!("  rush --login        # Start login shell");
+    println!("  rush --benchmark quick   # Run quick benchmark (5-second smoke test)");
+    println!("  rush --benchmark full    # Run comprehensive benchmark suite");
     println!();
     println!("Config Files:");
     println!("  ~/.rush_profile     Sourced on login shells");
