@@ -1,7 +1,7 @@
 # Rush
 
 [![CI](https://github.com/paiml/rush/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/paiml/rush/actions/workflows/integration-tests.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 A high-performance, POSIX-compliant shell written in Rust.
 
@@ -397,7 +397,7 @@ Areas where help is appreciated:
 
 ## License
 
-MIT License. See [LICENSE-MIT](LICENSE-MIT) for details.
+Dual-licensed under MIT or Apache-2.0 (your choice).
 
 ## Acknowledgments
 
