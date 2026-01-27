@@ -60,6 +60,17 @@ impl UndoManager {
         Self::with_undo_dir(undo_dir)
     }
 
+    /// Create a disabled UndoManager that silently ignores all operations.
+    /// Used as a last-resort fallback when neither home nor temp directories
+    /// are writable.
+    pub fn new_disabled() -> Self {
+        Self {
+            operations: VecDeque::new(),
+            undo_dir: PathBuf::from("/dev/null"),
+            enabled: false,
+        }
+    }
+
     /// Create UndoManager with a custom undo directory (primarily for testing)
     pub fn with_undo_dir(undo_dir: PathBuf) -> Result<Self> {
         // Create undo directory if it doesn't exist

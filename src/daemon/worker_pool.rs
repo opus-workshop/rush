@@ -330,7 +330,10 @@ impl WorkerPool {
     ) -> Result<()> {
         // Try to get an available worker
         let worker_idx = {
-            let mut available = self.available.lock().unwrap();
+            let mut available = self.available.lock().unwrap_or_else(|e| {
+                eprintln!("Warning: available queue mutex poisoned, recovering");
+                e.into_inner()
+            });
             available.pop_front() // O(1) queue operation
         };
 
@@ -342,7 +345,10 @@ impl WorkerPool {
             }
             None => {
                 // All workers busy, queue the request
-                let mut queue = self.request_queue.lock().unwrap();
+                let mut queue = self.request_queue.lock().unwrap_or_else(|e| {
+                    eprintln!("Warning: request queue mutex poisoned, recovering");
+                    e.into_inner()
+                });
 
                 if queue.len() >= self.config.max_queue_size {
                     // Queue full - backpressure
@@ -398,7 +404,10 @@ impl WorkerPool {
 
         // Return worker to available queue
         {
-            let mut available = self.available.lock().unwrap();
+            let mut available = self.available.lock().unwrap_or_else(|e| {
+                eprintln!("Warning: available queue mutex poisoned, recovering");
+                e.into_inner()
+            });
             available.push_back(worker_idx); // Load balancing via round-robin
         }
 
@@ -412,7 +421,10 @@ impl WorkerPool {
     fn process_next_queued_request(&mut self) -> Result<()> {
         // Check if there are queued requests
         let pending = {
-            let mut queue = self.request_queue.lock().unwrap();
+            let mut queue = self.request_queue.lock().unwrap_or_else(|e| {
+                eprintln!("Warning: request queue mutex poisoned, recovering");
+                e.into_inner()
+            });
             queue.pop_front()
         };
 
@@ -426,8 +438,14 @@ impl WorkerPool {
 
     /// Get pool statistics
     pub fn stats(&self) -> PoolStats {
-        let available = self.available.lock().unwrap();
-        let queue = self.request_queue.lock().unwrap();
+        let available = self.available.lock().unwrap_or_else(|e| {
+            eprintln!("Warning: available queue mutex poisoned, recovering");
+            e.into_inner()
+        });
+        let queue = self.request_queue.lock().unwrap_or_else(|e| {
+            eprintln!("Warning: request queue mutex poisoned, recovering");
+            e.into_inner()
+        });
 
         PoolStats {
             total_workers: self.workers.len(),

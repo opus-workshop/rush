@@ -426,10 +426,16 @@ impl Runtime {
 
     pub fn undo_manager_mut(&mut self) -> &mut UndoManager {
         if self.undo_manager.is_none() {
-            // Initialize on first use
+            // Initialize on first use, falling back to a temp directory if the
+            // default location (home dir) is unavailable.
             let manager = UndoManager::new().unwrap_or_else(|e| {
-                eprintln!("Warning: Failed to initialize undo manager: {}", e);
-                panic!("Cannot create undo manager");
+                eprintln!("Warning: Failed to initialize undo manager: {}. Using temp directory.", e);
+                let tmp_dir = std::env::temp_dir().join("rush-undo");
+                UndoManager::with_undo_dir(tmp_dir).unwrap_or_else(|e2| {
+                    eprintln!("Warning: Undo support disabled (temp fallback also failed: {})", e2);
+                    // Last resort: in-memory-only undo with a path that won't be used
+                    UndoManager::new_disabled()
+                })
             });
             self.undo_manager = Some(manager);
         }
