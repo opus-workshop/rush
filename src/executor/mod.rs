@@ -1,8 +1,12 @@
 pub mod pipeline;
 pub mod value;
+pub mod error_formatter;
+pub mod profile;
 
 // Re-export Value type for convenience
 pub use value::Value;
+pub use error_formatter::ErrorFormatter;
+pub use profile::{ProfileData, ProfileFormatter, ExecutionStage};
 
 use crate::arithmetic;
 use crate::builtins::Builtins;
@@ -29,6 +33,8 @@ pub struct Executor {
     terminal_control: TerminalControl,
     function_stack: Vec<String>,
     show_progress: bool,
+    pub profile_data: Option<ProfileData>,
+    pub enable_profiling: bool,
 }
 
 impl Default for Executor {
