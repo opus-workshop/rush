@@ -2655,4 +2655,78 @@ mod tests {
         );
         assert_eq!(result.stdout().trim(), "nested");
     }
+
+    // --- While loop tests ---
+
+    #[test]
+    fn test_while_true_break() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(&mut executor, "while true; do echo once; break; done");
+        assert_eq!(result.stdout(), "once\n");
+    }
+
+    #[test]
+    fn test_while_counter() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "count=0");
+        let result = run_line(
+            &mut executor,
+            "while test $count -lt 3; do echo $count; count=$((count+1)); done",
+        );
+        assert_eq!(result.stdout(), "0\n1\n2\n");
+    }
+
+    #[test]
+    fn test_while_loop_continue() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "count=0; while test $count -lt 3; do count=$((count+1)); if test $count -eq 2; then continue; fi; echo $count; done",
+        );
+        assert_eq!(result.stdout(), "1\n3\n");
+    }
+
+    #[test]
+    fn test_while_nested() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "i=0; while test $i -lt 2; do j=0; while test $j -lt 2; do echo $i$j; j=$((j+1)); done; i=$((i+1)); done",
+        );
+        assert_eq!(result.stdout(), "0 0\n0 1\n1 0\n1 1\n");
+    }
+
+    // --- Until loop tests ---
+
+    #[test]
+    fn test_until_basic() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "i=0");
+        let result = run_line(
+            &mut executor,
+            "until test $i -ge 3; do echo $i; i=$((i+1)); done",
+        );
+        assert_eq!(result.stdout(), "0\n1\n2\n");
+    }
+
+    #[test]
+    fn test_until_with_break() {
+        let mut executor = Executor::new_embedded();
+        let result = run_line(
+            &mut executor,
+            "until false; do echo once; break; done",
+        );
+        assert_eq!(result.stdout(), "once\n");
+    }
+
+    #[test]
+    fn test_until_countdown() {
+        let mut executor = Executor::new_embedded();
+        run_line(&mut executor, "i=3");
+        let result = run_line(
+            &mut executor,
+            "until test $i -le 0; do echo $i; i=$((i-1)); done",
+        );
+        assert_eq!(result.stdout(), "3\n2\n1\n");
+    }
 }
