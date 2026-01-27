@@ -1,0 +1,130 @@
+name: Benchmark CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for baseline comparison
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-git-
+
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+
+    - name: Cache benchmark results
+      uses: actions/cache@v3
+      with:
+        path: target/criterion
+        key: ${{ runner.os }}-criterion-${{ github.base_ref || github.ref }}
+        restore-keys: |
+          ${{ runner.os }}-criterion-
+
+    - name: Build release binary
+      run: cargo build --release --verbose
+
+    - name: Run criterion benchmarks
+      run: cargo bench --verbose 2>&1 | tee benchmark_output.txt
+      continue-on-error: true
+
+    - name: Check for regressions
+      if: github.event_name == 'pull_request'
+      run: |
+        bash scripts/check_regression.sh \
+          --baseline-ref ${{ github.base_ref }} \
+          --current-ref HEAD \
+          --threshold 10
+      continue-on-error: false
+
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results-${{ matrix.os }}
+        path: |
+          target/criterion/
+          benchmark_output.txt
+        retention-days: 30
+
+    - name: Archive historical results
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+      run: |
+        mkdir -p benchmark-history
+        tar -czf benchmark-history/${{ matrix.os }}-${{ github.run_number }}-${{ github.sha }}.tar.gz target/criterion/
+
+    - name: Upload historical results to artifacts
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-history-${{ matrix.os }}
+        path: benchmark-history/
+        retention-days: 90
+
+    - name: Comment PR with regression report
+      if: github.event_name == 'pull_request' && failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const regressionReport = fs.readFileSync('regression_report.txt', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '⚠️ **Performance Regression Detected**\n\n' + regressionReport
+          });
+      continue-on-error: true
+
+    - name: Comment PR with success
+      if: github.event_name == 'pull_request' && success()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '✅ **Benchmarks passed** - No performance regressions detected (threshold: 10%)'
+          });
+      continue-on-error: true

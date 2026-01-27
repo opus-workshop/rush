@@ -43,6 +43,7 @@ fn main() -> Result<()> {
     // This avoids: process group setup, signal handler thread, daemon probe,
     // init_environment_variables, and whoami calls — saving ~5-8ms.
     let mut enable_profile = false;
+    let mut profile_json = false;
     {
         let mut i = 1;
         while i < args.len() {
@@ -51,8 +52,12 @@ fn main() -> Result<()> {
                     enable_profile = true;
                     i += 1;
                 }
+                "--json" => {
+                    profile_json = true;
+                    i += 1;
+                }
                 "-c" if i + 1 < args.len() => {
-                    fast_execute_c(&args[i + 1], enable_profile);
+                    fast_execute_c(&args[i + 1], enable_profile, profile_json);
                     // fast_execute_c never returns (calls process::exit)
                 }
                 "--benchmark" if i + 1 < args.len() => {
