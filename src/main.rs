@@ -600,8 +600,16 @@ fn execute_line(line: &str, executor: &mut Executor) -> Result<executor::Executi
     let mut parser = Parser::new(tokens);
     let statements = parser.parse()?;
 
-    // Execute
-    executor.execute(statements)
+    // Execute — catch ExitSignal at top level so `exit` terminates the shell
+    match executor.execute(statements) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            if let Some(exit_signal) = e.downcast_ref::<builtins::exit_builtin::ExitSignal>() {
+                std::process::exit(exit_signal.exit_code);
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Fast path for `rush -c "command"` execution.
@@ -665,6 +673,9 @@ fn fast_execute_c(cmd: &str) -> ! {
             std::process::exit(result.exit_code);
         }
         Err(e) => {
+            if let Some(exit_signal) = e.downcast_ref::<builtins::exit_builtin::ExitSignal>() {
+                std::process::exit(exit_signal.exit_code);
+            }
             eprintln!("rush: {}", e);
             std::process::exit(1);
         }

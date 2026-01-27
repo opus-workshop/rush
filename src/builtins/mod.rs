@@ -20,6 +20,7 @@ mod builtin;
 mod command;
 pub mod continue_builtin; // Public so executor can access ContinueSignal
 mod eval;
+pub mod exit_builtin; // Public so executor/main can access ExitSignal
 mod exec;
 mod fetch;
 mod grep;
@@ -42,6 +43,7 @@ pub mod trap; // Public so runtime and executor can access TrapSignal
 mod type_builtin;
 mod undo;
 mod unset;
+mod wait;
 
 type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 
@@ -52,7 +54,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("cd", builtin_cd as BuiltinFn);
     m.insert("pwd", builtin_pwd);
     m.insert("echo", builtin_echo);
-    m.insert("exit", builtin_exit);
+    m.insert("exit", exit_builtin::builtin_exit);
     m.insert("export", builtin_export);
     m.insert("source", builtin_source);
     m.insert("cat", cat::builtin_cat);
@@ -98,6 +100,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("fetch", fetch::builtin_fetch);
     m.insert("readonly", readonly::builtin_readonly);
     m.insert("rm", rm::builtin_rm);
+    m.insert("wait", wait::builtin_wait);
     m
 });
 
@@ -282,15 +285,7 @@ pub(crate) fn builtin_echo(args: &[String], _runtime: &mut Runtime) -> Result<Ex
     Ok(ExecutionResult::success(output))
 }
 
-pub(crate) fn builtin_exit(args: &[String], _runtime: &mut Runtime) -> Result<ExecutionResult> {
-    let code = if args.is_empty() {
-        0
-    } else {
-        args[0].parse::<i32>().unwrap_or(0)
-    };
-
-    std::process::exit(code);
-}
+// builtin_exit is now in exit_builtin module (uses ExitSignal for subshell support)
 
 pub(crate) fn builtin_export(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     if args.is_empty() {

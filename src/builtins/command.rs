@@ -156,7 +156,7 @@ fn execute_builtin(name: &str, args: Vec<String>, runtime: &mut Runtime) -> Resu
         "cd" => super::builtin_cd(&args, runtime),
         "pwd" => super::builtin_pwd(&args, runtime),
         "echo" => super::builtin_echo(&args, runtime),
-        "exit" => super::builtin_exit(&args, runtime),
+        "exit" => super::exit_builtin::builtin_exit(&args, runtime),
         "export" => super::builtin_export(&args, runtime),
         "source" => super::builtin_source(&args, runtime),
         "cat" => super::cat::builtin_cat(&args, runtime),

@@ -1,4 +1,4 @@
-use super::{ExecutionResult, Output};
+use super::{ExecutionResult, Output, Executor};
 use crate::builtins::Builtins;
 use crate::glob_expansion;
 use crate::parser::ast::*;
@@ -21,6 +21,11 @@ pub fn execute_pipeline(
     runtime: &mut Runtime,
     builtins: &Builtins,
 ) -> Result<ExecutionResult> {
+    // Use elements if available, fall back to commands-only for backward compat
+    if !pipeline.elements.is_empty() {
+        return execute_pipeline_elements(&pipeline.elements, runtime, builtins);
+    }
+
     if pipeline.commands.is_empty() {
         return Ok(ExecutionResult::default());
     }
@@ -97,6 +102,144 @@ pub fn execute_pipeline(
     }
 
     Ok(ExecutionResult::default())
+}
+
+/// Execute pipeline using the new elements representation which supports subshells.
+fn execute_pipeline_elements(
+    elements: &[PipelineElement],
+    runtime: &mut Runtime,
+    builtins: &Builtins,
+) -> Result<ExecutionResult> {
+    if elements.is_empty() {
+        return Ok(ExecutionResult::default());
+    }
+
+    if elements.len() == 1 {
+        let result = execute_element(&elements[0], runtime, builtins, None)?;
+        runtime.set_last_exit_code(result.exit_code);
+        runtime.set_pipestatus(vec![result.exit_code]);
+        return Ok(result);
+    }
+
+    let mut previous_output = Vec::new();
+    let mut first_failed_exit_code = None;
+    let mut combined_stderr = String::new();
+    let mut pipestatus = Vec::new();
+
+    for (i, element) in elements.iter().enumerate() {
+        let is_first = i == 0;
+        let is_last = i == elements.len() - 1;
+
+        let result = execute_element(
+            element,
+            runtime,
+            builtins,
+            if is_first { None } else { Some(&previous_output) },
+        )?;
+
+        pipestatus.push(result.exit_code);
+
+        if runtime.options.pipefail && result.exit_code != 0 && first_failed_exit_code.is_none() {
+            first_failed_exit_code = Some(result.exit_code);
+        }
+
+        if !result.stderr.is_empty() {
+            combined_stderr.push_str(&result.stderr);
+        }
+
+        if is_last {
+            let pipeline_exit_code = if runtime.options.pipefail {
+                first_failed_exit_code.unwrap_or(result.exit_code)
+            } else {
+                result.exit_code
+            };
+
+            runtime.set_last_exit_code(pipeline_exit_code);
+            runtime.set_pipestatus(pipestatus);
+
+            return Ok(ExecutionResult {
+                output: Output::Text(result.stdout()),
+                stderr: combined_stderr,
+                exit_code: pipeline_exit_code,
+                error: None,
+            });
+        }
+
+        previous_output = result.stdout().into_bytes();
+    }
+
+    Ok(ExecutionResult::default())
+}
+
+/// Execute a single pipeline element, which can be a command or a subshell.
+fn execute_element(
+    element: &PipelineElement,
+    runtime: &mut Runtime,
+    builtins: &Builtins,
+    stdin: Option<&[u8]>,
+) -> Result<ExecutionResult> {
+    match element {
+        PipelineElement::Command(cmd) => {
+            execute_pipeline_command(cmd, runtime, builtins, stdin)
+        }
+        PipelineElement::Subshell(statements) => {
+            execute_subshell_in_pipeline(statements, runtime, builtins, stdin)
+        }
+    }
+}
+
+/// Execute a subshell as part of a pipeline.
+/// Creates a child executor with cloned runtime and passes stdin data.
+fn execute_subshell_in_pipeline(
+    statements: &[Statement],
+    runtime: &mut Runtime,
+    builtins: &Builtins,
+    stdin: Option<&[u8]>,
+) -> Result<ExecutionResult> {
+    use crate::correction::Corrector;
+    use crate::terminal::TerminalControl;
+
+    // Create isolated child runtime
+    let mut child_runtime = runtime.clone();
+    let current_shlvl = child_runtime
+        .get_variable("SHLVL")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1);
+    child_runtime.set_variable("SHLVL".to_string(), (current_shlvl + 1).to_string());
+
+    // If there's stdin data, set it as the content of stdin for the subshell
+    // For builtins like `cat` that read stdin, we need to make this available
+    if let Some(input_data) = stdin {
+        // Set the piped input as a special variable the executor can access
+        child_runtime.set_variable(
+            "_PIPE_STDIN".to_string(),
+            String::from_utf8_lossy(input_data).to_string(),
+        );
+    }
+
+    let mut child_executor = Executor {
+        runtime: child_runtime,
+        builtins: builtins.clone(),
+        corrector: Corrector::new(),
+        signal_handler: None,
+        show_progress: false,
+        terminal_control: TerminalControl::new(),
+    };
+
+    // Execute the subshell statements
+    match child_executor.execute(statements.to_vec()) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            if let Some(exit_signal) = e.downcast_ref::<crate::builtins::exit_builtin::ExitSignal>() {
+                Ok(ExecutionResult {
+                    exit_code: exit_signal.exit_code,
+                    ..ExecutionResult::default()
+                })
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 fn execute_pipeline_command(

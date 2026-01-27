@@ -29,9 +29,21 @@ pub struct Command {
     pub prefix_env: Vec<(String, String)>,
 }
 
+/// An element in a pipeline - either a regular command or a subshell
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PipelineElement {
+    Command(Command),
+    Subshell(Vec<Statement>),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pipeline {
     pub commands: Vec<Command>,
+    /// Extended pipeline elements supporting subshells alongside commands.
+    /// When non-empty, this is the authoritative pipeline representation.
+    /// `commands` is kept for backward compatibility.
+    #[serde(default)]
+    pub elements: Vec<PipelineElement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,4 +276,6 @@ pub enum RedirectKind {
     Stderr,         // 2>
     StderrToStdout, // 2>&1
     Both,           // &>
+    HereDoc,        // <<WORD (body in target, expand vars)
+    HereDocLiteral, // <<'WORD' or <<"WORD" (body in target, no expansion)
 }

@@ -129,27 +129,24 @@ impl Parser {
         }
         // Check if this is a pipeline
         else if self.match_token(&Token::Pipe) {
-            // Subshells in pipelines need to be converted to commands
-            // For now, we'll just handle Command types in pipelines
-            let first_command = match first_statement {
-                Statement::Command(cmd) => cmd,
-                Statement::Subshell(_) => {
-                    // For subshells in pipelines, we need different handling
-                    return Err(anyhow!("Subshells in pipelines require special handling - use the full statement form"));
-                }
-                _ => return Err(anyhow!("Only commands can be used in pipelines")),
+            // Build elements list supporting both commands and subshells
+            let first_element = match first_statement {
+                Statement::Command(cmd) => PipelineElement::Command(cmd),
+                Statement::Subshell(stmts) => PipelineElement::Subshell(stmts),
+                _ => return Err(anyhow!("Only commands and subshells can be used in pipelines")),
             };
 
             self.advance();
-            let mut commands = vec![first_command];
+            let mut elements = vec![first_element];
 
             loop {
                 let stmt = self.parse_pipeline_element()?;
-                let cmd = match stmt {
-                    Statement::Command(cmd) => cmd,
-                    _ => return Err(anyhow!("Only commands can be used in pipelines")),
+                let elem = match stmt {
+                    Statement::Command(cmd) => PipelineElement::Command(cmd),
+                    Statement::Subshell(stmts) => PipelineElement::Subshell(stmts),
+                    _ => return Err(anyhow!("Only commands and subshells can be used in pipelines")),
                 };
-                commands.push(cmd);
+                elements.push(elem);
 
                 if !self.match_token(&Token::Pipe) {
                     break;
@@ -157,7 +154,16 @@ impl Parser {
                 self.advance();
             }
 
-            Ok(Statement::Pipeline(Pipeline { commands }))
+            // Build backward-compatible commands vec from command-only elements
+            let commands: Vec<Command> = elements
+                .iter()
+                .filter_map(|e| match e {
+                    PipelineElement::Command(cmd) => Some(cmd.clone()),
+                    PipelineElement::Subshell(_) => None,
+                })
+                .collect();
+
+            Ok(Statement::Pipeline(Pipeline { commands, elements }))
         } else {
             Ok(first_statement)
         }
@@ -427,6 +433,20 @@ impl Parser {
                         kind: RedirectKind::Both,
                         target: Some(target),
                     });
+                }
+                Some(Token::HereDocBody(..)) => {
+                    let token = self.advance().cloned();
+                    if let Some(Token::HereDocBody(data)) = token {
+                        let kind = if data.expand_vars {
+                            RedirectKind::HereDoc
+                        } else {
+                            RedirectKind::HereDocLiteral
+                        };
+                        redirects.push(Redirect {
+                            kind,
+                            target: Some(data.body),
+                        });
+                    }
                 }
                 _ => {
                     args.push(self.parse_argument()?);

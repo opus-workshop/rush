@@ -354,6 +354,10 @@ impl Executor {
                         result.stderr.clear();
                     }
                 }
+                RedirectKind::HereDoc | RedirectKind::HereDocLiteral => {
+                    // Here-documents provide stdin content - for builtins that already
+                    // executed, this is a no-op (stdin would need to be provided before execution)
+                }
             }
         }
         
@@ -520,9 +524,35 @@ impl Executor {
                         stderr_redirect = true;
                     }
                 }
+                RedirectKind::HereDoc | RedirectKind::HereDocLiteral => {
+                    // Here-documents provide stdin content
+                    cmd.stdin(Stdio::piped());
+                    stdin_redirect = true;
+                }
             }
         }
         
+        // Collect heredoc body before spawning (needs mutable borrow of self for expansion)
+        let heredoc_body: Option<String> = {
+            let mut body = None;
+            for redirect in &command.redirects {
+                match &redirect.kind {
+                    RedirectKind::HereDoc => {
+                        if let Some(b) = &redirect.target {
+                            body = Some(self.expand_heredoc_body(b)?);
+                        }
+                    }
+                    RedirectKind::HereDocLiteral => {
+                        if let Some(b) = &redirect.target {
+                            body = Some(b.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            body
+        };
+
         // Set default stdin to inherit from parent if not redirected
         if !stdin_redirect {
             cmd.stdin(Stdio::inherit());
@@ -624,6 +654,16 @@ impl Executor {
                 }
             })?;
 
+        // Write heredoc body to child's stdin if present
+        if let Some(body) = heredoc_body {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                stdin.write_all(body.as_bytes())
+                    .map_err(|e| anyhow!("Failed to write here-document to stdin: {}", e))?;
+                drop(stdin); // Close stdin so child sees EOF
+            }
+        }
+
         // Wait for command to complete
         let (stdout_str, stderr_str, exit_code) = if should_inherit_io {
             // Interactive mode - IO is inherited, use polling with deferred progress indicator
@@ -695,6 +735,159 @@ impl Executor {
             exit_code,
             error: None,
         })
+    }
+
+    /// Expand variables and command substitutions in a heredoc body.
+    fn expand_heredoc_body(&mut self, body: &str) -> Result<String> {
+        let mut result = String::with_capacity(body.len());
+        let chars: Vec<char> = body.chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            match chars[i] {
+                '$' if i + 1 < chars.len() => {
+                    match chars[i + 1] {
+                        '(' => {
+                            // Command substitution $(...)
+                            let start = i + 2;
+                            if let Some(end) = self.find_matching_paren_in_str(&chars, start) {
+                                let cmd_str: String = chars[start..end].iter().collect();
+                                let sub_result = self.execute_command_substitution_str(&cmd_str)?;
+                                result.push_str(sub_result.trim_end_matches('\n'));
+                                i = end + 1;
+                            } else {
+                                result.push('$');
+                                i += 1;
+                            }
+                        }
+                        '{' => {
+                            // Braced variable ${...}
+                            if let Some(close) = chars[i + 2..].iter().position(|&c| c == '}') {
+                                let var_name: String = chars[i + 2..i + 2 + close].iter().collect();
+                                let value = self.expand_braced_variable(&var_name);
+                                result.push_str(&value);
+                                i = i + 3 + close;
+                            } else {
+                                result.push('$');
+                                i += 1;
+                            }
+                        }
+                        c if c.is_ascii_alphabetic() || c == '_' => {
+                            // Simple variable $VAR
+                            let start = i + 1;
+                            let mut end = start;
+                            while end < chars.len()
+                                && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
+                            {
+                                end += 1;
+                            }
+                            let var_name: String = chars[start..end].iter().collect();
+                            let value = self.runtime
+                                .get_variable(&var_name)
+                                .unwrap_or_default();
+                            result.push_str(&value);
+                            i = end;
+                        }
+                        '?' => {
+                            let code = self.runtime.get_last_exit_code();
+                            result.push_str(&code.to_string());
+                            i += 2;
+                        }
+                        '$' => {
+                            result.push_str(&std::process::id().to_string());
+                            i += 2;
+                        }
+                        _ => {
+                            result.push('$');
+                            i += 1;
+                        }
+                    }
+                }
+                '`' => {
+                    let start = i + 1;
+                    if let Some(end) = chars[start..].iter().position(|&c| c == '`') {
+                        let cmd_str: String = chars[start..start + end].iter().collect();
+                        let sub_result = self.execute_command_substitution_str(&cmd_str)?;
+                        result.push_str(sub_result.trim_end_matches('\n'));
+                        i = start + end + 1;
+                    } else {
+                        result.push('`');
+                        i += 1;
+                    }
+                }
+                '\\' if i + 1 < chars.len() => {
+                    match chars[i + 1] {
+                        '$' => { result.push('$'); i += 2; }
+                        '`' => { result.push('`'); i += 2; }
+                        '\\' => { result.push('\\'); i += 2; }
+                        'n' => { result.push('\n'); i += 2; }
+                        't' => { result.push('\t'); i += 2; }
+                        _ => { result.push('\\'); result.push(chars[i + 1]); i += 2; }
+                    }
+                }
+                c => {
+                    result.push(c);
+                    i += 1;
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn find_matching_paren_in_str(&self, chars: &[char], start: usize) -> Option<usize> {
+        let mut depth = 1;
+        let mut pos = start;
+        while pos < chars.len() && depth > 0 {
+            match chars[pos] {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(pos);
+                    }
+                }
+                _ => {}
+            }
+            pos += 1;
+        }
+        None
+    }
+
+    fn expand_braced_variable(&self, expr: &str) -> String {
+        if expr.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return self.runtime.get_variable(expr).unwrap_or_default();
+        }
+        if let Some(pos) = expr.find(":-") {
+            let var_name = &expr[..pos];
+            let default_val = &expr[pos + 2..];
+            return self.runtime
+                .get_variable(var_name)
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| default_val.to_string());
+        }
+        if let Some(pos) = expr.find(":=") {
+            let var_name = &expr[..pos];
+            let default_val = &expr[pos + 2..];
+            let val = self.runtime.get_variable(var_name);
+            if val.as_deref().map_or(true, str::is_empty) {
+                return default_val.to_string();
+            }
+            return val.unwrap_or_default();
+        }
+        self.runtime.get_variable(expr).unwrap_or_default()
+    }
+
+    fn execute_command_substitution_str(&mut self, cmd_str: &str) -> Result<String> {
+        use crate::lexer::Lexer;
+        use crate::parser::Parser;
+
+        let tokens = Lexer::tokenize(cmd_str)
+            .map_err(|e| anyhow!("Heredoc command substitution lex error: {}", e))?;
+        let mut parser = Parser::new(tokens);
+        let stmts = parser.parse()?;
+        let result = self.execute(stmts)?;
+        Ok(result.stdout())
     }
 
     fn execute_pipeline(&mut self, pipeline: Pipeline) -> Result<ExecutionResult> {
@@ -1341,8 +1534,8 @@ impl Executor {
                     .current_dir(self.runtime.get_cwd())
                     .envs(self.runtime.get_env())
                     .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit());
 
                 // Use pre_exec to set the process group before the child executes
                 unsafe {
@@ -1370,8 +1563,47 @@ impl Executor {
                 // Return success with job information
                 Ok(ExecutionResult::success(format!("[{}] {}\n", job_id, pid)))
             }
-            _ => Err(anyhow!("Only simple commands can be run in background for now")),
+            Statement::Pipeline(_) | Statement::Subshell(_) => {
+                self.execute_background_via_sh(&command_str)
+            }
+            _ => Err(anyhow!("Only simple commands and pipelines can be run in background")),
         }
+    }
+
+
+    /// Execute a complex statement in background by wrapping it in sh -c
+    fn execute_background_via_sh(&mut self, command_str: &str) -> Result<ExecutionResult> {
+        use nix::unistd::{getpid, setpgid};
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command as StdCommand, Stdio};
+
+        let mut cmd = StdCommand::new("sh");
+        cmd.arg("-c")
+            .arg(command_str)
+            .current_dir(self.runtime.get_cwd())
+            .envs(self.runtime.get_env())
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        unsafe {
+            cmd.pre_exec(|| {
+                let pid = getpid();
+                setpgid(pid, pid).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("setpgid failed: {}", e))
+                })?;
+                Ok(())
+            });
+        }
+
+        let child = cmd.spawn()
+            .map_err(|e| anyhow!("Failed to spawn background process: {}", e))?;
+
+        let pid = child.id();
+        let job_id = self.runtime.job_manager().add_job(pid, command_str.to_string());
+        self.runtime.set_last_bg_pid(pid);
+
+        Ok(ExecutionResult::success(format!("[{}] {}\n", job_id, pid)))
     }
 
     fn statement_to_string(&self, statement: &Statement) -> String {
@@ -1392,6 +1624,20 @@ impl Executor {
             Statement::WhileLoop(_) => "while loop".to_string(),
             Statement::UntilLoop(_) => "until loop".to_string(),
             _ => "complex command".to_string(),
+        }
+    }
+
+    fn command_to_string(cmd: &crate::parser::ast::Command) -> String {
+        let args_str = cmd.args.iter()
+            .map(|arg| match arg {
+                Argument::Literal(s) | Argument::Variable(s) | Argument::BracedVariable(s) | Argument::CommandSubstitution(s) | Argument::Flag(s) | Argument::Path(s) | Argument::Glob(s) => s.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if args_str.is_empty() {
+            cmd.name.clone()
+        } else {
+            format!("{} {}", cmd.name, args_str)
         }
     }
 

@@ -34,7 +34,7 @@ pub fn builtin_builtin(args: &[String], runtime: &mut Runtime) -> Result<Executi
         "cd" => super::builtin_cd(&builtin_args, runtime),
         "pwd" => super::builtin_pwd(&builtin_args, runtime),
         "echo" => super::builtin_echo(&builtin_args, runtime),
-        "exit" => super::builtin_exit(&builtin_args, runtime),
+        "exit" => super::exit_builtin::builtin_exit(&builtin_args, runtime),
         "export" => super::builtin_export(&builtin_args, runtime),
         "source" => super::builtin_source(&builtin_args, runtime),
         "cat" => super::cat::builtin_cat(&builtin_args, runtime),
