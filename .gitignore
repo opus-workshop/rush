@@ -4,3 +4,30 @@
 benchmarks/
 results/
 target/criterion/
+
+# Backup files from agents
+*.bak
+*.bak[0-9]
+*.tmp
+*.rej
+*.fix
+*.duperr
+*.final
+*.final[0-9]
+
+# Agent tooling logs
+.ralph-tui/iterations/
+
+# Stray patches
+*.patch
+
+# Root-level test scripts (not in tests/ directory)
+/test_*.sh
+/test_*.rush
+
+# Agent status artifacts
+/BEAD_*.md
+/*_STATUS.md
+/*_SUMMARY.md
+/*_IMPLEMENTATION.md
+/*_VERIFICATION.md
