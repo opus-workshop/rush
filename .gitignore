@@ -1,11 +1,15 @@
+# Build
 /target
 
-# Benchmark artifacts
-benchmarks/
-results/
-target/criterion/
+# OS
+.DS_Store
 
-# Backup files from agents
+# Editor / IDE
+*.swp
+*.swo
+*~
+
+# Agent artifacts
 *.bak
 *.bak[0-9]
 *.tmp
@@ -14,20 +18,32 @@ target/criterion/
 *.duperr
 *.final
 *.final[0-9]
-
-# Agent tooling logs
-.ralph-tui/iterations/
-
-# Stray patches
 *.patch
+.ralph-tui/
+.claude/
+
+# Agent-generated root files
+/AGENTS.md
+/BEAD_*.md
+/*_STATUS.md
+/*_SUMMARY.md
+/*_RESULTS*.md
+/*_IMPLEMENTATION.md
+/*_VERIFICATION.md
+/*_PLAN.md
+/*_ANALYSIS.md
+/CHECKLIST_*.md
+/RUN_THIS_*.md
+/TEST_*.md
+/TESTING_*.md
+/FINAL_*.md
+/benchmark_*.json
+/benchmark_*.sh
 
 # Root-level test scripts (not in tests/ directory)
 /test_*.sh
 /test_*.rush
 
-# Agent status artifacts
-/BEAD_*.md
-/*_STATUS.md
-/*_SUMMARY.md
-/*_IMPLEMENTATION.md
-/*_VERIFICATION.md
+# Benchmark artifacts
+benchmarks/
+results/

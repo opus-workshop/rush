@@ -92,4 +92,4 @@ For detailed architecture documentation, see the [docs/](docs/) directory.
 
 ## License
 
-By contributing, you agree that your contributions will be dual-licensed under MIT or Apache-2.0, consistent with the project license.
+By contributing, you agree that your contributions will be licensed under the MIT License, consistent with the project license.
