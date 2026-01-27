@@ -4,7 +4,7 @@ Thank you for your interest in contributing to Rush! This document provides guid
 
 ## How to Report Bugs
 
-Please use [GitHub Issues](https://github.com/opus-workshop/rush/issues) to report bugs. Include the following:
+Please use [GitHub Issues](https://github.com/paiml/rush/issues) to report bugs. Include the following:
 
 - Rush version (`rush --version`)
 - Operating system and version
