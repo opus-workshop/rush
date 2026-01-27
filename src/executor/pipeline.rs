@@ -1,8 +1,11 @@
-use super::{ExecutionResult, Output, Executor};
+use super::{ExecutionResult, Output, Executor, CallStack};
 use crate::builtins::Builtins;
+use crate::correction::Corrector;
+use crate::executor::suggestions::SuggestionEngine;
 use crate::glob_expansion;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
+use crate::terminal::TerminalControl;
 use anyhow::{anyhow, Result};
 use std::io::Write;
 use std::process::{Command as StdCommand, Stdio};
@@ -370,12 +373,13 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
                         runtime: runtime.clone(),
                         builtins: Builtins::new(),
                         corrector: Corrector::new(),
+                        suggestion_engine: SuggestionEngine::new(),
                         signal_handler: None,
                         terminal_control: crate::terminal::TerminalControl::new(),
                         show_progress: false,
                         profile_data: None,
                         enable_profiling: false,
-                        function_stack: Vec::new(),
+                        call_stack: CallStack::new(),
                     };
                     if let Ok(result) = sub_executor.execute(statements) {
                         return result.stdout().trim_end().to_string();

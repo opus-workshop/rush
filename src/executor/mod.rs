@@ -2437,6 +2437,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                         runtime: runtime.clone(),
                         builtins: Builtins::new(),
                         corrector: Corrector::new(),
+                        suggestion_engine: SuggestionEngine::new(),
                         signal_handler: None,
                         show_progress: false,
                         terminal_control: TerminalControl::new(),
@@ -2449,7 +2450,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                     }
                 }
             }
-            
+
             // If execution failed, return empty string
             String::new()
         }
@@ -2525,6 +2526,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             runtime: runtime.clone(),
                             builtins: Builtins::new(),
                             corrector: Corrector::new(),
+                            suggestion_engine: SuggestionEngine::new(),
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),
@@ -2562,6 +2564,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             runtime: runtime.clone(),
                             builtins: Builtins::new(),
                             corrector: Corrector::new(),
+                            suggestion_engine: SuggestionEngine::new(),
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),

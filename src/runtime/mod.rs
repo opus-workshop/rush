@@ -343,6 +343,11 @@ impl Runtime {
         self.call_stack.pop();
     }
 
+    /// Get the current function call stack (for error reporting)
+    pub fn get_call_stack(&self) -> Vec<String> {
+        self.call_stack.clone()
+    }
+
     // Function context tracking for return builtin
     pub fn enter_function_context(&mut self) {
         self.function_depth += 1;
