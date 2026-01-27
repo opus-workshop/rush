@@ -267,3 +267,71 @@ fn test_mixed_arguments_with_substitution() {
     assert!(output.contains("substituted"));
     assert!(output.contains("another"));
 }
+
+// --- Tests for command substitution inside strings (rush-onx.9) ---
+
+#[test]
+fn test_subst_in_double_quoted_string() {
+    let mut executor = Executor::new();
+
+    // echo "dir: $(echo hello)"  =>  dir: hello
+    let tokens = Lexer::tokenize(r#"echo "dir: $(echo hello)""#).unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.stdout().trim(), "dir: hello");
+}
+
+#[test]
+fn test_subst_multiple_in_string() {
+    let mut executor = Executor::new();
+
+    // echo "a=$(echo 1) b=$(echo 2)"  =>  a=1 b=2
+    let tokens = Lexer::tokenize(r#"echo "a=$(echo 1) b=$(echo 2)""#).unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.stdout().trim(), "a=1 b=2");
+}
+
+#[test]
+fn test_subst_in_assignment_value() {
+    let mut executor = Executor::new();
+
+    // x=$(echo foo); echo $x  =>  foo
+    let tokens = Lexer::tokenize("x=$(echo foo); echo $x").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.stdout().trim(), "foo");
+}
+
+#[test]
+fn test_subst_with_pwd() {
+    let mut executor = Executor::new();
+
+    // echo "dir: $(pwd)"  =>  dir: /some/path
+    let tokens = Lexer::tokenize(r#"echo "dir: $(pwd)""#).unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let result = executor.execute(statements).unwrap();
+
+    let output = result.stdout().trim().to_string();
+    assert!(output.starts_with("dir: /"), "Expected 'dir: /' prefix, got: {}", output);
+}
+
+#[test]
+fn test_nested_subst_in_string() {
+    let mut executor = Executor::new();
+
+    // echo "val: $(echo $(echo deep))"  =>  val: deep
+    let tokens = Lexer::tokenize(r#"echo "val: $(echo $(echo deep))""#).unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.stdout().trim(), "val: deep");
+}

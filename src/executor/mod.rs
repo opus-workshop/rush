@@ -262,15 +262,15 @@ impl Executor {
 
     /// Expand a string value that may contain variable references ($VAR, ${VAR}, etc.)
     fn expand_string_value(&self, value: &str) -> Result<String> {
-        if value.starts_with('$') {
+        if value.contains("$(") || value.contains('`') {
+            // String contains command substitution(s) - expand them
+            self.expand_command_substitutions_in_string(value)
+        } else if value.starts_with('$') {
             // Variable reference - expand it
             if value.starts_with("${") && value.ends_with('}') {
                 // Braced variable ${VAR}
                 let var_name = value.trim_start_matches("${").trim_end_matches('}');
                 Ok(self.runtime.get_variable(var_name).unwrap_or_default())
-            } else if value.starts_with("$(") {
-                // Command substitution
-                self.execute_command_substitution(value)
             } else {
                 // Simple variable $VAR
                 let var_name = value.trim_start_matches('$');
@@ -1411,6 +1411,10 @@ impl Executor {
                 // Command substitution in string literal context
                 self.execute_command_substitution(s)
             }
+            Expression::Literal(Literal::String(ref s)) if s.contains("$(") || s.contains('`') => {
+                // Embedded command substitution in string literal context
+                self.expand_command_substitutions_in_string(s)
+            }
             Expression::Literal(Literal::String(ref s)) if s.starts_with('$') => {
                 // Variable expansion in string literal context
                 let var_name = s.trim_start_matches('$');
@@ -1493,7 +1497,14 @@ impl Executor {
 
     fn resolve_argument(&mut self, arg: &Argument) -> Result<String> {
         match arg {
-            Argument::Literal(s) => Ok(s.clone()),
+            Argument::Literal(s) => {
+                // Expand command substitutions inside literal strings
+                if s.contains("$(") || s.contains('`') {
+                    self.expand_command_substitutions_in_string(s)
+                } else {
+                    Ok(s.clone())
+                }
+            }
             Argument::Variable(var) => {
                 // Strip single $ from variable name (use strip_prefix to remove only one $)
                 let var_name = var.strip_prefix('$').unwrap_or(var);
@@ -1804,6 +1815,82 @@ impl Executor {
         Ok(result.stdout().trim_end().to_string())
     }
 
+    /// Expand all command substitution sequences ($(...) and `...`) within a string.
+    /// Handles nested substitutions by delegating to execute_command_substitution.
+    fn expand_command_substitutions_in_string(&self, input: &str) -> Result<String> {
+        let mut result = String::with_capacity(input.len());
+        let bytes = input.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+
+        while i < len {
+            if i + 1 < len && bytes[i] == b'$' && bytes[i + 1] == b'(' {
+                // Found $( -- find the matching closing paren, respecting nesting
+                let start = i;
+                let mut depth: i32 = 1;
+                let mut j = i + 2;
+
+                while j < len && depth > 0 {
+                    match bytes[j] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        b'\'' => {
+                            j += 1;
+                            while j < len && bytes[j] != b'\'' { j += 1; }
+                        }
+                        b'"' => {
+                            j += 1;
+                            while j < len {
+                                if bytes[j] == b'"' { break; }
+                                if bytes[j] == b'\\' { j += 1; }
+                                j += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+
+                if depth == 0 {
+                    let substitution = &input[start..j];
+                    let output = self.execute_command_substitution(substitution)
+                        .unwrap_or_default();
+                    result.push_str(&output);
+                    i = j;
+                } else {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+            } else if bytes[i] == b'`' {
+                // Backtick substitution -- find matching closing backtick
+                let start = i;
+                let mut j = i + 1;
+
+                while j < len {
+                    if bytes[j] == b'`' { j += 1; break; }
+                    else if bytes[j] == b'\\' && j + 1 < len { j += 2; }
+                    else { j += 1; }
+                }
+
+                if j <= len && j > start + 1 && bytes[j - 1] == b'`' {
+                    let substitution = &input[start..j];
+                    let output = self.execute_command_substitution(substitution)
+                        .unwrap_or_default();
+                    result.push_str(&output);
+                    i = j;
+                } else {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+            } else {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+        }
+
+        Ok(result)
+    }
+
     fn literal_to_string(&self, lit: Literal) -> String {
         match lit {
             Literal::String(s) => s,
@@ -1978,7 +2065,13 @@ pub fn expand_tilde(path: &str) -> String {
 
 fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
     match arg {
-        Argument::Literal(s) => s.clone(),
+        Argument::Literal(s) => {
+            if s.contains("$(") || s.contains('`') {
+                expand_command_substitutions_in_string_static(s, runtime)
+            } else {
+                s.clone()
+            }
+        }
         Argument::Variable(var) => {
             let var_name = var.trim_start_matches('$');
             runtime
@@ -2071,6 +2164,101 @@ fn expand_and_resolve_arguments_static(args: &[Argument], runtime: &Runtime) -> 
 
     Ok(expanded_args)
 }
+
+/// Static version of command substitution expansion for use outside &mut self methods.
+pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime: &Runtime) -> String {
+    let mut result = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if i + 1 < len && bytes[i] == b'$' && bytes[i + 1] == b'(' {
+            let start = i;
+            let mut depth: i32 = 1;
+            let mut j = i + 2;
+
+            while j < len && depth > 0 {
+                match bytes[j] {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    b'\'' => { j += 1; while j < len && bytes[j] != b'\'' { j += 1; } }
+                    b'"' => { j += 1; while j < len { if bytes[j] == b'"' { break; } if bytes[j] == b'\\' { j += 1; } j += 1; } }
+                    _ => {}
+                }
+                j += 1;
+            }
+
+            if depth == 0 {
+                let substitution = &input[start..j];
+                let command = &substitution[2..substitution.len() - 1];
+                if let Ok(tokens) = crate::lexer::Lexer::tokenize(command) {
+                    let mut parser = crate::parser::Parser::new(tokens);
+                    if let Ok(statements) = parser.parse() {
+                        let mut sub_executor = Executor {
+                            runtime: runtime.clone(),
+                            builtins: Builtins::new(),
+                            corrector: Corrector::new(),
+                            signal_handler: None,
+                            show_progress: false,
+                            terminal_control: TerminalControl::new(),
+                        };
+                        if let Ok(exec_result) = sub_executor.execute(statements) {
+                            result.push_str(exec_result.stdout().trim_end());
+                            i = j;
+                            continue;
+                        }
+                    }
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            } else {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+        } else if bytes[i] == b'`' {
+            let start = i;
+            let mut j = i + 1;
+            while j < len {
+                if bytes[j] == b'`' { j += 1; break; }
+                else if bytes[j] == b'\\' && j + 1 < len { j += 2; }
+                else { j += 1; }
+            }
+            if j <= len && j > start + 1 && bytes[j - 1] == b'`' {
+                let command = &input[start + 1..j - 1];
+                if let Ok(tokens) = crate::lexer::Lexer::tokenize(command) {
+                    let mut parser = crate::parser::Parser::new(tokens);
+                    if let Ok(statements) = parser.parse() {
+                        let mut sub_executor = Executor {
+                            runtime: runtime.clone(),
+                            builtins: Builtins::new(),
+                            corrector: Corrector::new(),
+                            signal_handler: None,
+                            show_progress: false,
+                            terminal_control: TerminalControl::new(),
+                        };
+                        if let Ok(exec_result) = sub_executor.execute(statements) {
+                            result.push_str(exec_result.stdout().trim_end());
+                            i = j;
+                            continue;
+                        }
+                    }
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            } else {
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    result
+}
+
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {

@@ -178,7 +178,13 @@ fn execute_single_command(
 
 fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
     match arg {
-        Argument::Literal(s) => s.clone(),
+        Argument::Literal(s) => {
+            if s.contains("$(") || s.contains('`') {
+                super::expand_command_substitutions_in_string_static(s, runtime)
+            } else {
+                s.clone()
+            }
+        }
         Argument::Variable(var) => {
             let var_name = var.trim_start_matches('$');
             runtime
