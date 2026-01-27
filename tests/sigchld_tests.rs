@@ -10,7 +10,7 @@ fn test_background_job_automatic_reaping() {
     let mut executor = Executor::new();
 
     // Start a short-lived background job
-    let tokens = Lexer::tokenize("true &").unwrap();
+    let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
     let mut parser = Parser::new(tokens);
     let statements = parser.parse().unwrap();
     let result = executor.execute(statements).unwrap();
@@ -41,7 +41,7 @@ fn test_multiple_background_jobs_reaping() {
 
     // Start multiple short-lived background jobs
     for _ in 0..3 {
-        let tokens = Lexer::tokenize("true &").unwrap();
+        let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
         let mut parser = Parser::new(tokens);
         let statements = parser.parse().unwrap();
         executor.execute(statements).unwrap();
@@ -161,8 +161,8 @@ fn test_zombie_process_cleanup() {
 fn test_no_zombies_after_wait() {
     let mut executor = Executor::new();
 
-    // Start a short-lived background job
-    let tokens = Lexer::tokenize("true &").unwrap();
+    // Start a short-lived background job using sleep (external command)
+    let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
     let mut parser = Parser::new(tokens);
     let statements = parser.parse().unwrap();
     executor.execute(statements).unwrap();
@@ -198,7 +198,7 @@ fn test_reap_zombies_thread_safety() {
 
     // Start several background jobs
     for _ in 0..5 {
-        let tokens = Lexer::tokenize("true &").unwrap();
+        let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
         let mut parser = Parser::new(tokens);
         let statements = parser.parse().unwrap();
         executor.execute(statements).unwrap();
@@ -227,7 +227,7 @@ fn test_mixed_job_states() {
     let mut executor = Executor::new();
 
     // Start one completed job
-    let tokens = Lexer::tokenize("true &").unwrap();
+    let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
     let mut parser = Parser::new(tokens);
     let statements = parser.parse().unwrap();
     executor.execute(statements).unwrap();
@@ -311,7 +311,7 @@ fn test_rapid_job_creation_and_reaping() {
 
     // Rapidly create and complete jobs
     for _ in 0..10 {
-        let tokens = Lexer::tokenize("true &").unwrap();
+        let tokens = Lexer::tokenize("sleep 0.1 &").unwrap();
         let mut parser = Parser::new(tokens);
         let statements = parser.parse().unwrap();
         executor.execute(statements).unwrap();
