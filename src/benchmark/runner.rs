@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::executor::Executor;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::benchmark::compare::ComparisonRunner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BenchmarkMode {
@@ -154,9 +155,41 @@ impl BenchmarkRunner {
     }
 
     fn run_compare(&mut self) -> Result<()> {
-        // Compare mode: compare with previous results
-        // For now, just run quick mode
-        self.run_quick()?;
+        // Compare mode: benchmark Rush vs bash/zsh
+        let runner = ComparisonRunner::default();
+
+        // Test commands across shells
+        let test_commands = vec![
+            "echo hello",
+            "echo hello world",
+            "true",
+            "false",
+            "pwd",
+            "x=5; echo $x",
+            "echo test | cat",
+        ];
+
+        let comparison_results = runner.run_comparison(test_commands)?;
+
+        // Convert comparison results to test results for summary
+        for result in &comparison_results {
+            let test_name = format!("compare: {}", result.command);
+
+            // Create test result entry
+            self.results.push(TestResult {
+                name: test_name,
+                duration_ms: result.rush_time,
+                passed: true,
+                error: None,
+            });
+        }
+
+        // Write detailed comparison results to JSON
+        self.write_comparison_results(&comparison_results)?;
+
+        // Print comparison table
+        self.print_comparison_summary(&comparison_results);
+
         Ok(())
     }
 
@@ -224,6 +257,67 @@ impl BenchmarkRunner {
         }
 
         println!("\nResults saved to benchmark_results.json");
+    }
+
+    fn write_comparison_results(&self, results: &[crate::benchmark::ComparisonResult]) -> Result<()> {
+        let json = serde_json::to_string_pretty(results)?;
+        fs::write("benchmark_comparison.json", json)?;
+        Ok(())
+    }
+
+    fn print_comparison_summary(&self, results: &[crate::benchmark::ComparisonResult]) {
+        println!("\n=== Rush Benchmark Comparison ===");
+        println!("Comparing Rush vs bash/zsh\n");
+
+        // Print comparison table
+        println!(
+            "{:<35} {:<12} {:<12} {:<12} {:<10} {:<10}",
+            "Command", "Rush (ms)", "Bash (ms)", "Zsh (ms)", "vs Bash", "vs Zsh"
+        );
+        println!("{}", "-".repeat(95));
+
+        for result in results {
+            let cmd_display = if result.command.len() > 35 {
+                format!("{}...", &result.command[..32])
+            } else {
+                result.command.clone()
+            };
+
+            let bash_str = result
+                .bash_time
+                .map(|t| format!("{:.2}", t))
+                .unwrap_or_else(|| "N/A".to_string());
+
+            let zsh_str = result
+                .zsh_time
+                .map(|t| format!("{:.2}", t))
+                .unwrap_or_else(|| "N/A".to_string());
+
+            let bash_ratio = result
+                .rush_vs_bash_ratio
+                .map(|r| format!("{:.2}x", r))
+                .unwrap_or_else(|| "N/A".to_string());
+
+            let zsh_ratio = result
+                .rush_vs_zsh_ratio
+                .map(|r| format!("{:.2}x", r))
+                .unwrap_or_else(|| "N/A".to_string());
+
+            println!(
+                "{:<35} {:<12.2} {:<12} {:<12} {:<10} {:<10}",
+                cmd_display, result.rush_time, bash_str, zsh_str, bash_ratio, zsh_ratio
+            );
+        }
+
+        // Print statistics
+        println!("\n=== Statistics ===");
+        if let Some(result) = results.first() {
+            println!("Min time: {:.2}ms", result.min_time);
+            println!("Max time: {:.2}ms", result.max_time);
+            println!("Std dev: {:.2}ms", result.std_dev);
+        }
+
+        println!("\nDetailed results saved to benchmark_comparison.json");
     }
 }
 
