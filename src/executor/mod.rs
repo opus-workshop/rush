@@ -2,11 +2,13 @@ pub mod pipeline;
 pub mod value;
 pub mod error_formatter;
 pub mod profile;
+pub mod suggestions;
 
 // Re-export Value type for convenience
 pub use value::Value;
 pub use error_formatter::ErrorFormatter;
 pub use profile::{ProfileData, ProfileFormatter, ExecutionStage};
+pub use suggestions::{SuggestionEngine, SuggestionConfig};
 
 use crate::arithmetic;
 use crate::builtins::Builtins;

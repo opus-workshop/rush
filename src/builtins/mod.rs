@@ -50,7 +50,7 @@ type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 /// Process-global builtin table. Initialized once on first access via LazyLock.
 /// Uses &'static str keys to avoid per-Executor String allocations.
 static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|| {
-    let mut m: HashMap<&'static str, BuiltinFn> = HashMap::with_capacity(48);
+    let mut m: HashMap<&'static str, BuiltinFn> = HashMap::with_capacity(49);
     m.insert("cd", builtin_cd as BuiltinFn);
     m.insert("pwd", builtin_pwd);
     m.insert("echo", builtin_echo);
@@ -101,6 +101,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("readonly", readonly::builtin_readonly);
     m.insert("rm", rm::builtin_rm);
     m.insert("wait", wait::builtin_wait);
+    m.insert("profile", profile::builtin_profile);
     m
 });
 

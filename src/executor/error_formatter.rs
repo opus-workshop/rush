@@ -7,7 +7,7 @@
 //! - Stack traces for nested command/function calls
 //! - Common typo suggestions
 
-use crate::error::{RushError, SourceLocation, CommandContext};
+use crate::error::{RushError, SourceLocation, CommandContext, help_db};
 
 /// ANSI color codes for terminal output
 pub mod ansi {

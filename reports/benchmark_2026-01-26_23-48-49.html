@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rush Benchmark Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timestamp {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+
+        main {
+            padding: 2rem;
+        }
+
+        section {
+            margin-bottom: 3rem;
+        }
+
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .summary-card .label {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 3rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-pass {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .status-fail {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .methodology {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .methodology h3 {
+            color: #333;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .methodology h3:first-child {
+            margin-top: 0;
+        }
+
+        ul {
+            margin-left: 2rem;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        footer {
+            background: #f8f9fa;
+            padding: 1rem 2rem;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9rem;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Rush Benchmark Report</h1>
+            <div class="timestamp">Generated: 2026-01-26 23:48:49</div>
+        </header>
+
+        <main>
+            <section>
+                <h2>Summary</h2>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="label">Mode</div>
+                        <div class="value">quick</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Total Duration</div>
+                        <div class="value">2.63ms</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Tests Passed</div>
+                        <div class="value">5</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Tests Failed</div>
+                        <div class="value">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Avg Duration</div>
+                        <div class="value">0.52ms</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">Max Duration</div>
+                        <div class="value">2.36ms</div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <h2>Performance Chart</h2>
+                <div class="chart-container">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </section>
+
+            <section>
+                <h2>Test Results</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Test Name</th>
+                            <th>Duration (ms)</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>startup</td>
+                            <td>0.17</td>
+                            <td class="status-pass">✓ PASS</td>
+                        </tr>
+                        <tr>
+                            <td>echo</td>
+                            <td>0.02</td>
+                            <td class="status-pass">✓ PASS</td>
+                        </tr>
+                        <tr>
+                            <td>ls</td>
+                            <td>2.36</td>
+                            <td class="status-pass">✓ PASS</td>
+                        </tr>
+                        <tr>
+                            <td>pwd</td>
+                            <td>0.02</td>
+                            <td class="status-pass">✓ PASS</td>
+                        </tr>
+                        <tr>
+                            <td>variable_set</td>
+                            <td>0.04</td>
+                            <td class="status-pass">✓ PASS</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section>
+                <h2>Methodology</h2>
+                <div class="methodology">
+                    <h3>Test Categories</h3>
+                    <ul>
+                        <li><strong>Quick Mode:</strong> 5-second smoke test with essential commands</li>
+                        <li><strong>Full Mode:</strong> Comprehensive test suite covering shell features</li>
+                        <li><strong>Compare Mode:</strong> Comparison benchmarks across shells (Rush, Bash, Zsh)</li>
+                    </ul>
+
+                    <h3>Metrics</h3>
+                    <ul>
+                        <li><strong>Duration:</strong> Time taken to execute the test in milliseconds</li>
+                        <li><strong>Status:</strong> Pass/Fail status of the test</li>
+                    </ul>
+
+                    <h3>Notes</h3>
+                    <ul>
+                        <li>All timings are in milliseconds (ms)</li>
+                        <li>Durations include lexing, parsing, and execution</li>
+                        <li>Results may vary based on system load and resources</li>
+                        <li>The "Quick Mode" provides rapid feedback for CI/CD pipelines</li>
+                        <li>The "Full Mode" performs comprehensive testing for release validation</li>
+                        <li>The "Compare Mode" benchmarks Rush against other shells</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Rush Benchmark Suite | Powered by criterion and custom benchmark tools</p>
+        </footer>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ["startup","echo","ls","pwd","variable_set"],
+                datasets: [{
+                    label: 'Duration (ms)',
+                    data: [0.173125,0.024709000000000002,2.3609999999999998,0.020832999999999997,0.038292],
+                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                    borderColor: 'rgba(102, 126, 234, 1)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Test Performance'
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(2) + 'ms';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
