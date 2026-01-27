@@ -605,7 +605,8 @@ fn print_help() {
     println!("  rush --no-rc        Skip sourcing config files");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
-    println!("  rush --profile -c <command>  Profile execution timing");
+    println!("  rush --profile -c <command>          Profile execution timing");
+    println!("  rush --profile --json -c <command>   Profile as JSON for tooling");
     println!("  rush --benchmark <mode> Run benchmarks (quick, full, compare)");
     println!("  rush -h, --help     Show this help message");
     println!();
@@ -615,7 +616,8 @@ fn print_help() {
     println!("  rush -c \"echo hello\"");
     println!("  rush -c \"ls -la\"");
     println!("  rush -c \"cat file.txt | grep pattern\"");
-    println!("  rush --profile -c \"echo hello\"  # Profile with timing breakdown");
+    println!("  rush --profile -c \"echo hello\"                 # Profile with timing breakdown");
+    println!("  rush --profile --json -c \"echo hello\" | jq     # Profile as JSON, parse with jq");
     println!("  rush --login        # Start login shell");
     println!("  rush --benchmark quick   # Run quick benchmark (5-second smoke test)");
     println!("  rush --benchmark full    # Run comprehensive benchmark suite");

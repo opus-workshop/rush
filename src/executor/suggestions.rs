@@ -33,6 +33,7 @@ impl Default for SuggestionConfig {
 }
 
 /// Suggestion engine for command and flag typos
+#[derive(Clone)]
 pub struct SuggestionEngine {
     corrector: Corrector,
     config: SuggestionConfig,
