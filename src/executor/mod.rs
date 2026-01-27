@@ -222,7 +222,19 @@ impl Executor {
             if let Some(last) = args.last() {
                 self.runtime.set_last_arg(last.clone());
             }
-            let mut result = self.builtins.execute(&command_name, args, &mut self.runtime)?;
+
+            // Check for here-document redirects that provide stdin to builtins
+            let heredoc_stdin = self.extract_heredoc_stdin(&command.redirects)?;
+            let mut result = if let Some(ref stdin_data) = heredoc_stdin {
+                self.builtins.execute_with_stdin(
+                    &command_name,
+                    args,
+                    &mut self.runtime,
+                    Some(stdin_data.as_bytes()),
+                )?
+            } else {
+                self.builtins.execute(&command_name, args, &mut self.runtime)?
+            };
 
             // Handle redirects for builtins
             if !command.redirects.is_empty() {
@@ -735,6 +747,28 @@ impl Executor {
             exit_code,
             error: None,
         })
+    }
+
+    /// Extract heredoc stdin content from redirects, if any.
+    /// For HereDoc (unquoted delimiter), performs variable expansion.
+    /// For HereDocLiteral (quoted delimiter), returns body as-is.
+    fn extract_heredoc_stdin(&mut self, redirects: &[Redirect]) -> Result<Option<String>> {
+        for redirect in redirects {
+            match &redirect.kind {
+                RedirectKind::HereDoc => {
+                    if let Some(body) = &redirect.target {
+                        return Ok(Some(self.expand_heredoc_body(body)?));
+                    }
+                }
+                RedirectKind::HereDocLiteral => {
+                    if let Some(body) = &redirect.target {
+                        return Ok(Some(body.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(None)
     }
 
     /// Expand variables and command substitutions in a heredoc body.
@@ -1496,8 +1530,22 @@ impl Executor {
             terminal_control: self.terminal_control.clone(),
         };
 
-        // Execute all statements in the subshell
-        let result = child_executor.execute(statements)?;
+        // Execute all statements in the subshell, catching ExitSignal
+        let result = match child_executor.execute(statements) {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(exit_sig) = e.downcast_ref::<crate::builtins::exit_builtin::ExitSignal>() {
+                    ExecutionResult {
+                        output: Output::Text(String::new()),
+                        stderr: String::new(),
+                        exit_code: exit_sig.exit_code,
+                        error: None,
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
         // The subshell's runtime changes (variables, cwd) are discarded
         // Only the execution result (stdout, stderr, exit code) is returned

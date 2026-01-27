@@ -215,8 +215,18 @@ pub enum Token {
     #[token("&>")]
     BothRedirect,
 
+    // Here-document operators (must come before StdinRedirect for precedence)
+    #[token("<<-")]
+    HereDocStrip,
+
+    #[token("<<")]
+    HereDoc,
+
     #[token("<")]
     StdinRedirect,
+
+    // Synthesized token: here-document body (not matched by lexer directly)
+    HereDocBody(HereDocData),
 
     // Newline and EOF
     #[regex(r"\n")]
@@ -228,6 +238,14 @@ pub enum Token {
     // Comments
     #[regex(r"#[^\n]*", logos::skip)]
     Comment,
+}
+
+/// Data for a synthesized here-document body token
+#[derive(Debug, Clone, PartialEq)]
+pub struct HereDocData {
+    pub body: String,
+    pub expand_vars: bool,
+    pub strip_tabs: bool,
 }
 
 // Custom parser for $(...) that handles nesting
@@ -331,7 +349,135 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        // Post-process: resolve here-documents
+        let tokens = Self::resolve_heredocs(tokens, input);
+
         Ok(tokens)
+    }
+
+    /// Post-process token stream to resolve here-documents.
+    fn resolve_heredocs(tokens: Vec<Token>, source: &str) -> Vec<Token> {
+        let lines: Vec<&str> = source.lines().collect();
+        let mut result: Vec<Token> = Vec::with_capacity(tokens.len());
+
+        let mut i = 0;
+        while i < tokens.len() {
+            let is_heredoc = matches!(tokens[i], Token::HereDoc);
+            let is_heredoc_strip = matches!(tokens[i], Token::HereDocStrip);
+
+            if !is_heredoc && !is_heredoc_strip {
+                result.push(tokens[i].clone());
+                i += 1;
+                continue;
+            }
+
+            let strip_tabs = is_heredoc_strip;
+            i += 1; // skip << or <<-
+
+            // Collect the delimiter word from subsequent tokens.
+            let (delimiter, expand_vars) = if i < tokens.len() {
+                match &tokens[i] {
+                    Token::Identifier(s) => (s.clone(), true),
+                    Token::SingleQuotedString(s) => {
+                        let d = s.trim_matches('\'').to_string();
+                        (d, false)
+                    }
+                    Token::String(s) => {
+                        let d = s.trim_matches('"').to_string();
+                        (d, false)
+                    }
+                    _ => {
+                        if is_heredoc {
+                            result.push(Token::HereDoc);
+                        } else {
+                            result.push(Token::HereDocStrip);
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                if is_heredoc {
+                    result.push(Token::HereDoc);
+                } else {
+                    result.push(Token::HereDocStrip);
+                }
+                continue;
+            };
+            i += 1; // skip delimiter token
+
+            // Find which source line the << token is on by counting newlines
+            let mut newline_count = 0;
+            for t in &result {
+                if matches!(t, Token::Newline | Token::CrLf) {
+                    newline_count += 1;
+                }
+            }
+
+            let body_start = newline_count + 1;
+
+            let mut body_lines: Vec<String> = Vec::new();
+            let mut body_end_line = body_start;
+            let mut found_delimiter = false;
+
+            for line_idx in body_start..lines.len() {
+                let line = lines[line_idx];
+                let trimmed = if strip_tabs {
+                    line.trim_start_matches('\t')
+                } else {
+                    line
+                };
+
+                if trimmed.trim() == delimiter {
+                    body_end_line = line_idx;
+                    found_delimiter = true;
+                    break;
+                }
+
+                let output_line = if strip_tabs {
+                    line.trim_start_matches('\t').to_string()
+                } else {
+                    line.to_string()
+                };
+                body_lines.push(output_line);
+            }
+
+            if !found_delimiter {
+                body_lines.clear();
+            }
+
+            let body = if body_lines.is_empty() {
+                String::new()
+            } else {
+                body_lines.join("\n") + "\n"
+            };
+
+            result.push(Token::HereDocBody(HereDocData {
+                body,
+                expand_vars,
+                strip_tabs,
+            }));
+
+            let lines_to_skip = if found_delimiter {
+                body_end_line - newline_count
+            } else {
+                0
+            };
+
+            let mut newlines_skipped = 0;
+            while i < tokens.len() && newlines_skipped < lines_to_skip {
+                if matches!(tokens[i], Token::Newline | Token::CrLf) {
+                    newlines_skipped += 1;
+                }
+                i += 1;
+            }
+            // Also skip any remaining tokens on the delimiter line
+            // (e.g., the Identifier("EOF") token itself)
+            while i < tokens.len() && !matches!(tokens[i], Token::Newline | Token::CrLf) {
+                i += 1;
+            }
+        }
+
+        result
     }
 }
 

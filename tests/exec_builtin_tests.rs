@@ -10,6 +10,7 @@ fn test_exec_no_arguments() {
         name: "exec".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -30,6 +31,7 @@ fn test_exec_builtin_error() {
             Argument::Literal("/tmp".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -50,6 +52,7 @@ fn test_exec_nonexistent_command() {
             Argument::Literal("nonexistent_command_xyz12345".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -70,6 +73,7 @@ fn test_exec_absolute_path_not_found() {
             Argument::Literal("/nonexistent/path/to/command".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -88,6 +92,7 @@ fn test_exec_echo_builtin_error() {
             Argument::Literal("hello".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -106,6 +111,7 @@ fn test_exec_true_builtin_error() {
             Argument::Literal("true".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -124,6 +130,7 @@ fn test_exec_false_builtin_error() {
             Argument::Literal("false".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);

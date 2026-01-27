@@ -11,6 +11,7 @@ fn test_kill_no_arguments() {
         name: "kill".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -30,6 +31,7 @@ fn test_kill_invalid_pid() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("abc".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -49,6 +51,7 @@ fn test_kill_zero_pid() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("0".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -69,6 +72,7 @@ fn test_kill_negative_pid() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("-1".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -93,6 +97,7 @@ fn test_kill_signal_zero_self() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -112,6 +117,7 @@ fn test_kill_nonexistent_pid() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("999999".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -136,6 +142,7 @@ fn test_kill_with_signal_name_term() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     // We can't actually test TERM because it would kill the test process
@@ -147,6 +154,7 @@ fn test_kill_with_signal_name_term() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -167,6 +175,7 @@ fn test_kill_with_signal_name_int() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -187,6 +196,7 @@ fn test_kill_with_numeric_signal() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -211,6 +221,7 @@ fn test_kill_multiple_pids() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -234,6 +245,7 @@ fn test_kill_invalid_signal_name() {
             Argument::Literal(my_pid.to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -253,6 +265,7 @@ fn test_kill_signal_only_no_pid() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("-TERM".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -278,6 +291,7 @@ fn test_kill_partial_failure() {
             Argument::Literal("999999".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -297,6 +311,7 @@ fn test_kill_default_signal_is_term() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("999999".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();
@@ -316,6 +331,7 @@ fn test_kill_not_supported_on_windows() {
         name: "kill".to_string(),
         args: vec![Argument::Literal("123".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![stmt]).unwrap();

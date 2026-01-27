@@ -26,12 +26,17 @@ pub fn builtin_jobs(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         }
     }
 
-    // Get all jobs
-    let jobs = runtime.job_manager().list_jobs();
+    // Get all jobs sorted by ID
+    let mut jobs = runtime.job_manager().list_jobs();
+    jobs.sort_by_key(|j| j.id);
 
     if jobs.is_empty() {
         return Ok(ExecutionResult::success(String::new()));
     }
+
+    // Determine current and previous job for +/- indicators
+    let current_id = runtime.job_manager().get_current_job().map(|j| j.id);
+    let previous_id = runtime.job_manager().get_previous_job().map(|j| j.id);
 
     for job in jobs {
         // Filter by status if requested
@@ -42,21 +47,41 @@ pub fn builtin_jobs(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
             continue;
         }
 
+        // POSIX +/- indicators
+        let indicator = if Some(job.id) == current_id {
+            "+"
+        } else if Some(job.id) == previous_id {
+            "-"
+        } else {
+            " "
+        };
+
+        // Running jobs show trailing &
+        let cmd_suffix = if job.status == JobStatus::Running {
+            " &"
+        } else {
+            ""
+        };
+
         // Format output
         if show_pids {
             output.push_str(&format!(
-                "[{}] {} {}\t{}\n",
+                "[{}]{}  {} {}\t{}{}\n",
                 job.id,
-                job.status.as_str(),
+                indicator,
                 job.pid,
-                job.command
+                job.status.as_str(),
+                job.command,
+                cmd_suffix,
             ));
         } else {
             output.push_str(&format!(
-                "[{}] {}\t{}\n",
+                "[{}]{}  {}\t{}{}\n",
                 job.id,
+                indicator,
                 job.status.as_str(),
-                job.command
+                job.command,
+                cmd_suffix,
             ));
         }
     }
@@ -66,7 +91,7 @@ pub fn builtin_jobs(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
 
 /// Bring a job to foreground
 pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
-    use nix::sys::wait::{waitpid, WaitPidFlag};
+    use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
     use nix::unistd::Pid;
 
     // Update job statuses
@@ -86,6 +111,14 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
 
     let job_id = job.id;
     let pid = job.pid;
+    let pgid = Pid::from_raw(job.pgid as i32);
+
+    // Give the job's process group the terminal
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        unsafe { libc::tcsetpgrp(std::io::stdin().as_raw_fd(), pgid.as_raw()); }
+    }
 
     // If the job is stopped, continue it
     if job.status == JobStatus::Stopped {
@@ -99,23 +132,26 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
     runtime.job_manager().remove_job(job_id);
 
     // Wait for the process to complete in foreground
-    let pid = Pid::from_raw(pid as i32);
+    let pid_nix = Pid::from_raw(pid as i32);
 
     // Print the command being foregrounded
     eprintln!("{}", job.command);
 
-    match waitpid(pid, Some(WaitPidFlag::WUNTRACED)) {
+    let result = match waitpid(pid_nix, Some(WaitPidFlag::WUNTRACED)) {
         Ok(status) => {
-            use nix::sys::wait::WaitStatus;
             let exit_code = match status {
                 WaitStatus::Exited(_, code) => code,
-                WaitStatus::Signaled(_, _, _) => 128 + 15, // SIGTERM
-                WaitStatus::Stopped(_, _) => {
-                    // Job was stopped again, add it back
+                WaitStatus::Signaled(_, sig, _) => 128 + sig as i32,
+                WaitStatus::Stopped(_, sig) => {
+                    // Job was stopped again (Ctrl+Z), add it back
+                    let new_id = runtime
+                        .job_manager()
+                        .add_job(pid, job.command.clone());
                     runtime
                         .job_manager()
-                        .add_job(pid.as_raw() as u32, job.command.clone());
-                    1
+                        .set_job_status(new_id, JobStatus::Stopped);
+                    eprintln!("\n[{}]+  Stopped\t{}", new_id, job.command);
+                    128 + sig as i32
                 }
                 _ => 0,
             };
@@ -127,7 +163,18 @@ pub fn builtin_fg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
             })
         }
         Err(e) => Err(anyhow!("fg: failed to wait for job: {}", e)),
+    };
+
+    // Restore the shell's terminal control
+    #[cfg(unix)]
+    {
+        use nix::unistd::getpgrp;
+        use std::os::unix::io::AsRawFd;
+        let shell_pgid = getpgrp();
+        unsafe { libc::tcsetpgrp(std::io::stdin().as_raw_fd(), shell_pgid.as_raw()); }
     }
+
+    result
 }
 
 /// Continue a stopped job in background
@@ -159,7 +206,7 @@ pub fn builtin_bg(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
         .map_err(|e: String| anyhow!(e))?;
 
     Ok(ExecutionResult::success(format!(
-        "[{}] {}\n",
+        "[{}]+  {} &\n",
         job.id, job.command
     )))
 }
@@ -186,7 +233,6 @@ mod tests {
     #[test]
     fn test_jobs_with_job() {
         let mut runtime = Runtime::new();
-        // Add a fake job
         runtime
             .job_manager()
             .add_job(12345, "sleep 100".to_string());
@@ -205,5 +251,42 @@ mod tests {
 
         let result = builtin_jobs(&["-l".to_string()], &mut runtime).unwrap();
         assert!(result.stdout().contains("12345"));
+    }
+
+    #[test]
+    fn test_jobs_current_indicator() {
+        let mut runtime = Runtime::new();
+        runtime
+            .job_manager()
+            .add_job(12345, "sleep 100".to_string());
+        runtime
+            .job_manager()
+            .add_job(12346, "sleep 200".to_string());
+
+        let result = builtin_jobs(&[], &mut runtime).unwrap();
+        let out = result.stdout();
+        // Most recent job (id=2) should have + indicator
+        assert!(out.contains("[2]+"));
+        // Previous job (id=1) should have - indicator
+        assert!(out.contains("[1]-"));
+    }
+
+    #[test]
+    fn test_jobs_running_suffix() {
+        let mut runtime = Runtime::new();
+        // Spawn a real long-lived process so update_all_jobs sees it as Running
+        use std::process::Command as StdCommand;
+        let child = StdCommand::new("sleep").arg("100").spawn().unwrap();
+        let pid = child.id();
+        runtime.job_manager().add_job(pid, "sleep 100".to_string());
+
+        let result = builtin_jobs(&[], &mut runtime).unwrap();
+        // Running jobs should show & suffix
+        assert!(result.stdout().contains(" &"), "Output was: {}", result.stdout());
+
+        // Clean up the spawned process
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
     }
 }

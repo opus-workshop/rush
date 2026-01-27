@@ -14,6 +14,7 @@ fn test_simple_function_call_no_params() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("hello".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -26,6 +27,7 @@ fn test_simple_function_call_no_params() {
         name: "greet".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     // Should return "hello\n" from echo
@@ -50,6 +52,7 @@ fn test_function_with_parameters() {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("$message".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -61,6 +64,7 @@ fn test_function_with_parameters() {
         name: "say".to_string(),
         args: vec![Argument::Literal("world".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("world"));
@@ -91,6 +95,7 @@ fn test_function_with_multiple_parameters() {
                     Argument::Variable("$second".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -105,6 +110,7 @@ fn test_function_with_multiple_parameters() {
             Argument::Literal("world".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("hello"));
@@ -131,6 +137,7 @@ fn test_recursive_factorial() {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("$n".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // This is a simplified test - a real factorial would need more complex logic
         ],
@@ -143,6 +150,7 @@ fn test_recursive_factorial() {
         name: "countdown".to_string(),
         args: vec![Argument::Literal("5".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("5"));
@@ -161,6 +169,7 @@ fn test_function_calling_another_function() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("helper called".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -174,11 +183,13 @@ fn test_function_calling_another_function() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("main called".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "helper".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -191,6 +202,7 @@ fn test_function_calling_another_function() {
         name: "main".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("main called"));
@@ -221,6 +233,7 @@ fn test_scope_isolation_parameters_shadow_variables() {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("$x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -232,6 +245,7 @@ fn test_scope_isolation_parameters_shadow_variables() {
         name: "test_scope".to_string(),
         args: vec![Argument::Literal("local".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("local"));
@@ -261,6 +275,7 @@ fn test_local_variables_dont_leak() {
         name: "set_local".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     // Try to access the local variable - should not exist
@@ -281,6 +296,7 @@ fn test_recursion_depth_limit() {
                 name: "infinite".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -292,6 +308,7 @@ fn test_recursion_depth_limit() {
         name: "infinite".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     }));
 
     assert!(result.is_err());
@@ -312,6 +329,7 @@ fn test_function_return_value() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("42".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -323,6 +341,7 @@ fn test_function_return_value() {
         name: "get_value".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert!(result.stdout().contains("42"));
@@ -342,16 +361,19 @@ fn test_function_stdout_capture() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("line1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("line2".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("line3".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -363,6 +385,7 @@ fn test_function_stdout_capture() {
         name: "multi_output".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     // Note: Each echo only captures its own output, not accumulated
@@ -387,6 +410,7 @@ fn test_return_with_exit_code_42() {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("42".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -398,6 +422,7 @@ fn test_return_with_exit_code_42() {
         name: "return_42".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 42);
@@ -416,6 +441,7 @@ fn test_return_with_no_argument_defaults_to_zero() {
                 name: "return".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -427,6 +453,7 @@ fn test_return_with_no_argument_defaults_to_zero() {
         name: "return_default".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -445,16 +472,19 @@ fn test_return_early_from_function() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("before return".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("5".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("after return".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -466,6 +496,7 @@ fn test_return_early_from_function() {
         name: "early_return".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     // Should return early with exit code 5
@@ -487,6 +518,7 @@ fn test_return_with_various_exit_codes() {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("0".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -496,6 +528,7 @@ fn test_return_with_various_exit_codes() {
         name: "return_0".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     assert_eq!(result.exit_code, 0);
 
@@ -508,6 +541,7 @@ fn test_return_with_various_exit_codes() {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -517,6 +551,7 @@ fn test_return_with_various_exit_codes() {
         name: "return_1".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     assert_eq!(result.exit_code, 1);
 
@@ -529,6 +564,7 @@ fn test_return_with_various_exit_codes() {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("255".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -538,6 +574,7 @@ fn test_return_with_various_exit_codes() {
         name: "return_255".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     assert_eq!(result.exit_code, 255);
 }
@@ -555,6 +592,7 @@ fn test_return_in_nested_function_calls() {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("10".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             })
         ],
     };
@@ -568,11 +606,13 @@ fn test_return_in_nested_function_calls() {
                 name: "inner".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("20".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -585,6 +625,7 @@ fn test_return_in_nested_function_calls() {
         name: "outer".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 20);
@@ -603,11 +644,13 @@ fn test_return_preserves_function_output() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("output".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("7".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -619,6 +662,7 @@ fn test_return_preserves_function_output() {
         name: "echo_and_return".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     // Should have exit code 7
@@ -644,11 +688,13 @@ fn test_return_with_conditional_logic() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("checking condition".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "return".to_string(),
                 args: vec![Argument::Literal("99".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -660,6 +706,7 @@ fn test_return_with_conditional_logic() {
         name: "conditional_return".to_string(),
         args: vec![Argument::Literal("yes".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 99);
@@ -687,6 +734,7 @@ fn test_shift_basic_single_parameter() {
         name: "shift".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     
     assert_eq!(result.exit_code, 0);
@@ -713,6 +761,7 @@ fn test_shift_multiple_parameters() {
         name: "shift".to_string(),
         args: vec![Argument::Literal("2".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     
     assert_eq!(result.exit_code, 0);
@@ -736,18 +785,21 @@ fn test_shift_in_function_with_args() {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Shift
             Statement::Command(Command {
                 name: "shift".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Echo new first arg (was $2, now $1)
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -763,6 +815,7 @@ fn test_shift_in_function_with_args() {
             Argument::Literal("third".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     
     assert_eq!(result.exit_code, 0);
@@ -784,30 +837,35 @@ fn test_shift_multiple_times_in_function() {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Shift
             Statement::Command(Command {
                 name: "shift".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Echo $1 (was $2)
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Shift again
             Statement::Command(Command {
                 name: "shift".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             // Echo $1 (was $3)
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("1".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -823,6 +881,7 @@ fn test_shift_multiple_times_in_function() {
             Argument::Literal("gamma".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     
     assert_eq!(result.exit_code, 0);
@@ -843,6 +902,7 @@ fn test_shift_error_when_no_params() {
         name: "shift".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     }));
     
     assert!(result.is_err());
@@ -862,6 +922,7 @@ fn test_shift_error_when_count_exceeds_params() {
         name: "shift".to_string(),
         args: vec![Argument::Literal("3".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     }));
     
     assert!(result.is_err());
@@ -882,6 +943,7 @@ fn test_shift_preserves_dollar_at_and_star() {
         name: "shift".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
     
     assert_eq!(result.exit_code, 0);
@@ -910,11 +972,13 @@ fn test_local_basic_variable() {
                 name: "local".to_string(),
                 args: vec![Argument::Literal("x=5".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -926,6 +990,7 @@ fn test_local_basic_variable() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -948,11 +1013,13 @@ fn test_local_shadows_global() {
                 name: "local".to_string(),
                 args: vec![Argument::Literal("x=5".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -964,6 +1031,7 @@ fn test_local_shadows_global() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -982,6 +1050,7 @@ fn test_local_error_outside_function() {
         name: "local".to_string(),
         args: vec![Argument::Literal("x=5".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     }));
 
     assert!(result.is_err());
@@ -1005,6 +1074,7 @@ fn test_local_multiple_variables() {
                     Argument::Literal("c=3".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
@@ -1014,6 +1084,7 @@ fn test_local_multiple_variables() {
                     Argument::Variable("c".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1025,6 +1096,7 @@ fn test_local_multiple_variables() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -1044,11 +1116,13 @@ fn test_local_without_assignment() {
                 name: "local".to_string(),
                 args: vec![Argument::Literal("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("empty:".to_string()), Argument::Variable("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1060,6 +1134,7 @@ fn test_local_without_assignment() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -1082,11 +1157,13 @@ fn test_local_cleanup_on_function_exit() {
                     Argument::Literal("temp2=value2".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("done".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1098,6 +1175,7 @@ fn test_local_cleanup_on_function_exit() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -1120,11 +1198,13 @@ fn test_local_in_nested_functions() {
                 name: "local".to_string(),
                 args: vec![Argument::Literal("x=inner".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1138,16 +1218,19 @@ fn test_local_in_nested_functions() {
                 name: "local".to_string(),
                 args: vec![Argument::Literal("x=outer".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "inner".to_string(),
                 args: vec![],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
                 args: vec![Argument::Variable("x".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1160,6 +1243,7 @@ fn test_local_in_nested_functions() {
         name: "outer".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
@@ -1186,6 +1270,7 @@ fn test_local_mixed_assigned_and_unassigned() {
                     Argument::Literal("c=3".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
             Statement::Command(Command {
                 name: "echo".to_string(),
@@ -1197,6 +1282,7 @@ fn test_local_mixed_assigned_and_unassigned() {
                     Argument::Variable("c".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     };
@@ -1208,6 +1294,7 @@ fn test_local_mixed_assigned_and_unassigned() {
         name: "foo".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);

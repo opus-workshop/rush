@@ -13,6 +13,7 @@ fn test_command_basic_echo() {
             Argument::Literal("world".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -36,6 +37,7 @@ fn test_command_bypasses_function() {
                     Argument::Literal("FUNCTION ECHO".to_string()),
                 ],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     });
@@ -46,6 +48,7 @@ fn test_command_bypasses_function() {
         name: "echo".to_string(),
         args: vec![Argument::Literal("test".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
     let normal_result = executor.execute(vec![normal_call]).unwrap();
     assert_eq!(normal_result.stdout(), "FUNCTION ECHO\n");
@@ -58,6 +61,7 @@ fn test_command_bypasses_function() {
             Argument::Literal("test".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -77,6 +81,7 @@ fn test_command_v_flag_builtin() {
             Argument::Literal("echo".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -95,6 +100,7 @@ fn test_command_V_flag_builtin() {
             Argument::Literal("pwd".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -113,6 +119,7 @@ fn test_command_v_flag_external() {
             Argument::Literal("sh".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -133,6 +140,7 @@ fn test_command_V_flag_external() {
             Argument::Literal("sh".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -152,6 +160,7 @@ fn test_command_v_flag_not_found() {
             Argument::Literal("nonexistent_cmd_xyz".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -167,6 +176,7 @@ fn test_command_no_arguments() {
         name: "command".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -185,6 +195,7 @@ fn test_command_invalid_flag() {
             Argument::Literal("echo".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -203,6 +214,7 @@ fn test_command_combined_flags() {
             Argument::Literal("sh".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -223,6 +235,7 @@ fn test_command_double_dash() {
             Argument::Literal("test".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -238,6 +251,7 @@ fn test_command_pwd_builtin() {
         name: "command".to_string(),
         args: vec![Argument::Literal("pwd".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -253,6 +267,7 @@ fn test_command_true_builtin() {
         name: "command".to_string(),
         args: vec![Argument::Literal("true".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -267,6 +282,7 @@ fn test_command_false_builtin() {
         name: "command".to_string(),
         args: vec![Argument::Literal("false".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -281,6 +297,7 @@ fn test_command_nonexistent() {
         name: "command".to_string(),
         args: vec![Argument::Literal("nonexistent_cmd_xyz".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -301,6 +318,7 @@ fn test_command_with_function_shadowing_builtin() {
                 name: "echo".to_string(),
                 args: vec![Argument::Literal("/fake/path".to_string())],
                 redirects: vec![],
+                prefix_env: vec![],
             }),
         ],
     });
@@ -311,6 +329,7 @@ fn test_command_with_function_shadowing_builtin() {
         name: "pwd".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
     let normal_result = executor.execute(vec![normal_call]).unwrap();
     assert_eq!(normal_result.stdout(), "/fake/path\n");
@@ -320,6 +339,7 @@ fn test_command_with_function_shadowing_builtin() {
         name: "command".to_string(),
         args: vec![Argument::Literal("pwd".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -350,6 +370,7 @@ fn test_command_v_flag_with_function() {
             Argument::Literal("myfunc".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -370,6 +391,7 @@ fn test_command_p_flag_uses_default_path() {
             Argument::Literal("ls".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -392,6 +414,7 @@ fn test_command_multiple_args_to_builtin() {
             Argument::Literal("three".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();

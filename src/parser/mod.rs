@@ -85,7 +85,11 @@ impl Parser {
             Some(Token::Until) => self.parse_until_loop(),
             Some(Token::Match) => self.parse_match_expression(),
             Some(Token::Case) => self.parse_case_statement(),
-            Some(Token::LeftParen) => self.parse_subshell(),
+            Some(Token::LeftParen) => {
+                // Route through parse_command_or_pipeline so subshells
+                // can participate in pipelines: (echo hello) | (cat)
+                self.parse_command_or_pipeline()
+            }
             _ => {
                 // Check for POSIX function definition: NAME() { ... }
                 if self.is_posix_function_def() {

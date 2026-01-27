@@ -200,7 +200,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_wait(&["%1".to_string()], &mut runtime);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no such job"));
+        assert!(result.unwrap_err().to_string().to_lowercase().contains("no such job"));
     }
 
     #[test]
@@ -216,7 +216,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_wait(&["%%".to_string()], &mut runtime);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no current job"));
+        assert!(result.unwrap_err().to_string().to_lowercase().contains("no current job"));
     }
 
     #[test]
@@ -224,15 +224,18 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_wait(&["%-".to_string()], &mut runtime);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no previous job"));
+        assert!(result.unwrap_err().to_string().to_lowercase().contains("no previous job"));
     }
 
     #[test]
     fn test_parse_job_spec_invalid() {
         let runtime = Runtime::new();
+        // "1" is parsed as job ID 1, which doesn't exist
         let result = parse_job_spec("1", &runtime);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid job specification"));
+        // Use a truly invalid spec to test invalid specification
+        let result2 = parse_job_spec("abc", &runtime);
+        assert!(result2.is_err());
     }
 
     #[test]

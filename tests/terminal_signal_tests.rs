@@ -167,7 +167,7 @@ mod integration_tests {
     use std::io::Write;
     use std::process::{Command, Stdio};
     use std::thread;
-    use std::time::Duration;
+
     use tempfile::NamedTempFile;
 
     #[test]
@@ -240,7 +240,6 @@ mod integration_tests {
         // Run the script
         let output = Command::new("cargo")
             .args(&["run", "--", script_path])
-            .timeout(Duration::from_secs(5))
             .output()
             .expect("Failed to run script");
 

@@ -14,6 +14,7 @@ fn test_eval_basic_echo() {
             Argument::Literal("world".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -35,6 +36,7 @@ fn test_eval_variable_expansion() {
             Argument::Variable("msg".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -53,6 +55,7 @@ fn test_eval_command_substitution() {
             Argument::Literal("echo $(echo nested)".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -71,6 +74,7 @@ fn test_eval_multiple_statements() {
             Argument::Literal("echo first ; echo second".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -89,6 +93,7 @@ fn test_eval_exit_code_propagation() {
             Argument::Literal("false".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -106,6 +111,7 @@ fn test_eval_with_pipes() {
             Argument::Literal("echo hello | cat".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -124,6 +130,7 @@ fn test_eval_with_and_operator() {
             Argument::Literal("true && echo success".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -142,6 +149,7 @@ fn test_eval_with_or_operator() {
             Argument::Literal("false || echo fallback".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -158,6 +166,7 @@ fn test_eval_no_arguments() {
         name: "eval".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -177,6 +186,7 @@ fn test_eval_with_test_builtin() {
             Argument::Literal("test -n $VAR && echo yes".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -197,6 +207,7 @@ fn test_eval_concatenates_args() {
             Argument::Literal("world".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -218,6 +229,7 @@ fn test_eval_double_expansion() {
             Argument::Literal("echo $x $y".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -236,6 +248,7 @@ fn test_eval_with_pwd() {
             Argument::Literal("pwd".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();
@@ -255,6 +268,7 @@ fn test_eval_sequential_commands() {
             Argument::Literal("echo a ; echo b ; echo c".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![command]).unwrap();

@@ -267,3 +267,85 @@ fn test_subshell_error_isolation() {
 
     assert!(result.stdout().contains("continued"));
 }
+
+/// ACCEPTANCE CRITERIA: (exit 5); echo $?  →  outputs "5"
+/// `exit` in a subshell should only exit the subshell, not the entire process.
+/// The parent shell continues and $? reflects the subshell's exit code.
+#[test]
+fn test_exit_only_exits_subshell() {
+    let mut executor = Executor::new();
+
+    let tokens = Lexer::tokenize("(exit 5); echo $?").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+
+    // The parent should continue running and echo $? which should be 5
+    assert_eq!(result.stdout().trim(), "5");
+}
+
+/// ACCEPTANCE CRITERIA: echo test | (cat)  →  works
+/// Subshells should be usable as pipeline elements.
+#[test]
+fn test_subshell_in_pipeline_parses() {
+    // First verify parsing succeeds (previously returned error)
+    let tokens = Lexer::tokenize("echo test | (cat)").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse();
+    assert!(statements.is_ok(), "Parsing 'echo test | (cat)' should succeed");
+}
+
+/// Test (cd /tmp; pwd) outputs /tmp - subshell cd isolation
+#[test]
+fn test_subshell_cd_semicolon_pwd() {
+    let mut executor = Executor::new();
+
+    let tokens = Lexer::tokenize("(cd /tmp; pwd)").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+
+    assert!(result.stdout().trim().contains("tmp"),
+        "Expected /tmp in output, got: {}", result.stdout());
+    assert_eq!(result.exit_code, 0);
+}
+
+/// Test exit with no args in subshell (exit code 0)
+#[test]
+fn test_exit_no_args_in_subshell() {
+    let mut executor = Executor::new();
+
+    let tokens = Lexer::tokenize("(exit); echo $?").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.stdout().trim(), "0");
+}
+
+/// Test (exit 42) captures exit code without killing process
+#[test]
+fn test_subshell_exit_code_capture() {
+    let mut executor = Executor::new();
+
+    let tokens = Lexer::tokenize("(exit 42)").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+
+    assert_eq!(result.exit_code, 42);
+}
+
+/// Test subshell in pipeline - parsing creates PipelineElement::Subshell
+#[test]
+fn test_pipeline_with_subshell_at_end() {
+    // (echo hello) | (cat) should parse successfully
+    let tokens = Lexer::tokenize("(echo hello) | (cat)").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse();
+    assert!(statements.is_ok(), "Pipeline with subshells should parse: {:?}", statements.err());
+}

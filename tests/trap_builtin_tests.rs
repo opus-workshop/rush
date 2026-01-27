@@ -14,6 +14,7 @@ fn test_trap_basic_set_and_list() {
             Argument::Literal("EXIT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -28,6 +29,7 @@ fn test_trap_basic_set_and_list() {
         name: "trap".to_string(),
         args: vec![],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![list_cmd]).unwrap();
@@ -49,6 +51,7 @@ fn test_trap_set_multiple_signals() {
             Argument::Literal("HUP".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -81,6 +84,7 @@ fn test_trap_reset_to_default() {
             Argument::Literal("INT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     executor.execute(vec![set_cmd]).unwrap();
@@ -94,6 +98,7 @@ fn test_trap_reset_to_default() {
             Argument::Literal("INT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![reset_cmd]).unwrap();
@@ -115,6 +120,7 @@ fn test_trap_ignore_signal() {
             Argument::Literal("INT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -136,6 +142,7 @@ fn test_trap_list_signals() {
         name: "trap".to_string(),
         args: vec![Argument::Literal("-l".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -161,6 +168,7 @@ fn test_trap_with_signal_numbers() {
             Argument::Literal("2".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -185,6 +193,7 @@ fn test_trap_exit_special_signal() {
             Argument::Literal("EXIT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -209,6 +218,7 @@ fn test_trap_err_special_signal() {
             Argument::Literal("ERR".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -233,6 +243,7 @@ fn test_trap_invalid_signal() {
             Argument::Literal("INVALID".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -249,6 +260,7 @@ fn test_trap_single_arg_error() {
         name: "trap".to_string(),
         args: vec![Argument::Literal("echo test".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]);
@@ -268,6 +280,7 @@ fn test_trap_list_with_p_flag() {
             Argument::Literal("EXIT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
     executor.execute(vec![set_cmd]).unwrap();
 
@@ -276,6 +289,7 @@ fn test_trap_list_with_p_flag() {
         name: "trap".to_string(),
         args: vec![Argument::Literal("-p".to_string())],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![list_cmd]).unwrap();
@@ -296,6 +310,7 @@ fn test_trap_override_existing() {
             Argument::Literal("INT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
     executor.execute(vec![cmd1]).unwrap();
 
@@ -307,6 +322,7 @@ fn test_trap_override_existing() {
             Argument::Literal("INT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
     executor.execute(vec![cmd2]).unwrap();
 
@@ -329,6 +345,7 @@ fn test_trap_case_insensitive_signal_names() {
             Argument::Literal("int".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();
@@ -353,6 +370,7 @@ fn test_trap_with_sigprefix() {
             Argument::Literal("SIGINT".to_string()),
         ],
         redirects: vec![],
+        prefix_env: vec![],
     });
 
     let result = executor.execute(vec![cmd]).unwrap();

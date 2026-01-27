@@ -207,6 +207,14 @@ impl JobManager {
         }
     }
 
+    /// Set the status of a specific job
+    pub fn set_job_status(&self, job_id: usize, status: JobStatus) {
+        let mut jobs = self.jobs.lock().unwrap();
+        if let Some(job) = jobs.get_mut(&job_id) {
+            job.status = status;
+        }
+    }
+
     /// Remove completed/terminated jobs
     pub fn cleanup_jobs(&self) {
         let mut jobs = self.jobs.lock().unwrap();
