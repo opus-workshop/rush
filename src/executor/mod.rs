@@ -429,6 +429,9 @@ impl Executor {
         self.runtime.push_call(name.to_string())
             .map_err(|e| anyhow!(e))?;
 
+        // Track function entry in call stack for error reporting
+        self.call_stack.push(name.to_string());
+
         // Create a new scope for the function
         self.runtime.push_scope();
 
@@ -468,6 +471,7 @@ impl Executor {
                         self.runtime.pop_positional_scope();
                         self.runtime.pop_scope();
                         self.runtime.pop_call();
+                        self.call_stack.pop();
                         return Err(e);
                     }
                 }
@@ -483,6 +487,7 @@ impl Executor {
         // Clean up scope and call stack
         self.runtime.pop_scope();
         self.runtime.pop_call();
+        self.call_stack.pop();
 
         Ok(last_result)
     }
