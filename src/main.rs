@@ -42,12 +42,17 @@ fn main() -> Result<()> {
     // Fast path: detect -c flag early and skip all expensive initialization.
     // This avoids: process group setup, signal handler thread, daemon probe,
     // init_environment_variables, and whoami calls — saving ~5-8ms.
+    let mut enable_profile = false;
     {
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
+                "--profile" => {
+                    enable_profile = true;
+                    i += 1;
+                }
                 "-c" if i + 1 < args.len() => {
-                    fast_execute_c(&args[i + 1]);
+                    fast_execute_c(&args[i + 1], enable_profile);
                     // fast_execute_c never returns (calls process::exit)
                 }
                 "--benchmark" if i + 1 < args.len() => {
@@ -595,6 +600,7 @@ fn print_help() {
     println!("  rush --no-rc        Skip sourcing config files");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
+    println!("  rush --profile -c <command>  Profile execution timing");
     println!("  rush --benchmark <mode> Run benchmarks (quick, full, compare)");
     println!("  rush -h, --help     Show this help message");
     println!();
@@ -604,6 +610,7 @@ fn print_help() {
     println!("  rush -c \"echo hello\"");
     println!("  rush -c \"ls -la\"");
     println!("  rush -c \"cat file.txt | grep pattern\"");
+    println!("  rush --profile -c \"echo hello\"  # Profile with timing breakdown");
     println!("  rush --login        # Start login shell");
     println!("  rush --benchmark quick   # Run quick benchmark (5-second smoke test)");
     println!("  rush --benchmark full    # Run comprehensive benchmark suite");
@@ -642,7 +649,7 @@ fn execute_line(line: &str, executor: &mut Executor) -> Result<executor::Executi
 /// - NO init_environment_variables (saves 0.3-0.5ms from whoami, current_exe)
 ///
 /// This function never returns — it always calls std::process::exit.
-fn fast_execute_c(cmd: &str) -> ! {
+fn fast_execute_c(cmd: &str, enable_profile: bool) -> ! {
     // Reset SIGPIPE to default so piped commands work correctly.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
@@ -665,7 +672,7 @@ fn fast_execute_c(cmd: &str) -> ! {
         }
     };
 
-    let mut executor = Executor::new();
+    let mut executor = Executor::new().with_profiling(enable_profile);
 
     // Minimal runtime init: just PATH and PWD so commands can be found
     if let Ok(path) = env::var("PATH") {
@@ -691,6 +698,14 @@ fn fast_execute_c(cmd: &str) -> ! {
             if !result.stderr.is_empty() {
                 eprint!("{}", result.stderr);
             }
+
+            // Print profiling output if enabled
+            if enable_profile {
+                if let Some(ref profile_data) = executor.profile_data {
+                    eprint!("{}", executor::ProfileFormatter::format(profile_data));
+                }
+            }
+
             std::process::exit(result.exit_code);
         }
         Err(e) => {

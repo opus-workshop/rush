@@ -87,6 +87,15 @@ impl Executor {
         }
     }
 
+    /// Enable profiling for this executor
+    pub fn with_profiling(mut self, enable: bool) -> Self {
+        self.enable_profiling = enable;
+        if enable {
+            self.profile_data = Some(ProfileData::new());
+        }
+        self
+    }
+
     pub fn execute(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
         let mut accumulated_stdout = String::new();
         let mut accumulated_stderr = String::new();

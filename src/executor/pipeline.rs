@@ -224,6 +224,9 @@ fn execute_subshell_in_pipeline(
         signal_handler: None,
         show_progress: false,
         terminal_control: TerminalControl::new(),
+        function_stack: Vec::new(),
+        profile_data: None,
+        enable_profiling: false,
     };
 
     // Execute the subshell statements
@@ -369,6 +372,9 @@ fn resolve_argument(arg: &Argument, runtime: &Runtime) -> String {
                         signal_handler: None,
                         terminal_control: crate::terminal::TerminalControl::new(),
                         show_progress: false,
+                        profile_data: None,
+                        enable_profiling: false,
+                        function_stack: Vec::new(),
                     };
                     if let Ok(result) = sub_executor.execute(statements) {
                         return result.stdout().trim_end().to_string();
