@@ -385,7 +385,9 @@ Rush is under active development with a focus on POSIX compliance and performanc
 
 ## Contributing
 
-Contributions are welcome! Areas where help is appreciated:
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, testing guidelines, and how to submit pull requests.
+
+Areas where help is appreciated:
 
 - POSIX compliance edge cases
 - Performance optimizations
