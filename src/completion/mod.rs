@@ -1,6 +1,9 @@
 // Tab completion system
+mod engine;
+
 use crate::builtins::Builtins;
 use crate::runtime::Runtime;
+use engine::CompletionEngine;
 use ignore::WalkBuilder;
 use reedline::{Completer as ReedlineCompleter, Span, Suggestion};
 use std::collections::{HashMap, HashSet};
@@ -36,8 +39,8 @@ pub struct Completer {
     builtins: Arc<Builtins>,
     /// Reference to runtime for functions and variables
     runtime: Arc<RwLock<Runtime>>,
-    /// Cached PATH executables
-    path_cache: Arc<RwLock<Option<CacheEntry<Vec<String>>>>>,
+    /// Core completion engine with caching and fuzzy matching
+    engine: CompletionEngine,
     /// Cached git branches
     git_branches_cache: Arc<RwLock<Option<CacheEntry<Vec<String>>>>>,
     /// Cache TTL
@@ -77,7 +80,7 @@ impl Completer {
         Self {
             builtins,
             runtime,
-            path_cache: Arc::new(RwLock::new(None)),
+            engine: CompletionEngine::new(),
             git_branches_cache: Arc::new(RwLock::new(None)),
             cache_ttl: Duration::from_secs(300), // 5 minutes
             builtin_flags,
@@ -91,8 +94,12 @@ impl Completer {
         // Add builtin commands
         commands.extend(self.get_builtin_commands());
         
-        // Add PATH executables
-        commands.extend(self.get_path_executables());
+        // Add PATH executables (from engine cache)
+        let path_commands: Vec<String> = self.engine.complete_commands("", 500)
+            .into_iter()
+            .map(|(cmd, _)| cmd)
+            .collect();
+        commands.extend(path_commands);
         
         // Add user-defined functions
         commands.extend(self.get_user_functions());
@@ -118,65 +125,15 @@ impl Completer {
         ]
     }
 
-    /// Get PATH executables with caching
+    /// Get PATH executables using engine
     fn get_path_executables(&self) -> Vec<String> {
-        // Check cache first
-        {
-            let cache = self.path_cache.read().unwrap();
-            if let Some(entry) = cache.as_ref() {
-                if !entry.is_expired(self.cache_ttl) {
-                    return entry.data.clone();
-                }
-            }
-        }
-
-        // Cache miss or expired, scan PATH
-        let executables = self.scan_path();
-        
-        // Update cache
-        {
-            let mut cache = self.path_cache.write().unwrap();
-            *cache = Some(CacheEntry::new(executables.clone()));
-        }
-        
-        executables
+        self.engine.complete_commands("", 500)
+            .into_iter()
+            .map(|(cmd, _)| cmd)
+            .collect()
     }
 
-    /// Scan PATH directories for executables
-    fn scan_path(&self) -> Vec<String> {
-        let mut executables = HashSet::new();
-        
-        if let Ok(path_var) = env::var("PATH") {
-            for dir in path_var.split(':') {
-                let path = Path::new(dir);
-                if let Ok(entries) = fs::read_dir(path) {
-                    for entry in entries.flatten() {
-                        if let Ok(metadata) = entry.metadata() {
-                            #[cfg(unix)]
-                            {
-                                use std::os::unix::fs::PermissionsExt;
-                                if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
-                                    if let Some(name) = entry.file_name().to_str() {
-                                        executables.insert(name.to_string());
-                                    }
-                                }
-                            }
-                            #[cfg(not(unix))]
-                            {
-                                if metadata.is_file() {
-                                    if let Some(name) = entry.file_name().to_str() {
-                                        executables.insert(name.to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        executables.into_iter().collect()
-    }
+    /// Scan PATH directories for executables (now handled by engine)
 
     /// Get user-defined function names
     fn get_user_functions(&self) -> Vec<String> {
@@ -426,13 +383,17 @@ impl ReedlineCompleter for Completer {
         
         let candidates = match context {
             CompletionContext::Command => {
-                self.get_all_commands()
+                let all_commands = self.get_all_commands();
+                self.engine.fuzzy_filter(&all_commands, last_word, 50)
                     .into_iter()
-                    .filter(|cmd| cmd.starts_with(last_word))
+                    .map(|(cmd, _)| cmd)
                     .collect()
             }
             CompletionContext::Path => {
-                self.complete_path(last_word)
+                let paths = self.engine.complete_files(last_word, 50);
+                paths.into_iter()
+                    .map(|(path, _)| path)
+                    .collect()
             }
             CompletionContext::GitBranch => {
                 self.get_git_branches()

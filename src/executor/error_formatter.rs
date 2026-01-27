@@ -194,6 +194,27 @@ impl ErrorFormatter {
         output
     }
 
+    /// Format help text for an error
+    fn format_help(help_entry: &help_db::HelpEntry) -> String {
+        let mut output = String::new();
+        output.push_str(&format!(
+            "{}{}Help: {}{}",
+            ansi::BOLD,
+            ansi::BLUE,
+            help_entry.title,
+            ansi::RESET
+        ));
+        output.push_str(&format!("\n{}{}What to do:{}",
+            ansi::BOLD,
+            ansi::RESET,
+            ansi::DIM
+        ));
+        output.push('\n');
+        output.push_str(help_entry.fix);
+        output.push_str(ansi::RESET);
+        output
+    }
+
     /// Classify error type from error code
     fn classify_error(error_code: &str) -> ErrorType {
         match error_code {
@@ -381,5 +402,25 @@ mod tests {
         assert!(formatted.contains("setup"));
         assert!(formatted.contains("variable"));
         assert!(formatted.contains("suggestion"));
+    }
+
+    #[test]
+    fn test_format_error_with_help_text() {
+        let error = RushError::new("FILE_NOT_FOUND", "missing.txt: No such file or directory", 1);
+        let formatted = ErrorFormatter::format_error(&error);
+        assert!(formatted.contains("FILE_NOT_FOUND"));
+        assert!(formatted.contains("missing.txt: No such file or directory"));
+        assert!(formatted.contains("Help:"));
+        assert!(formatted.contains("File or directory not found"));
+    }
+
+    #[test]
+    fn test_format_error_without_help_text() {
+        let error = RushError::new("CUSTOM_ERROR", "Custom error message", 1);
+        let formatted = ErrorFormatter::format_error(&error);
+        assert!(formatted.contains("CUSTOM_ERROR"));
+        assert!(formatted.contains("Custom error message"));
+        // Should not contain help since CUSTOM_ERROR is not in the database
+        assert!(!formatted.contains("Help:"));
     }
 }

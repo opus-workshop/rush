@@ -654,7 +654,7 @@ fn execute_line(line: &str, executor: &mut Executor) -> Result<executor::Executi
 /// - NO init_environment_variables (saves 0.3-0.5ms from whoami, current_exe)
 ///
 /// This function never returns — it always calls std::process::exit.
-fn fast_execute_c(cmd: &str, enable_profile: bool) -> ! {
+fn fast_execute_c(cmd: &str, enable_profile: bool, profile_json: bool) -> ! {
     // Reset SIGPIPE to default so piped commands work correctly.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
@@ -707,7 +707,16 @@ fn fast_execute_c(cmd: &str, enable_profile: bool) -> ! {
             // Print profiling output if enabled
             if enable_profile {
                 if let Some(ref profile_data) = executor.profile_data {
-                    eprint!("{}", executor::ProfileFormatter::format(profile_data));
+                    if profile_json {
+                        // Output as JSON for tooling integration
+                        let json = executor::ProfileFormatter::format_json(profile_data);
+                        if let Ok(json_str) = serde_json::to_string_pretty(&json) {
+                            eprintln!("{}", json_str);
+                        }
+                    } else {
+                        // Output as human-readable table
+                        eprint!("{}", executor::ProfileFormatter::format(profile_data));
+                    }
                 }
             }
 

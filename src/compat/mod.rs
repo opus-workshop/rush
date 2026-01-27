@@ -1,10 +1,10 @@
 //! Bash script compatibility analyzer
 //!
 //! This module provides tools to analyze bash scripts and identify syntax features,
-//! categorizing them as POSIX-compliant, bash-specific, or zsh-specific.
+//! categorizing them by support status in Rush.
 
-pub mod analyzer;
 pub mod features;
+pub mod database;
 
-pub use analyzer::{ScriptAnalyzer, AnalysisResult, FeatureOccurrence};
-pub use features::{BashFeature, FeatureCategory};
+pub use features::{Feature, FeatureCategory, SupportStatus};
+pub use database::{CompatDatabase, CompatSummary, MigrationStep};

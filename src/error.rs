@@ -3,6 +3,8 @@
 //! This module provides typed error representations that can be formatted
 //! as either human-readable text or structured JSON.
 
+pub mod help_db;
+
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -164,6 +166,24 @@ impl RushError {
     pub fn to_text(&self) -> String {
         self.message.clone()
     }
+
+    /// Get help text for this error code, if available
+    pub fn get_help(&self) -> Option<&'static help_db::HelpEntry> {
+        help_db::get_help(&self.error_code)
+    }
+
+    /// Format error with help text appended
+    pub fn with_help(&self) -> String {
+        let mut output = self.to_text();
+        if let Some(help) = self.get_help() {
+            output.push_str("\n\n");
+            output.push_str("Help: ");
+            output.push_str(help.title);
+            output.push('\n');
+            output.push_str(help.fix);
+        }
+        output
+    }
 }
 
 /// Check if errors should be output in JSON format
@@ -313,5 +333,38 @@ mod tests {
             .with_command_context(cmd_ctx);
         assert!(err.location.is_some());
         assert!(err.command_context.is_some());
+    }
+
+    #[test]
+    fn test_get_help_for_error() {
+        let err = RushError::new("FILE_NOT_FOUND", "missing.txt: No such file", 1);
+        let help = err.get_help();
+        assert!(help.is_some());
+        let entry = help.unwrap();
+        assert_eq!(entry.title, "File or directory not found");
+    }
+
+    #[test]
+    fn test_get_help_for_nonexistent_error() {
+        let err = RushError::new("CUSTOM_ERROR", "Custom message", 1);
+        let help = err.get_help();
+        assert!(help.is_none());
+    }
+
+    #[test]
+    fn test_with_help_formatting() {
+        let err = RushError::new("FILE_NOT_FOUND", "missing.txt: No such file", 1);
+        let formatted = err.with_help();
+        assert!(formatted.contains("missing.txt: No such file"));
+        assert!(formatted.contains("Help:"));
+        assert!(formatted.contains("File or directory not found"));
+    }
+
+    #[test]
+    fn test_with_help_no_help_available() {
+        let err = RushError::new("UNKNOWN_ERROR", "Something went wrong", 1);
+        let formatted = err.with_help();
+        // Should still contain the error message, just without help
+        assert!(formatted.contains("Something went wrong"));
     }
 }

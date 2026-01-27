@@ -3,12 +3,14 @@ pub mod value;
 pub mod error_formatter;
 pub mod profile;
 pub mod suggestions;
+pub mod stack;
 
 // Re-export Value type for convenience
 pub use value::Value;
 pub use error_formatter::ErrorFormatter;
 pub use profile::{ProfileData, ProfileFormatter, ExecutionStage};
 pub use suggestions::{SuggestionEngine, SuggestionConfig};
+pub use stack::CallStack;
 
 use crate::arithmetic;
 use crate::builtins::Builtins;
@@ -31,9 +33,10 @@ pub struct Executor {
     runtime: Runtime,
     builtins: Builtins,
     corrector: Corrector,
+    suggestion_engine: SuggestionEngine,
     signal_handler: Option<SignalHandler>,
     terminal_control: TerminalControl,
-    function_stack: Vec<String>,
+    call_stack: CallStack,
     show_progress: bool,
     pub profile_data: Option<ProfileData>,
     pub enable_profiling: bool,
@@ -51,10 +54,11 @@ impl Executor {
             runtime: Runtime::new(),
             builtins: Builtins::new(),
             corrector: Corrector::new(),
+            suggestion_engine: SuggestionEngine::new(),
             signal_handler: None,
-            show_progress: true, // Default to true for CLI usage
             terminal_control: TerminalControl::new(),
-            function_stack: Vec::new(),
+            show_progress: true, // Default to true for CLI usage
+            call_stack: CallStack::new(),
             profile_data: None,
             enable_profiling: false,
         }
@@ -96,6 +100,16 @@ impl Executor {
             self.profile_data = Some(ProfileData::new());
         }
         self
+    }
+
+    /// Get mutable access to the suggestion engine
+    pub fn suggestion_engine_mut(&mut self) -> &mut SuggestionEngine {
+        &mut self.suggestion_engine
+    }
+
+    /// Get immutable access to the suggestion engine
+    pub fn suggestion_engine(&self) -> &SuggestionEngine {
+        &self.suggestion_engine
     }
 
     pub fn execute(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
@@ -660,33 +674,22 @@ impl Executor {
             .map_err(|e| {
                 // If command not found, provide suggestions
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    // Use context-aware suggestions with history
-                    let suggestions = self.corrector.suggest_command_with_context(
+                    // Use suggestion engine for context-aware suggestions
+                    let suggestions = self.suggestion_engine.suggest_command(
                         &command_name,
                         &builtin_names,
                         &alias_names,
                         &history_commands,
                         &current_dir,
                     );
-                    
+
                     let mut error_msg = format!("Command not found: '{}'", command_name);
-                    
+
                     if !suggestions.is_empty() {
-                        error_msg.push_str("\n\nDid you mean?");
-                        for suggestion in suggestions.iter().take(3) {
-                            let similarity = crate::correction::Corrector::similarity_percent(
-                                suggestion.score,
-                                &suggestion.text
-                            );
-                            error_msg.push_str(&format!(
-                                "\n  {} ({}%, {})",
-                                suggestion.text,
-                                similarity,
-                                suggestion.kind.label()
-                            ));
-                        }
+                        error_msg.push_str("\n\n");
+                        error_msg.push_str(&self.suggestion_engine.format_suggestions(&suggestions));
                     }
-                    
+
                     anyhow!(error_msg)
                 } else {
                     anyhow!("Failed to execute '{}': {}", command_name, e)
@@ -1018,19 +1021,8 @@ impl Executor {
                                 let mut error_msg = format!("Command not found: '{}'", command.name);
                                 
                                 if !suggestions.is_empty() {
-                                    error_msg.push_str("\n\nDid you mean?");
-                                    for suggestion in suggestions.iter().take(3) {
-                                        let similarity = crate::correction::Corrector::similarity_percent(
-                                            suggestion.score,
-                                            &suggestion.text
-                                        );
-                                        error_msg.push_str(&format!(
-                                            "\n  {} ({}%, {})",
-                                            suggestion.text,
-                                            similarity,
-                                            suggestion.kind.label()
-                                        ));
-                                    }
+                                    error_msg.push_str("\n\n");
+                                    error_msg.push_str(&corrector.format_suggestions(&suggestions));
                                 }
                                 
                                 Err(anyhow!(error_msg))
@@ -1552,6 +1544,7 @@ impl Executor {
             runtime: child_runtime,
             builtins: self.builtins.clone(),
             corrector: self.corrector.clone(),
+            suggestion_engine: self.suggestion_engine.clone(),
             signal_handler: None, // Subshells don't need their own signal handlers
             show_progress: self.show_progress, // Inherit progress setting from parent
             terminal_control: self.terminal_control.clone(),
@@ -2127,17 +2120,18 @@ impl Executor {
             runtime: self.runtime.clone(),
             builtins: self.builtins.clone(),
             corrector: self.corrector.clone(),
+            suggestion_engine: self.suggestion_engine.clone(),
             signal_handler: None,
             show_progress: false, // Don't show progress for substitutions
             terminal_control: self.terminal_control.clone(),
-            function_stack: Vec::new(),
+            call_stack: CallStack::new(),
             profile_data: None,
             enable_profiling: false,
         };
-        
+
         // Execute the command and capture output
         let result = sub_executor.execute(statements)?;
-        
+
         // Return stdout with trailing newlines trimmed (bash behavior)
         Ok(result.stdout().trim_end().to_string())
     }
@@ -2434,8 +2428,8 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
             };
             
             // Try to execute the command substitution
-            if let Ok(tokens) = Lexer::tokenize(command) {
-                let mut parser = Parser::new(tokens);
+            if let Ok(tokens) = crate::lexer::Lexer::tokenize(command) {
+                let mut parser = crate::parser::Parser::new(tokens);
                 if let Ok(statements) = parser.parse() {
                     let mut sub_executor = Executor {
                         runtime: runtime.clone(),
@@ -2828,7 +2822,7 @@ mod tests {
             "for i in 1 2; do for j in a b; do echo $i$j; done; done",
         );
         // echo $i$j produces "1 a" because they are separate args
-        assert_eq!(result.stdout(), "1 a\n1 b\n2 a\n2 b\n");
+        assert_eq!(result.stdout(), "1a\n1b\n2a\n2b\n");
     }
 
     #[test]
@@ -3029,7 +3023,7 @@ mod tests {
             &mut executor,
             "i=0; while test $i -lt 2; do j=0; while test $j -lt 2; do echo $i$j; j=$((j+1)); done; i=$((i+1)); done",
         );
-        assert_eq!(result.stdout(), "0 0\n0 1\n1 0\n1 1\n");
+        assert_eq!(result.stdout(), "00\n01\n10\n11\n");
     }
 
     // --- Until loop tests ---

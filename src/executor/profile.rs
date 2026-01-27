@@ -213,20 +213,33 @@ impl ProfileFormatter {
     }
 
     /// Format profile data as compact JSON
+    /// Includes all timing fields for tooling integration and jq compatibility
     pub fn format_json(data: &ProfileData) -> serde_json::Value {
         let mut stages = Vec::new();
 
         for timing in data.stages() {
+            let total_ms = timing.millis();
+            let avg_ms = timing.average().as_secs_f64() * 1000.0;
+            let total_us = timing.micros();
+            let avg_us = timing.average().as_micros() as u64;
+
             stages.push(serde_json::json!({
                 "stage": timing.stage.label(),
                 "count": timing.count,
-                "total_ms": timing.millis(),
-                "avg_ms": timing.average().as_secs_f64() * 1000.0,
+                "total_ms": total_ms,
+                "total_us": total_us,
+                "avg_ms": avg_ms,
+                "avg_us": avg_us,
             }));
         }
 
+        let total_elapsed = data.total_elapsed();
+        let total_ms = total_elapsed.as_secs_f64() * 1000.0;
+        let total_us = total_elapsed.as_micros() as u64;
+
         serde_json::json!({
-            "total_ms": data.total_elapsed().as_secs_f64() * 1000.0,
+            "total_ms": total_ms,
+            "total_us": total_us,
             "stages": stages,
         })
     }
@@ -370,5 +383,112 @@ mod tests {
     fn test_profile_data_default() {
         let data = ProfileData::default();
         assert_eq!(data.stages().len(), 0);
+    }
+
+    #[test]
+    fn test_profile_formatter_json_complete_fields() {
+        let mut data = ProfileData::new();
+        data.start_total();
+        data.record(ExecutionStage::Parse, Duration::from_millis(10));
+
+        let json = ProfileFormatter::format_json(&data);
+        
+        // Root level should have total_ms, total_us, and stages
+        assert!(json.get("total_ms").is_some());
+        assert!(json.get("total_us").is_some());
+        assert!(json.get("stages").is_some());
+        
+        let stages = json.get("stages").unwrap().as_array().unwrap();
+        assert!(!stages.is_empty());
+        
+        let stage = &stages[0];
+        // Each stage should have all timing fields for tooling compatibility
+        assert!(stage.get("stage").is_some());
+        assert!(stage.get("count").is_some());
+        assert!(stage.get("total_ms").is_some());
+        assert!(stage.get("total_us").is_some());
+        assert!(stage.get("avg_ms").is_some());
+        assert!(stage.get("avg_us").is_some());
+    }
+
+    #[test]
+    fn test_profile_formatter_json_jq_compatible() {
+        let mut data = ProfileData::new();
+        data.record(ExecutionStage::Parse, Duration::from_millis(10));
+
+        let json = ProfileFormatter::format_json(&data);
+        
+        // JSON should be serializable for jq and other tools
+        let json_str = serde_json::to_string(&json).expect("JSON serialization failed");
+        assert!(!json_str.is_empty());
+        
+        // Pretty print should also work
+        let pretty = serde_json::to_string_pretty(&json).expect("Pretty JSON failed");
+        assert!(!pretty.is_empty());
+    }
+
+    #[test]
+    fn test_profile_formatter_json_structure() {
+        let mut data = ProfileData::new();
+        data.start_total();
+        data.record(ExecutionStage::Parse, Duration::from_millis(10));
+        data.record(ExecutionStage::Parse, Duration::from_millis(5));
+        data.record(ExecutionStage::BuiltinExecution, Duration::from_millis(8));
+
+        let json = ProfileFormatter::format_json(&data);
+        
+        // Verify root object has required fields
+        assert!(json.get("total_ms").is_some());
+        assert!(json.get("total_us").is_some());
+        assert!(json.get("stages").is_some());
+        
+        // Verify stages is an array
+        let stages = json.get("stages").unwrap().as_array().unwrap();
+        assert_eq!(stages.len(), 2);
+        
+        // Verify each stage has required fields
+        for stage in stages {
+            assert!(stage.get("stage").is_some());
+            assert!(stage.get("count").is_some());
+            assert!(stage.get("total_ms").is_some());
+            assert!(stage.get("total_us").is_some());
+            assert!(stage.get("avg_ms").is_some());
+            assert!(stage.get("avg_us").is_some());
+        }
+    }
+
+    #[test]
+    fn test_profile_formatter_json_timing_values() {
+        let mut data = ProfileData::new();
+        data.record(ExecutionStage::Parse, Duration::from_millis(20));
+        
+        let json = ProfileFormatter::format_json(&data);
+        let stages = json.get("stages").unwrap().as_array().unwrap();
+        let parse_stage = &stages[0];
+        
+        // Verify millisecond values
+        let total_ms = parse_stage.get("total_ms").unwrap().as_f64().unwrap();
+        assert!((total_ms - 20.0).abs() < 0.1);
+        
+        // Verify microsecond values
+        let total_us = parse_stage.get("total_us").unwrap().as_u64().unwrap();
+        assert!(total_us >= 20000); // 20ms = 20000us
+        assert!(total_us < 21000);
+    }
+
+    #[test]
+    fn test_profile_formatter_json_serializable() {
+        let mut data = ProfileData::new();
+        data.record(ExecutionStage::Parse, Duration::from_millis(10));
+        
+        let json = ProfileFormatter::format_json(&data);
+        
+        // Ensure the JSON can be serialized to string
+        let result = serde_json::to_string(&json);
+        assert!(result.is_ok());
+        
+        // Ensure pretty-printed JSON is also valid
+        let pretty_result = serde_json::to_string_pretty(&json);
+        assert!(pretty_result.is_ok());
     }
 }

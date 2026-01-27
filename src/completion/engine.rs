@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::score::FuzzyScore;
 
 /// Cache entry with timestamp for expiration
 struct CacheEntry<T> {
