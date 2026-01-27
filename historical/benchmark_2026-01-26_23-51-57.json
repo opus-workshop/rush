@@ -1,0 +1,38 @@
+{
+  "mode": "quick",
+  "tests": [
+    {
+      "name": "startup",
+      "duration_ms": 0.173125,
+      "passed": true,
+      "error": null
+    },
+    {
+      "name": "echo",
+      "duration_ms": 0.024709000000000002,
+      "passed": true,
+      "error": null
+    },
+    {
+      "name": "ls",
+      "duration_ms": 2.3609999999999998,
+      "passed": true,
+      "error": null
+    },
+    {
+      "name": "pwd",
+      "duration_ms": 0.020832999999999997,
+      "passed": true,
+      "error": null
+    },
+    {
+      "name": "variable_set",
+      "duration_ms": 0.038292,
+      "passed": true,
+      "error": null
+    }
+  ],
+  "total_duration_ms": 2.626458,
+  "passed": 5,
+  "failed": 0
+}

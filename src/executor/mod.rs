@@ -1550,7 +1550,7 @@ impl Executor {
             signal_handler: None, // Subshells don't need their own signal handlers
             show_progress: self.show_progress, // Inherit progress setting from parent
             terminal_control: self.terminal_control.clone(),
-            function_stack: Vec::new(),
+            call_stack: CallStack::new(),
             profile_data: None,
             enable_profiling: false,
         };
@@ -2440,7 +2440,7 @@ fn resolve_argument_static(arg: &Argument, runtime: &Runtime) -> String {
                         signal_handler: None,
                         show_progress: false,
                         terminal_control: TerminalControl::new(),
-                        function_stack: Vec::new(),
+                        call_stack: CallStack::new(),
                         profile_data: None,
                         enable_profiling: false,
                     };
@@ -2528,7 +2528,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),
-                            function_stack: Vec::new(),
+                            call_stack: CallStack::new(),
                             profile_data: None,
                             enable_profiling: false,
                         };
@@ -2565,7 +2565,7 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
                             signal_handler: None,
                             show_progress: false,
                             terminal_control: TerminalControl::new(),
-                            function_stack: Vec::new(),
+                            call_stack: CallStack::new(),
                             profile_data: None,
                             enable_profiling: false,
                         };

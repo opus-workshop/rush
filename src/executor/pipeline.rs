@@ -221,10 +221,11 @@ fn execute_subshell_in_pipeline(
         runtime: child_runtime,
         builtins: builtins.clone(),
         corrector: Corrector::new(),
+        suggestion_engine: SuggestionEngine::new(),
         signal_handler: None,
         show_progress: false,
         terminal_control: TerminalControl::new(),
-        function_stack: Vec::new(),
+        call_stack: CallStack::new(),
         profile_data: None,
         enable_profiling: false,
     };
