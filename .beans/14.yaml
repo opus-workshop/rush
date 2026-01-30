@@ -1,0 +1,13 @@
+id: '14'
+title: Rust-Quality Error Messages
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.336568Z
+updated_at: 2026-01-30T18:49:24.336568Z
+description: "Implement Rust-quality error messages with context, suggestions, and visual indicators.\n\n## Problem\nShells have notoriously bad error messages. Rust sets the gold standard. Rush should match that quality to differentiate from bash/zsh.\n\n## Success Criteria\n- Error messages show context (line/column for scripts)\n- Visual indicators point to error location (^^^^^)\n- Suggestions for common mistakes (\"Did you mean...?\")\n- Help text for fixing errors\n- Color-coded severity (error, warning, info)\n- Multi-line errors with context\n- Stack traces for complex errors (pipelines, functions)\n- Friendly, educational tone\n\n## User Stories\n1. As a new user, I want clear error messages so I can fix mistakes quickly\n2. As a scripter, I want line numbers and context so I can debug scripts\n3. As a typo-prone user, I want suggestions so I don't have to look up syntax\n\n## Example Output\n```\nError: Unknown flag '--invalid-flag'\n  |\n3 | ls --invalid-flag /tmp\n  |    ^^^^^^^^^^^^^^\n  |\n  = help: Did you mean '--all' (-a)?\n  = help: Run 'ls --help' for available flags\n  \nError: Command not found: 'carg'\n  |\n  = help: Did you mean 'cargo'?\n  = note: Similar commands: cargo, cat, cd\n```\n\n## Technical Implementation\n- Create error types with context\n- Track source locations during parsing\n- Implement fuzzy matching for suggestions\n- Build error formatter with colors\n- Add help text database\n- Use `miette` or similar crate for beautiful errors\n\n## Deliverables\n- Error context tracking in parser\n- Rich error types\n- Error formatter with colors\n- Suggestion engine\n- Help text database\n- Examples in documentation"
+labels:
+- error-handling
+- feature
+- hn-feature
+- phase4
+- ux

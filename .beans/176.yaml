@@ -1,0 +1,67 @@
+id: '176'
+title: 'SCRIPT-003: return builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.451927Z
+updated_at: 2026-01-30T18:49:25.451927Z
+description: |-
+  As a shell function writer, I need the return builtin so I can exit functions with specific exit codes.
+
+  ## Priority: P0 - CRITICAL
+  Can't write useful functions without return.
+
+  ## Acceptance Criteria
+  - [ ] `return` exits current function with code 0
+  - [ ] `return N` exits with code N
+  - [ ] Only works inside functions (error otherwise)
+  - [ ] Also works in sourced scripts
+  - [ ] Exit code available in $?
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  check_file() {
+    if [ -f "$1" ]; then
+      return 0  # success
+    else
+      return 1  # failure
+    fi
+  }
+
+  if check_file "data.txt"; then
+    echo "File exists"
+  fi
+
+  # Early return
+  process() {
+    [ -z "$1" ] && return 1
+    echo "Processing $1"
+    return 0
+  }
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/mod.rs
+  - Needs function call stack tracking
+  - Throw special error/signal to unwind to function boundary
+  - Set exit code in runtime
+
+  ## Dependencies
+  - Requires function call stack in Runtime
+  - May need special ExecutionResult variant for Return
+
+  ## Testing
+  - Return from function
+  - Return with exit code
+  - Error when not in function
+  - Use in sourced scripts
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- critical
+- functions
+- p0
+- scripting

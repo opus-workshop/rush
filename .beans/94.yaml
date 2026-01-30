@@ -1,0 +1,47 @@
+id: '94'
+title: 'POSIX-005: Re-enable and test trap builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.778769Z
+updated_at: 2026-01-30T18:49:24.778769Z
+description: |-
+  Re-enable the `trap` builtin for catching signals and executing commands.
+
+  ## Context
+  The `trap` builtin exists at `src/builtins/trap.rs` but is commented out. Critical for signal handling and cleanup operations.
+
+  ## Acceptance Criteria
+  - Uncomment `trap` module in src/builtins/mod.rs (make public)
+  - Uncomment trap builtin registration
+  - Test basic trap: `trap 'echo caught' INT`, then send SIGINT
+  - Test trap EXIT (runs on shell exit)
+  - Test trap - SIGNAL (reset to default)
+  - Test trap '' SIGNAL (ignore signal)
+  - Test trap with no args (list current traps)
+  - Test trap with multiple signals: `trap 'echo bye' EXIT TERM HUP`
+  - Verify TrapSignal integration with executor
+  - Add integration tests for common signals (INT, TERM, HUP, EXIT)
+  - Update help text
+
+  ## POSIX Requirements
+  - Execute command when shell receives signal
+  - Supports signal names (INT, TERM) and numbers (2, 15)
+  - Special signal EXIT (runs on shell exit)
+  - `trap - SIGNAL` resets to default
+  - `trap '' SIGNAL` ignores signal
+  - `trap` with no args lists traps
+
+  ## Files to Modify
+  - src/builtins/mod.rs (uncomment, make public)
+  - src/builtins/trap.rs (verify implementation)
+  - src/runtime/mod.rs (verify trap handling)
+  - src/executor/mod.rs (verify TrapSignal integration)
+  - tests/signal_handling_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (re-enable, verify signal integration, add tests)
+labels:
+- builtin
+- critical
+- posix
+- signals

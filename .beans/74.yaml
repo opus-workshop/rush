@@ -1,0 +1,48 @@
+id: '74'
+title: 'POSIX-013: Implement readonly builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.651503Z
+updated_at: 2026-01-30T18:49:24.651503Z
+description: |-
+  Implement the `readonly` builtin for making variables immutable.
+
+  ## Context
+  The `readonly` builtin marks variables as read-only, preventing modification or unsetting.
+
+  ## Acceptance Criteria
+  - Create src/builtins/readonly.rs
+  - Implement readonly builtin
+  - Register in src/builtins/mod.rs
+  - Add readonly flag/tracking to Runtime variable storage
+  - Test `readonly VAR=value`: creates readonly variable
+  - Test `readonly VAR`: marks existing variable readonly
+  - Test modifying readonly variable (should error)
+  - Test unsetting readonly variable (should error)
+  - Test `readonly -p`: print all readonly variables
+  - Test readonly variables persist across function calls
+  - Add integration tests
+  - Update help text
+
+  ## POSIX Requirements
+  - Mark variables as read-only
+  - Can set value and mark readonly in one command
+  - Can mark existing variable readonly
+  - Attempting to modify or unset readonly variable is an error
+  - `-p` option prints readonly variables
+  - Exit code 0 on success, >0 on error
+
+  ## Files to Create/Modify
+  - src/builtins/readonly.rs (new file)
+  - src/builtins/mod.rs (register builtin)
+  - src/runtime/mod.rs (add readonly flag to variables)
+  - src/builtins/unset.rs (check readonly before unsetting)
+  - tests/readonly_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (implement readonly tracking, modify runtime, add tests)
+labels:
+- builtin
+- critical
+- posix
+- variables

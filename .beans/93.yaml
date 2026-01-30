@@ -1,0 +1,44 @@
+id: '93'
+title: 'POSIX-004: Re-enable and test local builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.772456Z
+updated_at: 2026-01-30T18:49:24.772456Z
+description: |-
+  Re-enable the `local` builtin for creating function-local variables.
+
+  ## Context
+  The `local` builtin exists at `src/builtins/local.rs` but is commented out. Essential for proper variable scoping in functions.
+
+  ## Acceptance Criteria
+  - Uncomment `local` module in src/builtins/mod.rs
+  - Uncomment local builtin registration
+  - Test basic local var: `fn foo() { local x=5; echo $x }` → 5
+  - Test local shadows global: `x=10; fn foo() { local x=5; echo $x }; foo` → 5, then `echo $x` → 10
+  - Test local only works in functions (should error outside functions)
+  - Test multiple variables: `local a=1 b=2 c=3`
+  - Test local without assignment: `local x` (declares but doesn't assign)
+  - Verify scope cleanup when function exits
+  - Add integration tests
+  - Update help text
+
+  ## POSIX Requirements (Note: `local` is not POSIX, but common in bash/zsh)
+  - Create variables local to function scope
+  - Shadow global variables without affecting them
+  - Variables disappear when function exits
+  - Error if called outside function
+
+  ## Files to Modify
+  - src/builtins/mod.rs (uncomment)
+  - src/builtins/local.rs (verify implementation)
+  - src/runtime/mod.rs (verify scope stack handling)
+  - tests/function_tests.rs (add tests)
+
+  ## Estimated Effort
+  35-45k tokens (re-enable, verify scoping, add tests)
+labels:
+- builtin
+- critical
+- functions
+- posix
+- scoping

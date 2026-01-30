@@ -1,0 +1,45 @@
+id: '18'
+title: Shell Foundation - Make Rush Actually Work
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.353326Z
+updated_at: 2026-01-30T18:49:24.353326Z
+description: |-
+  Fix fundamental lexer and parser issues preventing Rush from working as a real shell.
+
+  ## Problem
+  Rush smoke test shows 59% pass rate (71/120 tests). Core POSIX functionality is broken:
+  - Variable assignment `FOO=bar` doesn't work
+  - All control flow (if/while/for/case) fails with POSIX syntax
+  - Globs `*.rs` produce "Invalid token" errors
+  - Filenames with dots split incorrectly (`README.md` → `README` + `.` + `md`)
+  - Arithmetic `$((1+2))` doesn't work
+  - Functions don't work
+  - Here-documents don't work
+
+  ## Root Cause
+  The lexer was designed for a Rust-like language, not POSIX shell:
+  1. Dot (`.`) is a separate token, breaking filenames
+  2. `*` is not recognized as glob character
+  3. `~` is not recognized for home expansion
+  4. Identifiers can't contain dots
+  5. Parser expects `{...}` instead of `then...fi`
+  6. `VAR=value` parses `VAR` as a command
+
+  ## Success Criteria
+  - Smoke test passes **120/120 tests (100%)**
+  - Can run: `FOO=bar; echo $FOO`
+  - Can run: `for x in *.rs; do echo $x; done`
+  - Can run: `if [ -f README.md ]; then cat README.md; fi`
+  - Can run: `echo $((1+2))`
+  - Can use rush as daily driver shell
+
+  ## Test Command
+  ```bash
+  ./tests/smoke_test.sh
+  ```
+labels:
+- critical
+- foundation
+- lexer
+- parser

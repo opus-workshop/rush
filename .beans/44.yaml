@@ -1,0 +1,55 @@
+id: '44'
+title: 'STABILITY-010: Error Recovery'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.478985Z
+updated_at: 2026-01-30T18:49:24.478985Z
+description: |-
+  As a user, I need rush to recover from errors gracefully so that it doesn't crash and I don't lose my session.
+
+  ## Priority: P1 - HIGH
+  Critical for login shell stability.
+
+  ## Acceptance Criteria
+  - [ ] Parse errors don't crash shell
+  - [ ] Execution errors don't crash shell
+  - [ ] Returns to prompt after error
+  - [ ] Logs errors without exiting
+  - [ ] Panic recovery handler (last resort)
+  - [ ] State corruption recovery
+  - [ ] History saved on crash
+  - [ ] cargo test passes (all tests including recovery tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Technical Implementation
+  ```rust
+  fn run_interactive() -> Result<()> {
+      loop {
+          match std::panic::catch_unwind(|| {
+              // Execute line with panic protection
+          }) {
+              Ok(Ok(result)) => handle_success(result),
+              Ok(Err(e)) => handle_error(e),
+              Err(panic) => handle_panic(panic),
+          }
+      }
+  }
+  ```
+
+  ## Files to Modify
+  - src/main.rs - Add panic recovery
+  - src/executor/mod.rs - Better error handling
+  - src/parser/mod.rs - Graceful parse error handling
+
+  ## Testing
+  - Test parse errors don't crash
+  - Test execution errors don't crash
+  - Test panic recovery (if possible)
+
+  ## Estimated Effort: 1 day
+labels:
+- error-handling
+- p1
+- rush
+- stability

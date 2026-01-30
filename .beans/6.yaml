@@ -1,0 +1,60 @@
+id: '6'
+title: POSIX Compliance - Full Unix Shell Support
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.304400Z
+updated_at: 2026-01-30T18:49:24.304400Z
+description: |-
+  Implement POSIX shell compliance to make Rush a legitimate Unix shell that can run standard shell scripts.
+
+  ## Motivation
+  Rush aims to be an AI-native Unix shell. To call it "Unix", we need POSIX compliance:
+  - Run standard shell scripts without modification
+  - Support ~/.bashrc and ~/.profile scripts
+  - Enable git hooks, build scripts, and automation
+  - Provide a familiar environment for Unix users
+  - Maintain Rush's performance advantages while adding compatibility
+
+  ## Current Status
+  ~60% POSIX compliant:
+  ✅ Core execution model (pipes, redirects, subshells, jobs)
+  ✅ 26 builtins implemented
+  ❌ Missing 12+ required POSIX builtins
+  ❌ Incomplete I/O redirection (no arbitrary FDs, no here-docs)
+  ❌ Missing control flow (while, until, case)
+  ❌ Incomplete positional parameters
+
+  ## Success Criteria
+  - All required POSIX builtins implemented
+  - Positional parameters fully wired ($1-$9, $@, $*, $#, ${10}+)
+  - Special variables implemented ($$, $!, $-, $_)
+  - Here-documents working (<<EOF, <<-EOF)
+  - Control flow complete (while, until, case)
+  - Break and continue implemented
+  - Process groups and terminal control
+  - Arbitrary FD redirection (3>&1, etc.)
+  - IFS-based field splitting
+  - Proper quoting behavior verified
+  - POSIX test suite passing (target: 90%+)
+
+  ## Philosophy
+  **AI-Native Unix Shell** - Core POSIX + AI-native extensions:
+  - Implement POSIX where it makes sense (muscle memory, compatibility)
+  - Add modern conveniences (better errors, safety features)
+  - Skip legacy cruft that doesn't serve users
+  - Build AI-native tools that compose with Unix principles
+
+  ## Scope
+  This epic covers Priority 1 and Priority 2 from the POSIX audit:
+  - Priority 1: Core POSIX Compliance (Critical)
+  - Priority 2: Job Control & Signals (Important)
+
+  Priority 3 (Advanced I/O) and Priority 4 (Testing) will be follow-up epics.
+
+  See docs/POSIX_COMPLIANCE_AUDIT.md for detailed analysis.
+labels:
+- compliance
+- epic
+- posix
+- shell
+- unix

@@ -387,7 +387,7 @@ impl ReedlineCompleter for Completer {
                 self.engine.fuzzy_filter(&all_commands, last_word, 50)
                     .into_iter()
                     .map(|(cmd, _)| cmd)
-                    .collect()
+                    .collect::<Vec<_>>()
             }
             CompletionContext::Path => {
                 let paths = self.engine.complete_files(last_word, 50);

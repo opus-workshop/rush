@@ -1,0 +1,20 @@
+id: '104'
+title: 'Builtin Reference: File and Search Commands'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:24.847649Z
+updated_at: 2026-01-30T18:49:24.847649Z
+description: |-
+  Document file/search builtins in docs/BUILTINS.md.
+
+  ## Scope
+  - cat, ls, grep, find, mkdir - full reference
+  - Synopsis, description, options, examples
+  - Performance comparisons
+
+  ## Acceptance Criteria
+  - [ ] 5 builtins fully documented
+  - [ ] Performance notes included
+
+  ## Deliverable
+  docs/BUILTINS.md (file/search section)

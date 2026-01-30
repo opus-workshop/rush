@@ -1,0 +1,25 @@
+id: '128'
+title: Bash script syntax analyzer for compatibility checking
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.027048Z
+updated_at: 2026-01-30T18:49:25.027048Z
+description: |-
+  Parse and analyze bash scripts to identify syntax features used.
+
+  ## Scope
+  - Parse bash scripts and identify features used
+  - Categorize features: POSIX, bash-specific, zsh-specific
+  - Track line numbers for each feature occurrence
+  - Handle .bashrc, .bash_profile, .sh files
+
+  ## Acceptance Criteria
+  - [ ] Can parse standard bash scripts without crashing
+  - [ ] Identifies 30+ bash syntax features
+  - [ ] Reports line numbers for each occurrence
+  - [ ] Handles quoted strings and heredocs correctly
+
+  ## Files
+  - src/compat/mod.rs (new module)
+  - src/compat/analyzer.rs (syntax analysis)
+  - src/compat/features.rs (feature database)

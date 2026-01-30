@@ -1,0 +1,46 @@
+id: '90'
+title: 'POSIX-028: Audit and test quoting behavior'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.752844Z
+updated_at: 2026-01-30T18:49:24.752844Z
+description: |-
+  Comprehensive audit and testing of shell quoting and escaping behavior.
+
+  ## Context
+  Quoting is complex and critical. Need thorough testing to ensure POSIX compliance.
+
+  ## Acceptance Criteria
+  - Test single quotes (no expansion): 'literal $VAR' → literal $VAR
+  - Test double quotes (expansion): "expanded $VAR" → value
+  - Test escape in double quotes: "preserve \$VAR" → preserve $VAR
+  - Test backslash escapes: \\, \", \$, \`, \\n (depends on context)
+  - Test quote nesting: "outer 'inner' outer", 'outer "inner" outer'
+  - Test command substitution in quotes: "$(cmd)"
+  - Test glob expansion blocked by quotes: "*.txt" doesn't expand
+  - Test whitespace preservation: "a  b" keeps double space
+  - Test empty strings: "", '', ""
+  - Identify and fix any quoting bugs
+  - Add comprehensive integration tests
+  - Document quoting rules
+
+  ## POSIX Requirements
+  - Single quotes: preserve literal value of each character
+  - Double quotes: preserve literal value except $, `, \, and newline
+  - Backslash: escape next character (context-dependent)
+  - No quote nesting of same type
+
+  ## Files to Audit/Modify
+  - src/lexer.rs (verify quote handling)
+  - src/parser.rs (verify quote parsing)
+  - src/executor/mod.rs (verify expansion respects quotes)
+  - tests/quoting_tests.rs (comprehensive tests)
+
+  ## Estimated Effort
+  45-55k tokens (comprehensive testing, fix edge cases, document)
+labels:
+- important
+- parser
+- posix
+- quoting
+- testing

@@ -1,0 +1,35 @@
+id: '3'
+title: Rush Shell Stability - Login Shell Ready
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.292328Z
+updated_at: 2026-01-30T18:49:24.292328Z
+description: |-
+  Make Rush stable enough to be used as a default login shell on macOS/Linux.
+
+  ## Success Criteria
+  - ✅ All tests pass (including new stability tests)
+  - ✅ Can source standard shell configs (~/.profile, ~/.rushrc equivalents)
+  - ✅ Can run common system scripts without errors
+  - ✅ Handles signals gracefully (no orphaned processes)
+  - ✅ Works in both TTY and non-TTY modes
+  - ✅ Exit codes propagate correctly
+  - ✅ No crashes during normal operation
+  - ✅ Can survive and recover from parse errors
+  - ✅ Job control works (background jobs don't block)
+  - ✅ Used successfully as login shell for 1 week without issues
+
+  ## Timeline
+  3-4 weeks to production-ready:
+  - Week 1: Critical blockers (non-TTY, signals, redirection, subshells, exit codes)
+  - Week 2: Core features (variable expansion, wildcards, command substitution)
+  - Week 3: Job control and polish
+  - Week 4: Stability testing and integration tests
+
+  ## Reference
+  See docs/stability-roadmap.md for complete details.
+labels:
+- epic
+- login-shell
+- rush
+- stability

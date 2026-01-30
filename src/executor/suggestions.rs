@@ -27,7 +27,7 @@ impl Default for SuggestionConfig {
         Self {
             enabled: true,
             max_display: 3,
-            min_score: 30,
+            min_score: 50,
         }
     }
 }
@@ -288,6 +288,11 @@ mod tests {
         assert!(engine.is_likely_typo("ehco", &builtins));
 
         // "xyz" is not close to anything
+        let suggestions = engine.corrector().suggest_command("xyz", &builtins);
+        println!("Suggestions for 'xyz': {:?}", suggestions);
+        for suggestion in &suggestions {
+            println!("  {} (score: {})", suggestion.text, suggestion.score);
+        }
         assert!(!engine.is_likely_typo("xyz", &builtins));
     }
 

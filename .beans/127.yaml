@@ -1,0 +1,21 @@
+id: '127'
+title: Time builtin comparison mode vs bash/zsh
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:25.018996Z
+updated_at: 2026-01-30T18:49:25.018996Z
+description: |-
+  Optional comparison showing Rush vs bash/zsh speed.
+
+  ## Scope
+  - time --compare cmd runs in Rush and bash, shows speedup
+  - Optional (doesn't block basic functionality)
+  - Shows ratio like '237x faster'
+
+  ## Acceptance Criteria
+  - [ ] time --compare echo hello shows Rush vs bash times
+  - [ ] Speedup ratio displayed
+  - [ ] Works when bash is available
+
+  ## Files
+  - src/builtins/time.rs (add --compare flag)

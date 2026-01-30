@@ -1,0 +1,31 @@
+id: '21'
+title: 'US-003: Robust Pipeline Implementation'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.366420Z
+updated_at: 2026-01-30T18:49:24.366420Z
+description: |-
+  As a power user, I want complex multi-stage pipelines to work reliably so that I can compose commands like any Unix shell.
+
+  ## Acceptance Criteria
+  - [ ] Multi-stage pipes work: `cat file | grep pattern | sort | uniq -c`
+  - [ ] Proper error propagation through pipeline
+  - [ ] Pipeline exit code is last command's exit code
+  - [ ] SIGPIPE handling (broken pipe errors)
+  - [ ] Handles large data streams without blocking
+  - [ ] Works with builtins and external commands
+  - [ ] cargo test passes (all tests including new pipeline tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+  - [ ] Manual testing: complex pipelines with 5+ stages
+
+  ## Technical Notes
+  - Review and harden src/executor/pipeline.rs
+  - Add comprehensive pipeline tests
+  - Handle backpressure and buffering
+  - Test with large files and many pipeline stages
+labels:
+- '1.0'
+- backend
+- critical
+- rush

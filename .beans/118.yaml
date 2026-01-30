@@ -1,0 +1,7 @@
+id: '118'
+title: profile builtin command for interactive profiling
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.953497Z
+updated_at: 2026-01-30T18:49:24.953497Z
+description: 'profile builtin for interactive profiling - COMPLETED. Implementation: src/builtins/profile.rs (new) with 11 tests, registered in src/builtins/mod.rs. Features: command profiling with timing stats, -json flag for JSON output, human-readable Execution Timeline format, works with pipelines/complex syntax, preserves variables. Usage: profile echo hello | profile -json ls | profile ls | grep foo. All acceptance criteria met: timing display, JSON output, proper registration.'

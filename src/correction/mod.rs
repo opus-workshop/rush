@@ -23,7 +23,7 @@ pub struct SuggestionConfig {
 impl Default for SuggestionConfig {
     fn default() -> Self {
         Self {
-            min_threshold: 30,
+            min_threshold: 50,
             max_suggestions: 5,
             enabled: true,
             use_history: true,
@@ -195,8 +195,9 @@ impl Corrector {
                         for entry in entries.flatten() {
                             if let Ok(file_name) = entry.file_name().into_string() {
                                 let score = self.calculate_score(&file_name, input);
-                                if score > 50 {
-                                    // Higher threshold for PATH commands
+                                // Use a higher threshold for PATH commands to avoid spurious matches
+                                // (e.g., "xyz" matching "xzdec" with a fuzzy score of 68)
+                                if score > self.config.min_threshold {
                                     path_suggestions.push(Suggestion {
                                         text: file_name,
                                         score,

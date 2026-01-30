@@ -1,0 +1,62 @@
+id: '179'
+title: 'SCRIPT-006: trap builtin'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.480810Z
+updated_at: 2026-01-30T18:49:25.480810Z
+description: |-
+  As a script writer, I need the trap builtin so I can handle signals and run cleanup code on exit.
+
+  ## Priority: P1 - HIGH
+  Essential for robust scripts with cleanup.
+
+  ## Acceptance Criteria
+  - [ ] `trap 'command' SIGNAL` sets signal handler
+  - [ ] `trap 'command' EXIT` runs on shell exit
+  - [ ] Support common signals: INT, TERM, HUP, EXIT, ERR
+  - [ ] `trap - SIGNAL` removes trap
+  - [ ] `trap` with no args lists all traps
+  - [ ] Traps inherited by subshells
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Cleanup on exit
+  trap 'rm -f /tmp/$$-*' EXIT
+
+  # Handle interrupts
+  trap 'echo "Interrupted!"; exit 1' INT
+
+  # Cleanup function
+  cleanup() {
+    echo "Cleaning up..."
+    rm -f temp_files
+  }
+  trap cleanup EXIT
+
+  # Error handler
+  trap 'echo "Error on line $LINENO"' ERR
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/trap.rs
+  - Runtime stores trap handlers (HashMap<Signal, String>)
+  - Signal handler integration (already exists)
+  - Execute trap command when signal received
+  - Special EXIT trap on shell exit
+
+  ## Testing
+  - Trap signals
+  - EXIT trap
+  - Remove traps
+  - List traps
+  - Nested traps
+
+  ## Estimated Effort: 2 days
+labels:
+- builtin
+- p1
+- scripting
+- signals

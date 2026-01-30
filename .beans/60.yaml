@@ -1,0 +1,20 @@
+id: '60'
+title: Clean docs/ directory
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.568110Z
+updated_at: 2026-01-30T18:49:24.568110Z
+description: |-
+  docs/ has 60+ markdown files. Many are agent-generated implementation summaries and internal process docs that dilute the valuable user-facing documentation.
+
+  ## Completion Notes
+
+  Reorganized docs/ directory:
+
+  **docs/ top level (25 files + builtins/ dir):** All user-facing reference docs covering shell features (variable-expansion, glob-expansion, command-substitution, file-redirection, subshells, functions, exit-codes, shell-options, signal-handling, job-control, error-recovery), interactive features (command-history, tab-completion, context-detection, login-shell-init, non-tty-mode), performance (PERFORMANCE.md, benchmarking.md, pgo-build.md), POSIX compliance, daemon architecture, AI agent guides, and builtin quick references.
+
+  **docs/internal/ (33 files + ui-mockups/):** Moved all agent-generated implementation summaries (*-implementation-summary.md, *_IMPLEMENTATION.md, *-implementation.md, eval_implementation.md, shell-variables-implementation.md), phase completion summaries (phase-3-completion-summary.md), internal architecture/process docs (AIDE_ARCHITECTURE.md, AIDE_PRD.md, AIDE_TOOLS.md, AI_NATIVE_OS_VISION.md, HN_LAUNCH_FEATURES.md, BUG_HUNTING_GUIDE.md, stability-roadmap.md), internal perf/optimization docs (PERFORMANCE_OPTIMIZATION.md, PERFORMANCE_SUMMARY.md, ULTRA_LOW_LATENCY_OPTIMIZATION.md), daemon internals (daemon-worker-pool-design.md, worker-health-monitoring.md, worker-pool-integration-results.md, worker-state-reset.md), internal test docs (integration-testing.md, non-tty-test-summary.md, non-tty-testing.md), and ui-mockups/.
+
+  **docs/README.md:** Created navigation index organized by category.
+
+  No docs deleted, only reorganized via git mv.

@@ -1,0 +1,57 @@
+id: '66'
+title: Binary Serialization for IPC Protocol
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.603624Z
+updated_at: 2026-01-30T18:49:24.603624Z
+description: |-
+  Replace JSON serialization with binary format (bincode/MessagePack) for faster encoding/decoding.
+
+  ## Priority: P2 - Quick Win
+  Low effort, immediate improvement. Good warmup task.
+
+  ## Current Implementation
+  - Using serde_json for human-readable debugging
+  - JSON encoding/decoding adds ~0.3-0.5ms overhead
+  - Protocol is length-prefixed binary with JSON payload
+
+  ## Proposed Solution
+  Replace serde_json with bincode (or rmp for MessagePack):
+  - Same serde traits, just different serializer
+  - Binary format is more compact
+  - Faster encoding/decoding
+  - Still type-safe
+
+  ## Acceptance Criteria
+  - [ ] Replace serde_json with bincode in src/daemon/protocol.rs
+  - [ ] Update encode_message() and decode_message()
+  - [ ] All protocol tests pass
+  - [ ] Benchmark shows 0.2-0.4ms improvement
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+
+  ## Implementation Steps
+  1. Add bincode dependency to Cargo.toml
+  2. Replace serde_json::to_vec with bincode::serialize
+  3. Replace serde_json::from_slice with bincode::deserialize
+  4. Update tests
+  5. Benchmark before/after
+
+  ## Files Modified
+  - Cargo.toml (add bincode)
+  - src/daemon/protocol.rs (~50 LOC changes)
+
+  ## Testing
+  - All existing protocol tests should pass unchanged
+  - Add benchmark comparison test
+
+  ## Estimated Effort
+  ~30 minutes
+
+  ## Expected Speedup
+  0.2-0.4ms reduction in daemon overhead
+labels:
+- daemon
+- easy
+- performance
+- quick-win

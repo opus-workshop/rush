@@ -1,0 +1,31 @@
+id: '22'
+title: 'US-002: File Redirections'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.370794Z
+updated_at: 2026-01-30T18:49:24.370794Z
+description: |-
+  As a shell user, I want standard Unix redirections (>, >>, 2>, &>) so that I can redirect output to files like any Unix shell.
+
+  ## Acceptance Criteria
+  - [ ] stdout redirection: `echo "test" > file.txt`
+  - [ ] Append mode: `echo "more" >> file.txt`
+  - [ ] stderr redirection: `command 2> errors.log`
+  - [ ] Combined redirection: `command &> output.log`
+  - [ ] Input redirection: `command < input.txt`
+  - [ ] Works with pipes: `cmd | grep foo > results.txt`
+  - [ ] cargo test passes (all tests including new redirection tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+  - [ ] Manual testing: verify files created with correct content
+
+  ## Technical Notes
+  - Extend src/executor/pipeline.rs
+  - Parse redirection operators in lexer/parser
+  - Handle file creation/appending
+  - Properly separate stdout/stderr streams
+labels:
+- '1.0'
+- backend
+- critical
+- rush

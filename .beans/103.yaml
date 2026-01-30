@@ -1,0 +1,21 @@
+id: '103'
+title: 'Builtin Reference: Core Commands (cd, echo, export, exit, pwd)'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:24.840379Z
+updated_at: 2026-01-30T18:49:24.840379Z
+description: |-
+  Document core builtins in docs/BUILTINS.md.
+
+  ## Scope
+  - cd, pwd, echo, exit, export - full reference
+  - Synopsis, description, options table, examples, exit codes
+  - Performance notes vs GNU equivalents
+
+  ## Acceptance Criteria
+  - [ ] 5 builtins fully documented
+  - [ ] All flags/options listed
+  - [ ] Examples for each builtin
+
+  ## Deliverable
+  docs/BUILTINS.md (core section)

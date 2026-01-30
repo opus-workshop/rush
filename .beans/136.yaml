@@ -1,0 +1,10 @@
+id: '136'
+title: Implement job control (background jobs)
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.091309Z
+updated_at: 2026-01-30T18:49:25.091309Z
+description: 'Add support for background job execution and control: 1) Background operator (&), 2) Job control commands (jobs, fg, bg), 3) Job status tracking, 4) Signal handling (Ctrl+Z), 5) Process group management'
+labels:
+- enhancement
+- phase4

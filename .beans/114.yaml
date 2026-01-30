@@ -1,0 +1,27 @@
+id: '114'
+title: Benchmark comparison mode (Rush vs bash/zsh)
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.919462Z
+updated_at: 2026-01-30T18:49:24.919462Z
+description: |-
+  Add comparison mode that benchmarks Rush against bash and zsh.
+
+  ## Scope
+  - rush --benchmark compare runs same operations in Rush, bash, zsh
+  - Side-by-side timing comparison table
+  - Speedup ratios (e.g. 225x faster)
+  - Hyperfine integration for statistical rigor
+  - Warmup runs to eliminate cold-start bias
+
+  ## Acceptance Criteria
+  - [ ] rush --benchmark compare shows Rush vs bash vs zsh
+  - [ ] Includes speedup ratios
+  - [ ] Statistical confidence (std dev, min/max)
+  - [ ] Fair comparison (same data, same operations)
+
+  ## Files
+  - src/benchmark/compare.rs (new)
+  - src/benchmark/mod.rs (register)
+labels:
+- benchmark

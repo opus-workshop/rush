@@ -1,0 +1,68 @@
+id: '47'
+title: 'STABILITY-013: Integration Tests for Login Shell'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.495281Z
+updated_at: 2026-01-30T18:49:24.495281Z
+description: |-
+  As a rush developer, I need comprehensive integration tests so that I can verify rush works correctly as a login shell.
+
+  ## Priority: P1 - HIGH
+  Essential for verification.
+
+  ## Acceptance Criteria
+  - [ ] Non-interactive mode tests (echo | rush)
+  - [ ] Script execution tests
+  - [ ] Command substitution tests
+  - [ ] Signal handling tests
+  - [ ] Redirection tests
+  - [ ] Pipeline tests
+  - [ ] Exit code tests
+  - [ ] Job control tests (if implemented)
+  - [ ] All integration tests pass
+  - [ ] Tests run in CI
+
+  ## Test Suite
+  ```bash
+  # tests/integration/login_shell_test.sh
+  #!/bin/bash
+
+  # Test 1: Non-interactive mode
+  echo "pwd" | ./target/release/rush
+
+  # Test 2: Script execution
+  ./target/release/rush tests/fixtures/test_script.sh
+
+  # Test 3: Command substitution
+  ./target/release/rush -c "echo $(./target/release/rush -c 'echo nested')"
+
+  # Test 4: Signal handling
+  ./target/release/rush -c "sleep 100" &
+  kill $!
+
+  # Test 5: Exit codes
+  ./target/release/rush -c "false" ; echo $?  # Should be 1
+
+  # Test 6: Redirection
+  ./target/release/rush -c "echo test > /tmp/rush_test.txt"
+  cat /tmp/rush_test.txt
+  ```
+
+  ## Files to Create
+  - tests/integration/login_shell_test.sh
+  - tests/integration/non_tty_test.sh
+  - tests/integration/signal_test.sh
+  - tests/fixtures/*.sh (test scripts)
+
+  ## Testing
+  - Run full integration test suite
+  - Verify all tests pass
+  - Add to CI pipeline
+
+  ## Estimated Effort: 2 days
+labels:
+- integration
+- p1
+- rush
+- stability
+- testing

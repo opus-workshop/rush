@@ -1,0 +1,24 @@
+id: '117'
+title: Profiling timing infrastructure in executor
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.940784Z
+updated_at: 2026-01-30T18:49:24.940784Z
+description: |-
+  Add timing checkpoints to the executor for profiling.
+
+  ## Scope
+  - Add Instant-based timing to executor stages (parse, execute per command, pipeline setup)
+  - Store metrics in executor state
+  - Zero overhead when profiling disabled (compile-time or runtime flag)
+  - Track builtin vs external command execution separately
+
+  ## Acceptance Criteria
+  - [ ] Timing data collected for each execution stage
+  - [ ] Zero overhead when profiling is off
+  - [ ] Distinguishes builtin vs external commands
+  - [ ] cargo test passes
+
+  ## Files
+  - src/executor/mod.rs (add timing checkpoints)
+  - src/executor/profile.rs (new - profile data structures)

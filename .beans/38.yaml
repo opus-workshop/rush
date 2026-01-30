@@ -1,0 +1,173 @@
+id: '38'
+title: 'AI-006: Add --json flag to find and grep builtins'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.446534Z
+updated_at: 2026-01-30T18:49:24.446534Z
+description: |-
+  As an AI coding agent, I need find and grep to output structured JSON so I can process search results programmatically.
+
+  ## Priority: P1 - HIGH
+  Find and grep are core search tools. AI agents use them constantly but have to parse line-oriented output.
+
+  ## Acceptance Criteria
+  - [ ] Extend src/builtins/find.rs: add --json flag
+  - [ ] Extend src/builtins/grep.rs: add --json flag
+  - [ ] find --json: array of file paths with metadata
+  - [ ] grep --json: array of matches with line numbers, context
+  - [ ] find --json -type f: filter by type in structured output
+  - [ ] grep --json -C 2: include context lines in structure
+  - [ ] Performance: no slowdown vs text output
+  - [ ] All existing flags work with --json
+  - [ ] cargo test passes for both
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+
+  ### Find with JSON
+  ```bash
+  # AI agent: Find all Rust files with metadata
+  find --json src/ -name "*.rs"
+  # [
+  #   {
+  #     "path": "src/main.rs",
+  #     "type": "file",
+  #     "size": 4523,
+  #     "modified": "2026-01-24T12:00:00Z"
+  #   },
+  #   {
+  #     "path": "src/lib.rs",
+  #     "type": "file",
+  #     "size": 1234,
+  #     "modified": "2026-01-23T10:30:00Z"
+  #   }
+  # ]
+
+  # AI agent: Find files modified today
+  find --json . -mtime -1 | json_query '.[] | .path'
+  ```
+
+  ### Grep with JSON
+  ```bash
+  # AI agent: Find all TODO comments with context
+  grep --json "TODO" src/**/*.rs
+  # [
+  #   {
+  #     "file": "src/builtins/git_status.rs",
+  #     "line_number": 66,
+  #     "match": "// TODO: List actual changed files",
+  #     "context_before": [
+  #       "if git_ctx.is_dirty() {",
+  #       "    output.push_str(\"Changes not staged for commit:\\n\");"
+  #     ],
+  #     "context_after": [
+  #       "} else {",
+  #       "    output.push_str(\"nothing to commit\");"
+  #     ]
+  #   }
+  # ]
+
+  # AI agent: Count matches per file
+  grep --json "fn " src/*.rs | json_query 'group_by(.file) | map({file: .[0].file, count: length})'
+
+  # AI agent: Get just matching lines
+  grep --json "error" logfile.txt | json_get '.[].match'
+  ```
+
+  ## Technical Implementation
+
+  ### Find JSON Output
+  1. **Extend src/builtins/find.rs**
+     ```rust
+     #[derive(Serialize)]
+     struct FindResult {
+         path: PathBuf,
+         file_type: FileType,
+         size: u64,
+         modified: String,
+         modified_timestamp: i64,
+         #[serde(skip_serializing_if = "Option::is_none")]
+         permissions: Option<String>,
+     }
+     ```
+
+  2. **Collect results, serialize at end**
+     - Store all FindResult objects
+     - Output JSON array when search completes
+     - Maintain same search logic, different output
+
+  ### Grep JSON Output
+  1. **Extend src/builtins/grep.rs**
+     ```rust
+     #[derive(Serialize)]
+     struct GrepMatch {
+         file: PathBuf,
+         line_number: usize,
+         column: Option<usize>,  // if available
+         match_text: String,
+         full_line: String,
+         #[serde(skip_serializing_if = "Option::is_none")]
+         context_before: Option<Vec<String>>,
+         #[serde(skip_serializing_if = "Option::is_none")]
+         context_after: Option<Vec<String>>,
+     }
+     ```
+
+  2. **Context Handling**
+     - Parse -A, -B, -C flags
+     - Include context lines in JSON
+     - Track line numbers correctly
+
+  ## Output Modes
+  - Default: Current text output (no changes)
+  - `--json`: Array of result objects
+  - `--json --count`: Just counts, not full results
+  - Compatible with all existing flags
+
+  ## Performance Considerations
+  - JSON serialization shouldn't slow down search
+  - Stream results for very large outputs (consider JSONL)
+  - Benchmark vs text mode
+
+  ## Testing Strategy
+  - **Find tests:**
+    - Simple file search
+    - Type filtering
+    - Name patterns
+    - Time-based filters
+    - Large directory trees
+  - **Grep tests:**
+    - Simple pattern match
+    - Multiple files
+    - Context lines
+    - Line numbers
+    - Binary file handling
+    - Large files
+  - Cross-platform: path separators, permissions
+
+  ## Documentation
+  - Update find.rs and grep.rs docs
+  - Add to docs/AI_AGENT_FILES.md
+  - JSON schema reference for both
+  - Performance comparison
+  - Migration guide from text parsing
+
+  ## Dependencies
+  - Extends existing find.rs and grep.rs
+  - serde_json
+  - regex crate (already in use for grep)
+
+  ## Estimated Effort
+  45-55k tokens:
+  - Find implementation: 12k
+  - Grep implementation: 15k
+  - Tests (both): 15k
+  - Documentation: 8k
+  - Integration: 5k
+labels:
+- ai-agents
+- builtin
+- enhancement
+- json
+- p1

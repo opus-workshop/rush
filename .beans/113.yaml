@@ -1,0 +1,29 @@
+id: '113'
+title: Benchmark runner script (rush --benchmark)
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.912358Z
+updated_at: 2026-01-30T18:49:24.912358Z
+description: |-
+  Create the main benchmark runner that users invoke with rush --benchmark.
+
+  ## Scope
+  - CLI flag --benchmark with modes: quick, full, compare
+  - Quick mode: 5-second smoke test (startup, echo, ls)
+  - Full mode: comprehensive suite (all builtins, pipelines, I/O)
+  - Writes results to benchmark_results.json
+  - Human-readable summary to stdout
+
+  ## Acceptance Criteria
+  - [ ] rush --benchmark quick runs in <10s
+  - [ ] rush --benchmark full runs comprehensive suite
+  - [ ] Results saved to benchmark_results.json
+  - [ ] Clean stdout summary with pass/fail
+  - [ ] Works on macOS and Linux
+
+  ## Files
+  - src/main.rs (add --benchmark flag)
+  - src/benchmark/mod.rs (new module)
+  - src/benchmark/runner.rs (benchmark execution)
+labels:
+- benchmark

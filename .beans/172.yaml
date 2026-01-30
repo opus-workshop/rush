@@ -1,0 +1,62 @@
+id: '172'
+title: 'SCRIPT-013: kill builtin'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:25.412870Z
+updated_at: 2026-01-30T18:49:25.412870Z
+description: |-
+  As a script writer, I need the kill builtin to send signals to processes.
+
+  ## Priority: P2 - MEDIUM
+  Useful for process management in scripts.
+
+  ## Acceptance Criteria
+  - [ ] `kill pid` sends SIGTERM
+  - [ ] `kill -SIGNAL pid` sends specific signal
+  - [ ] `kill -9 pid` sends SIGKILL
+  - [ ] `kill -l` lists signal names
+  - [ ] Multiple PIDs: `kill -9 1234 5678`
+  - [ ] Job specs: `kill %1`
+  - [ ] Error on invalid PID
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Terminate process
+  kill 12345
+
+  # Force kill
+  kill -9 12345
+  kill -KILL 12345
+
+  # Graceful shutdown
+  kill -TERM 12345
+
+  # List signals
+  kill -l
+
+  # Kill job
+  kill %1
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/kill.rs
+  - Use libc::kill() or nix::sys::signal
+  - Parse signal names and numbers
+  - Integrate with job control
+
+  ## Testing
+  - Send signals
+  - Signal name parsing
+  - Multiple PIDs
+  - Job specs
+  - Error handling
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- p2
+- process-management
+- scripting

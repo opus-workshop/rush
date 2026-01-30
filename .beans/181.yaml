@@ -1,0 +1,65 @@
+id: '181'
+title: 'SCRIPT-008: eval builtin'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.500391Z
+updated_at: 2026-01-30T18:49:25.500391Z
+description: |-
+  As a script writer, I need the eval builtin to execute dynamically constructed commands.
+
+  ## Priority: P1 - HIGH
+  Sometimes necessary evil for advanced scripting.
+
+  ## Acceptance Criteria
+  - [ ] `eval command` executes string as command
+  - [ ] Variable expansion before execution
+  - [ ] Command substitution works
+  - [ ] Exit code from evaluated command
+  - [ ] Works with complex commands (pipes, redirects)
+  - [ ] Security warning in help text
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Dynamic command
+  cmd="ls -la"
+  eval $cmd
+
+  # Variable indirection
+  var="HOME"
+  eval echo \$$var  # Prints $HOME value
+
+  # Dynamic pipes
+  op="| grep foo"
+  eval "cat file.txt $op"
+
+  # Build command from parts
+  flags="-a -l"
+  eval ls $flags /tmp
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/mod.rs
+  - Concatenate arguments into string
+  - Parse and execute as new command
+  - Return execution result
+
+  ## Security Notes
+  - Document eval dangers
+  - Warn about injection risks
+  - Recommend alternatives when possible
+
+  ## Testing
+  - Simple eval
+  - Variable expansion
+  - Command substitution
+  - Complex commands
+  - Edge cases
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- p1
+- scripting

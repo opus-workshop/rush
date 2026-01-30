@@ -1,0 +1,13 @@
+id: '177'
+title: 'SCRIPT-004: local builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.461432Z
+updated_at: 2026-01-30T18:49:25.461432Z
+description: "As a function writer, I need the local builtin so I can create function-scoped variables that don't leak.\n\n## Priority: P0 - CRITICAL\nEssential for writing clean, non-leaking functions.\n\n## Acceptance Criteria\n- [ ] `local var=value` creates function-scoped variable\n- [ ] `local var` declares without assignment\n- [ ] Multiple declarations: `local a=1 b=2 c=3`\n- [ ] Only works inside functions (error otherwise)\n- [ ] Variables don't leak outside function\n- [ ] Shadows global variables\n- [ ] Restored on function exit\n- [ ] cargo test passes\n- [ ] cargo build --release succeeds\n- [ ] cargo clippy -- -D warnings passes\n\n## Use Cases\n```bash\nprocess() {\n  local temp=\"processing\"\n  local count=0\n  \n  echo \"$temp\"\n  count=$((count + 1))\n  echo \"Count: $count\"\n}\n\nprocess\necho \"$temp\"   # Empty - not leaked\necho \"$count\"  # Empty - not leaked\n\n# Shadowing\nname=\"global\"\ntest_shadow() {\n  local name=\"local\"\n  echo \"Inside: $name\"  # local\n}\ntest_shadow\necho \"Outside: $name\"  # global\n```\n\n## Technical Implementation\n- Add to src/builtins/mod.rs\n- Runtime needs function variable scopes (stack)\n- Push scope on function entry\n- Pop scope on function exit\n- Variable lookup checks scopes in order (local → global)\n\n## Dependencies\n- Requires function call stack in Runtime\n- May need scope tracking in Runtime\n\n## Testing\n- Local variable isolation\n- Shadowing behavior\n- Scope cleanup on exit\n- Error when not in function\n- Multiple locals\n\n## Estimated Effort: 2 days"
+labels:
+- builtin
+- critical
+- functions
+- p0
+- scripting

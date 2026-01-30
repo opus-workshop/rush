@@ -1,0 +1,32 @@
+id: '28'
+title: 'US-007: CI/CD and Distribution'
+status: open
+priority: 4
+created_at: 2026-01-30T18:49:24.397814Z
+updated_at: 2026-01-30T18:49:24.397814Z
+description: |-
+  As a potential Rush user, I want easy installation via package managers so that I don't have to build from source.
+
+  ## Acceptance Criteria
+  - [ ] GitHub Actions workflow for releases
+  - [ ] Pre-built binaries for macOS (Intel + ARM)
+  - [ ] Pre-built binaries for Linux (x86_64)
+  - [ ] Homebrew formula
+  - [ ] Installation instructions in README
+  - [ ] Version tags trigger automated builds
+  - [ ] Checksums for all binaries
+  - [ ] GitHub Actions workflow runs successfully
+  - [ ] Test installation on clean macOS machine
+  - [ ] Test installation on clean Linux machine
+
+  ## Technical Notes
+  - Create .github/workflows/release.yml
+  - Set up cross-compilation
+  - Create Homebrew tap
+  - Document installation process
+  - Test on clean machines
+labels:
+- '1.0'
+- distribution
+- infrastructure
+- rush

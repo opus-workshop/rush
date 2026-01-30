@@ -1,0 +1,47 @@
+id: '146'
+title: 'FOUNDATION-011: Subshell execution'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.171488Z
+updated_at: 2026-01-30T18:49:25.171488Z
+description: |-
+  ## Problem
+  Subshell execution with `( )` may not properly isolate environment.
+
+  ## Current Behavior
+  Need to verify:
+  - `(cd /tmp; pwd)` - subshell commands
+  - Variable changes in subshell don't affect parent
+  - Exit status from subshell is captured
+
+  ## Expected Behavior
+  ```bash
+  x=outer; (x=inner; echo $x); echo $x
+  # Output:
+  # inner
+  # outer
+
+  (exit 5); echo $?
+  # Output: 5
+
+  (cd /tmp; pwd)
+  # Output: /tmp
+  # (parent directory unchanged)
+  ```
+
+  ## Implementation
+  1. Fork a child process for subshell
+  2. Execute commands in child
+  3. Child inherits but doesn't affect parent's:
+     - Variables
+     - Current directory
+     - File descriptors (unless redirected)
+  4. Parent waits for child, captures exit status
+  5. Subshells can be used in pipelines: `echo test | (cat)`
+
+  ## Test Cases
+  ```bash
+  test_case "subshell isolation" 'x=outer; (x=inner; echo $x); echo $x' $'inner\nouter'
+  test_case "subshell exit" '(exit 5); echo $?' '5'
+  test_succeeds "subshell pipeline" 'echo test | (cat)'
+  ```

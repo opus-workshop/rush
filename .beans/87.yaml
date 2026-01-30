@@ -1,0 +1,46 @@
+id: '87'
+title: 'POSIX-025: Implement full job specifications'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.733892Z
+updated_at: 2026-01-30T18:49:24.733892Z
+description: |-
+  Implement full POSIX job specification parsing (%1, %+, %-, %?string, %%).
+
+  ## Context
+  Runtime has basic job support but not full job spec parsing. Need complete implementation.
+
+  ## Acceptance Criteria
+  - Parse %1, %2, etc. (job by number)
+  - Parse %+ or %% (current job)
+  - Parse %- (previous job)
+  - Parse %?string (job containing 'string' in command)
+  - Parse %string (job starting with 'string')
+  - Test kill %1, fg %+, bg %-
+  - Test ambiguous matches error gracefully
+  - Test invalid job specs error with helpful message
+  - Update fg, bg, kill, wait to accept job specs
+  - Add integration tests
+  - Document job specs
+
+  ## POSIX Requirements
+  - %n: job number n
+  - %+, %%: current job
+  - %-: previous job
+  - %?string: job containing string
+  - %string: job starting with string
+  - Error if job spec doesn't match or is ambiguous
+
+  ## Files to Modify
+  - src/jobs/mod.rs (add parse_job_spec function)
+  - src/builtins/jobs.rs (use job specs in fg, bg)
+  - src/builtins/kill.rs (use job specs)
+  - src/builtins/wait.rs (use job specs)
+  - tests/job_spec_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (implement parsing, update builtins, add tests)
+labels:
+- important
+- job-control
+- posix

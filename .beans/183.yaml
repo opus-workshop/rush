@@ -1,0 +1,10 @@
+id: '183'
+title: Add sed and awk alternative builtins
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.519629Z
+updated_at: 2026-01-30T18:49:25.519629Z
+description: 'Implement fast Rust-based alternatives to sed and awk for text processing: 1) Basic sed functionality (substitution, deletion), 2) Common awk patterns (field splitting, pattern matching), 3) Maintain compatibility with common use cases, 4) Leverage Rust performance'
+labels:
+- enhancement
+- phase4

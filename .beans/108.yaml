@@ -1,0 +1,21 @@
+id: '108'
+title: 'Migration Guide: Bash Users Quick Start'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.876371Z
+updated_at: 2026-01-30T18:49:24.876371Z
+description: |-
+  Write docs/MIGRATION.md sections 1-2: What's Different and Quick Start for Bash.
+
+  ## Scope
+  - Syntax differences, missing features, new capabilities
+  - 80% compatible commands, what works, adjustments needed
+  - Side-by-side bash vs rush examples
+
+  ## Acceptance Criteria
+  - [ ] Differences documented clearly
+  - [ ] Side-by-side examples
+  - [ ] Common gotchas listed
+
+  ## Deliverable
+  docs/MIGRATION.md (sections 1-2)

@@ -1,0 +1,52 @@
+id: '141'
+title: Custom Allocator (mimalloc) for Faster Startup
+status: open
+priority: 0
+created_at: 2026-01-30T18:49:25.129418Z
+updated_at: 2026-01-30T18:49:25.129418Z
+description: |-
+  ## Problem
+  The Rust default allocator (system malloc wrapper) adds measurable overhead vs bash's decades-optimized glibc malloc. Research shows 1-3ms of Rust startup is allocator and runtime overhead.
+
+  ## Evidence from Bash Research
+  - Bash uses glibc's malloc directly, highly optimized for decades
+  - Rust's std allocator wraps system malloc with additional safety checks
+  - mimalloc (Microsoft) and jemalloc are proven faster for CLI startup patterns
+  - Fish shell uses mimalloc for similar reasons
+
+  ## Implementation (2 lines of code)
+  Add to Cargo.toml:
+  ```toml
+  [dependencies]
+  mimalloc = { version = "0.1", default-features = false }
+  ```
+
+  Add to src/main.rs (or lib.rs):
+  ```rust
+  #[global_allocator]
+  static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+  ```
+
+  ## Why mimalloc
+  - ~7% faster for CLI workloads vs system allocator
+  - Lower memory fragmentation
+  - Better cache locality for small allocations (like HashMap entries, String buffers)
+  - Used by: Bun, Fish shell, various Rust CLIs
+
+  ## Also add to Cargo.toml release profile
+  ```toml
+  [profile.release]
+  panic = "abort"  # Eliminates unwinding tables, saves ~200KB binary size
+  ```
+
+  ## Acceptance Criteria
+  - [ ] mimalloc added as global allocator
+  - [ ] panic = "abort" set in release profile
+  - [ ] cargo build --release succeeds
+  - [ ] cargo test passes
+  - [ ] Startup time measurably improved (hyperfine before/after)
+  - [ ] Binary size same or smaller
+labels:
+- performance
+- quick-win
+- startup

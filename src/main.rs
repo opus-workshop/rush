@@ -7,6 +7,7 @@ mod builtins;
 mod completion;
 mod context;
 mod correction;
+mod error;
 mod executor;
 #[cfg(feature = "git-builtins")]
 mod git;
@@ -77,7 +78,7 @@ fn main() -> Result<()> {
                     }
                     std::process::exit(0);
                 }
-                "--login" | "-l" | "--no-rc" | "--norc" => { i += 1; }
+                "--login" | "-l" | "--no-rc" | "--norc" | "--no-config" => { i += 1; }
                 _ => { i += 1; }
             }
         }
@@ -117,7 +118,7 @@ fn main() -> Result<()> {
                 is_login_shell = true;
                 i += 1;
             }
-            "--no-rc" | "--norc" => {
+            "--no-rc" | "--norc" | "--no-config" => {
                 skip_rc = true;
                 i += 1;
             }
@@ -603,6 +604,7 @@ fn print_help() {
     println!("  rush                Start interactive shell");
     println!("  rush --login        Start as login shell (sources ~/.rush_profile)");
     println!("  rush --no-rc        Skip sourcing config files");
+    println!("  rush --no-config    Skip sourcing config files (alias for --no-rc)");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
     println!("  rush --profile -c <command>          Profile execution timing");

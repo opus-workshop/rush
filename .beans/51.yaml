@@ -1,0 +1,66 @@
+id: '51'
+title: 'STABILITY-004: Subshell Support'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.517188Z
+updated_at: 2026-01-30T18:49:24.517188Z
+description: |-
+  As a shell scripter, I need subshells `( )` so that I can isolate environment changes and run commands in isolated contexts.
+
+  ## Priority: P0 - BLOCKING
+  Many scripts rely on subshells for environment isolation.
+
+  ## Problem
+  - No support for `( )` subshells
+  - Cannot isolate environment changes
+  - Scripts using subshells fail
+
+  ## Acceptance Criteria
+  - [ ] Parse `( )` syntax correctly
+  - [ ] Subshell gets isolated runtime/environment
+  - [ ] Variables set in subshell don't affect parent
+  - [ ] `cd` in subshell doesn't affect parent
+  - [ ] Subshell exit code propagates correctly
+  - [ ] Works with pipes: `(cd /tmp && ls) | grep foo`
+  - [ ] Nested subshells work: `((echo nested))`
+  - [ ] cargo test passes (all tests including subshell tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Technical Implementation
+  ```rust
+  // In parser/ast.rs
+  pub enum Statement {
+      // ... existing variants
+      Subshell(Vec<Statement>),
+  }
+
+  // In executor/mod.rs
+  Statement::Subshell(statements) => {
+      let mut child_runtime = self.runtime.clone();
+      let mut child_executor = Executor::with_runtime(child_runtime);
+      child_executor.execute(statements)
+  }
+  ```
+
+  ## Files to Modify
+  - src/parser/ast.rs - Add Subshell variant
+  - src/lexer/mod.rs - Tokenize `(` and `)`
+  - src/parser/mod.rs - Parse subshell blocks
+  - src/executor/mod.rs - Execute with cloned runtime
+  - src/runtime/mod.rs - Ensure runtime is Clone
+
+  ## Testing
+  - Test variable isolation
+  - Test directory isolation (cd)
+  - Test exit code propagation
+  - Test nested subshells
+  - Test subshells in pipes
+
+  ## Estimated Effort: 1-2 days
+labels:
+- critical
+- p0
+- rush
+- stability
+- subshells

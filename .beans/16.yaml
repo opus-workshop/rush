@@ -1,0 +1,13 @@
+id: '16'
+title: Script Compatibility Checker
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.344825Z
+updated_at: 2026-01-30T18:49:24.344825Z
+description: "Build a tool to check bash/zsh scripts for Rush compatibility and provide migration guidance.\n\n## Problem\nThe \"my bash scripts won't work\" concern. Need to make migration anxiety explicit with tooling that shows what's compatible and what isn't.\n\n## Success Criteria\n- `rush --check script.sh` analyzes bash scripts\n- Reports compatibility percentage\n- Lists incompatible syntax with line numbers\n- Suggests fixes or workarounds\n- Categorizes issues (supported, planned, not-supported)\n- Warns about POSIX vs bash-isms\n- Optional: Auto-migration suggestions\n- Works with .bashrc, .bash_profile, etc.\n\n## User Stories\n1. As a bash user, I want to know if my scripts will work so I can decide to adopt Rush\n2. As a migrator, I want to see what needs fixing so I can plan migration effort\n3. As a scripter, I want Rush to warn me about incompatibilities so I can adjust\n\n## Example Output\n```\n$ rush --check deploy.sh\n\nChecking: deploy.sh\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCompatibility: 87% (31/36 features)\n\n✓ Supported:\n  - Pipelines (lines 5, 12, 23)\n  - Redirections (lines 8, 15)\n  - Variables (lines 3, 7, 19)\n  - Functions (lines 10-14)\n  \n⚠ Warnings:\n  Line 12: Bash arrays not yet supported\n    | arr=(one two three)\n    Workaround: Use space-separated strings\n  \n✗ Not Supported:\n  Line 45: ${var:offset:length} substring syntax\n    | name=${filename:0:5}\n    Status: Planned for Phase 5\n    Workaround: Use external tool (cut/awk)\n\n💡 Suggestions:\n  - Consider using Rush-native syntax for new scripts\n  - Set POSIX mode for maximum compatibility\n  - See migration guide: rush.sh/migrate\n```\n\n## Technical Implementation\n- Parse bash syntax (use bash parser or tree-sitter)\n- Build compatibility database\n- Map bash features to Rush support status\n- Generate detailed reports\n- Track planned features for roadmap\n\n## Deliverables\n- `--check` CLI flag\n- Bash script parser/analyzer\n- Compatibility database\n- Report generator\n- Migration guide documentation\n- CI integration for script testing"
+labels:
+- feature
+- hn-feature
+- migration
+- phase4
+- tooling

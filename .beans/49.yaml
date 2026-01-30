@@ -1,0 +1,69 @@
+id: '49'
+title: 'STABILITY-002: Signal Handling'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.506240Z
+updated_at: 2026-01-30T18:49:24.506240Z
+description: |-
+  As a user, I need rush to handle signals properly so that there are no orphaned processes or corrupted state when I press Ctrl-C.
+
+  ## Priority: P0 - BLOCKING
+  Critical for preventing orphaned processes and data corruption.
+
+  ## Problem
+  - No SIGINT, SIGTERM, SIGHUP handlers
+  - Ctrl-C leaves orphaned child processes
+  - State corruption possible on unexpected termination
+
+  ## Acceptance Criteria
+  - [ ] SIGINT (Ctrl-C) handler implemented
+  - [ ] SIGTERM handler implemented
+  - [ ] SIGHUP handler implemented
+  - [ ] Child processes cleaned up on signal
+  - [ ] Exit with correct signal exit code (130 for SIGINT)
+  - [ ] State is saved/cleaned before exit
+  - [ ] No orphaned processes after signal
+  - [ ] cargo test passes (all tests including signal tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Technical Implementation
+  ```rust
+  use signal_hook::{consts::{SIGINT, SIGTERM, SIGHUP}, iterator::Signals};
+
+  fn setup_signal_handlers() -> Result<()> {
+      let mut signals = Signals::new(&[SIGINT, SIGTERM, SIGHUP])?;
+
+      thread::spawn(move || {
+          for sig in signals.forever() {
+              match sig {
+                  SIGINT => handle_sigint(),
+                  SIGTERM => handle_sigterm(),
+                  SIGHUP => handle_sighup(),
+                  _ => {}
+              }
+          }
+      });
+
+      Ok(())
+  }
+  ```
+
+  ## Files to Modify
+  - src/main.rs - Register signal handlers on startup
+  - src/executor/mod.rs - Add signal handling to executor
+  - Cargo.toml - Add signal_hook dependency
+
+  ## Testing
+  - Test Ctrl-C during long-running command
+  - Test killing rush process during pipeline
+  - Test no orphaned processes after signal
+  - Test state cleanup on signal
+
+  ## Estimated Effort: 1 day
+labels:
+- critical
+- p0
+- rush
+- signals
+- stability

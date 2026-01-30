@@ -1,0 +1,64 @@
+id: '168'
+title: 'SCRIPT-001: read builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.373493Z
+updated_at: 2026-01-30T18:49:25.373493Z
+description: |-
+  As a shell scripter, I need the read builtin so I can get user input and process files line-by-line.
+
+  ## Priority: P0 - CRITICAL
+  Absolutely essential for any scripting. Can't write interactive scripts or process files without it.
+
+  ## Acceptance Criteria
+  - [ ] Basic usage: `read varname`
+  - [ ] Multiple variables: `read first second rest`
+  - [ ] Prompt with -p: `read -p "Enter name: " name`
+  - [ ] Silent input with -s: `read -s password` (for passwords)
+  - [ ] Timeout with -t: `read -t 5 answer` (5 second timeout)
+  - [ ] Read from stdin in loops: `while read line; do echo $line; done < file.txt`
+  - [ ] Handle IFS for field splitting
+  - [ ] Exit code 0 on success, 1 on EOF
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Interactive input
+  read -p "Enter your name: " username
+  echo "Hello, $username"
+
+  # Password input (hidden)
+  read -s -p "Password: " password
+
+  # Process file line by line
+  while read line; do
+    echo "Line: $line"
+  done < data.txt
+
+  # Multiple variables
+  read first last <<< "John Doe"
+  echo "First: $first, Last: $last"
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/read.rs
+  - Handle stdin vs TTY input
+  - Support IFS environment variable for field splitting
+  - Timeout using select() or similar
+  - Silent mode using terminal raw mode
+
+  ## Testing
+  - Interactive input tests
+  - File processing tests
+  - Timeout behavior
+  - EOF handling
+  - Multiple variable assignment
+
+  ## Estimated Effort: 2 days
+labels:
+- builtin
+- critical
+- p0
+- scripting

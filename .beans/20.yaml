@@ -1,0 +1,7 @@
+id: '20'
+title: Text Processing Builtins (sed/awk)
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.362212Z
+updated_at: 2026-01-30T18:49:24.362212Z
+description: 'Implement fast Rust-based alternatives to sed and awk for text processing. Split into 4 focused beads: basic sed, advanced sed, basic awk, advanced awk.'

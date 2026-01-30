@@ -1,0 +1,57 @@
+id: '8'
+title: Configuration Guide
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.312498Z
+updated_at: 2026-01-30T18:49:24.312498Z
+description: |-
+  Document how to configure Rush for daily use.
+
+  ## Purpose
+  Show users how to customize Rush to match their workflow.
+
+  ## Contents
+  1. **Initialization Files**
+     - ~/.rush_profile (login shells)
+     - ~/.rushrc (interactive shells)
+     - When each is loaded
+     - Execution order
+
+  2. **Common Configurations**
+     - Setting up aliases
+     - Customizing prompt
+     - Setting environment variables
+     - Defining functions
+     - History settings
+
+  3. **Shell Options**
+     - set -e (exit on error)
+     - set -u (error on undefined)
+     - set -x (debug mode)
+     - set -o pipefail
+
+  4. **Integrations**
+     - Git setup
+     - Cargo/Rust integration
+     - Node/npm setup
+     - Custom completions
+
+  5. **Examples**
+     - Minimal .rushrc
+     - Power user .rushrc
+     - Team shared .rushrc
+     - Migration from .bashrc/.zshrc
+
+  ## Format
+  - Working example configs
+  - Explain each section
+  - Show before/after
+  - Include comments in examples
+
+  ## Deliverable
+  docs/CONFIGURATION.md
+  Examples in examples/.rushrc.{minimal,power,team}
+labels:
+- configuration
+- documentation
+- phase4

@@ -1,0 +1,36 @@
+id: '115'
+title: Benchmark report generation (markdown + HTML)
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.926386Z
+updated_at: 2026-01-30T18:49:24.926386Z
+description: |-
+  Benchmark report generation completed.
+
+  Implementation:
+  - src/benchmark/report.rs: Core report generation module with:
+    * generate_markdown_report() - Converts benchmark_results.json to markdown
+    * generate_html_report() - Generates interactive HTML with Chart.js visualization
+    * compare_results() - Historical comparison with regression detection
+    * BenchmarkResultsFile, TestRecord, ComparisonRecord structs for data handling
+
+  - scripts/generate_benchmark_report.sh: Comprehensive shell script with:
+    * Multiple output formats (markdown, HTML, or both)
+    * Configurable output and historical directories
+    * Comparison against previous runs with change % tracking
+    * Regression detection (alerts on >10% changes)
+    * Historical archival for trend analysis
+    * Full --help documentation
+
+  Usage:
+    bash scripts/generate_benchmark_report.sh [--markdown|--html|--all] [--output DIR] [--compare FILE]
+
+  Acceptance Criteria Met:
+  - [x] Generates markdown report (structured with summary, test results, methodology)
+  - [x] Generates HTML with charts (interactive Chart.js visualization)
+  - [x] Includes methodology documentation (test categories, metrics, notes)
+  - [x] Can compare against previous runs (detects regressions, calculates change %)
+
+  All tests passing. Ready for CI integration.
+labels:
+- benchmark

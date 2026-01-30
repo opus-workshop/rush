@@ -1,0 +1,44 @@
+id: '83'
+title: 'POSIX-021: Implement process groups'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.708823Z
+updated_at: 2026-01-30T18:49:24.708823Z
+description: |-
+  Implement proper process group management for job control.
+
+  ## Context
+  POSIX requires jobs to be in their own process groups for proper terminal control. Currently not fully implemented.
+
+  ## Acceptance Criteria
+  - Call setpgid() for each job (background and foreground)
+  - Put each job in its own process group
+  - Put shell in its own process group at startup
+  - Test process group isolation
+  - Test signals sent to process group (not just process)
+  - Test job continues when shell exits (for background jobs)
+  - Verify with process inspection tools (ps, pgrep)
+  - Add integration tests
+  - Document process group behavior
+
+  ## POSIX Requirements
+  - Each job runs in its own process group
+  - Shell is in its own process group
+  - Background jobs have PGID = leader PID
+  - Foreground job receives terminal signals (SIGINT, SIGQUIT)
+  - Background jobs don't receive terminal signals
+
+  ## Files to Modify
+  - src/executor/mod.rs (call setpgid when spawning commands)
+  - src/jobs/mod.rs (track process group IDs)
+  - libc or nix crate for setpgid syscall
+  - tests/process_group_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (implement syscalls, test isolation, add tests)
+labels:
+- important
+- job-control
+- posix
+- processes
+- terminal

@@ -158,6 +158,23 @@ impl Parser {
                 self.advance();
             }
 
+            // Parse any redirects that follow the pipeline and apply to the last command
+            let mut redirects = Vec::new();
+            while self.match_redirect_token() {
+                redirects.push(self.parse_single_redirect()?);
+            }
+
+            // Apply redirects to the last command in the pipeline (only if it's a command, not a subshell)
+            if !redirects.is_empty() {
+                if let Some(PipelineElement::Command(cmd)) = elements.last_mut() {
+                    cmd.redirects.extend(redirects);
+                } else {
+                    // If last element is a subshell, we need to convert the pipeline and apply redirects differently
+                    // For now, we'll store the redirects and handle them in execution
+                    // This would require extending the Pipeline struct
+                }
+            }
+
             // Build backward-compatible commands vec from command-only elements
             let commands: Vec<Command> = elements
                 .iter()
@@ -170,6 +187,73 @@ impl Parser {
             Ok(Statement::Pipeline(Pipeline { commands, elements }))
         } else {
             Ok(first_statement)
+        }
+    }
+
+    /// Check if the current token is a redirect token
+    fn match_redirect_token(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token::GreaterThan)
+                | Some(Token::StdoutAppend)
+                | Some(Token::StdinRedirect)
+                | Some(Token::StderrRedirect)
+                | Some(Token::StderrToStdout)
+                | Some(Token::BothRedirect)
+        )
+    }
+
+    /// Parse a single redirect token and its target
+    fn parse_single_redirect(&mut self) -> Result<Redirect> {
+        match self.peek() {
+            Some(Token::GreaterThan) => {
+                self.advance();
+                let target = self.parse_redirect_target()?;
+                Ok(Redirect {
+                    kind: RedirectKind::Stdout,
+                    target: Some(target),
+                })
+            }
+            Some(Token::StdoutAppend) => {
+                self.advance();
+                let target = self.parse_redirect_target()?;
+                Ok(Redirect {
+                    kind: RedirectKind::StdoutAppend,
+                    target: Some(target),
+                })
+            }
+            Some(Token::StdinRedirect) => {
+                self.advance();
+                let target = self.parse_redirect_target()?;
+                Ok(Redirect {
+                    kind: RedirectKind::Stdin,
+                    target: Some(target),
+                })
+            }
+            Some(Token::StderrRedirect) => {
+                self.advance();
+                let target = self.parse_redirect_target()?;
+                Ok(Redirect {
+                    kind: RedirectKind::Stderr,
+                    target: Some(target),
+                })
+            }
+            Some(Token::StderrToStdout) => {
+                self.advance();
+                Ok(Redirect {
+                    kind: RedirectKind::StderrToStdout,
+                    target: None,
+                })
+            }
+            Some(Token::BothRedirect) => {
+                self.advance();
+                let target = self.parse_redirect_target()?;
+                Ok(Redirect {
+                    kind: RedirectKind::Both,
+                    target: Some(target),
+                })
+            }
+            _ => Err(anyhow!("Expected redirect token")),
         }
     }
 

@@ -1,0 +1,174 @@
+id: '39'
+title: 'AI-007: HTTP fetch builtin with structured responses'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:24.451773Z
+updated_at: 2026-01-30T18:49:24.451773Z
+description: |-
+  As an AI coding agent, I need a native HTTP client so I can fetch documentation, APIs, and package info without spawning curl.
+
+  ## Priority: P2 - MEDIUM
+  AI agents frequently need to fetch external resources (docs, package registries, APIs). Currently requires curl + JSON parsing.
+
+  ## Acceptance Criteria
+  - [ ] `fetch` builtin command implemented
+  - [ ] `fetch URL` performs GET request
+  - [ ] `fetch --json URL` returns structured response
+  - [ ] `fetch -X POST -d 'data' URL` POST requests
+  - [ ] `fetch -H "Header: value" URL` custom headers
+  - [ ] JSON response body automatically parsed
+  - [ ] `fetch --timeout 5 URL` request timeout
+  - [ ] Follow redirects by default, `--no-follow` to disable
+  - [ ] Error handling: network errors, timeouts, HTTP errors
+  - [ ] Performance: comparable to curl
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # AI agent: Fetch API data
+  fetch --json https://api.github.com/repos/rust-lang/rust
+  # {
+  #   "status": 200,
+  #   "headers": {
+  #     "content-type": "application/json",
+  #     "...": "..."
+  #   },
+  #   "body": {
+  #     "name": "rust",
+  #     "description": "Empowering everyone...",
+  #     "stars": 95000,
+  #     ...
+  #   },
+  #   "response_time_ms": 234
+  # }
+
+  # AI agent: Check if URL is reachable
+  fetch --json --method HEAD https://example.com | json_get '.status'
+  # 200
+
+  # AI agent: POST JSON data
+  echo '{"title":"test"}' | fetch --json -X POST -H "Content-Type: application/json" -d @- https://api.example.com/posts
+
+  # AI agent: Get just response body
+  fetch https://api.example.com/data
+  # {"result": "success"}
+
+  # AI agent: Download with error handling
+  if fetch --timeout 5 https://example.com/large-file -o output.bin; then
+    echo "Downloaded successfully"
+  else
+    echo "Download failed: $?"
+  fi
+  ```
+
+  ## Technical Implementation
+  1. **Create src/builtins/fetch.rs**
+     - Use reqwest crate (popular, well-maintained)
+     - Parse HTTP-like CLI arguments
+     - Execute request
+     - Format response
+
+  2. **Data Structure**
+     ```rust
+     #[derive(Serialize)]
+     struct FetchResponse {
+         status: u16,
+         status_text: String,
+         headers: HashMap<String, String>,
+         body: Value,  // Parsed JSON or string
+         response_time_ms: u64,
+         url: String,  // Final URL after redirects
+     }
+     ```
+
+  3. **Request Builder**
+     ```rust
+     struct FetchOptions {
+         method: Method,  // GET, POST, PUT, DELETE, etc.
+         headers: Vec<(String, String)>,
+         body: Option<String>,
+         timeout: Option<Duration>,
+         follow_redirects: bool,
+         output_file: Option<PathBuf>,
+     }
+     ```
+
+  4. **Output Modes**
+     - Default: Response body only (like curl)
+     - `--json`: Full structured response
+     - `--headers`: Include headers in text mode
+     - `--verbose`: Full request/response details
+     - `-o file`: Save to file instead of stdout
+
+  5. **Error Handling**
+     - Network errors: clear message, non-zero exit
+     - Timeout: specific error, non-zero exit
+     - HTTP errors (4xx, 5xx): include in JSON, exit code reflects status
+     - Invalid URLs: helpful message
+
+  ## Advanced Features (in scope)
+  - Auto-detect JSON responses and parse
+  - Support @filename for request body
+  - Basic auth: `fetch -u user:pass URL`
+  - Custom user agent
+  - Progress bar for large downloads (optional)
+
+  ## NOT in scope (future)
+  - Complex auth (OAuth, etc.) - use curl for now
+  - Cookies/session management
+  - HTTP/2 multiplexing
+  - Certificate pinning
+  - Proxy support (maybe later)
+
+  ## Performance Optimization
+  - Reuse HTTP client (connection pooling)
+  - Async I/O with tokio (reqwest already does this)
+  - Streaming for large responses
+  - Benchmark vs curl
+
+  ## Testing Strategy
+  - Unit tests: argument parsing, response formatting
+  - Integration tests (need test HTTP server):
+    - GET requests
+    - POST with body
+    - Custom headers
+    - Redirects
+    - Timeouts
+    - Error responses
+    - JSON auto-parsing
+  - Use httpbin.org for live tests (optional)
+  - Mock HTTP server for reliable tests
+
+  ## Documentation
+  - Create docs/HTTP_BUILTIN.md:
+    - All flags and options
+    - Examples for AI agents
+    - Comparison with curl
+    - JSON schema for --json output
+  - Add to README
+  - Inline help
+
+  ## Dependencies
+  - reqwest = { version = "0.11", features = ["json", "blocking"] }
+    - Consider async vs blocking API
+    - Blocking might be simpler for shell use
+  - serde_json (already in use)
+
+  ## Platform Considerations
+  - Use native TLS (OpenSSL on Linux, SChannel on Windows, SecureTransport on macOS)
+  - reqwest handles this automatically
+
+  ## Estimated Effort
+  50-60k tokens:
+  - Implementation: 20k
+  - Request/response handling: 15k
+  - Tests: 15k
+  - Documentation: 10k
+labels:
+- ai-agents
+- builtin
+- http
+- json
+- p2

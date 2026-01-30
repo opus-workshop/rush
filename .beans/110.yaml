@@ -1,0 +1,10 @@
+id: '110'
+title: Add -c flag for non-interactive command execution
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.891149Z
+updated_at: 2026-01-30T18:49:24.891149Z
+description: Rush currently only supports interactive mode. Add support for 'rush -c "command"' to run single commands non-interactively, similar to bash -c. This is needed for scripting and benchmarking.
+labels:
+- enhancement
+- phase4

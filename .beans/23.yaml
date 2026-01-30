@@ -1,0 +1,31 @@
+id: '23'
+title: 'US-001: Script Execution'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.375006Z
+updated_at: 2026-01-30T18:49:24.375006Z
+description: |-
+  As a developer, I want to execute Rush shell scripts from files so that I can automate tasks and run saved scripts.
+
+  ## Acceptance Criteria
+  - [ ] Can execute .rush files: `rush script.rush`
+  - [ ] Shebang support: `#!/usr/bin/env rush`
+  - [ ] Script arguments accessible via $1, $2, etc.
+  - [ ] Exit codes propagate correctly
+  - [ ] Error messages show script name and line number
+  - [ ] Scripts can source other scripts
+  - [ ] cargo test passes (all tests including new script execution tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+  - [ ] Manual testing: run sample scripts with various features
+
+  ## Technical Notes
+  - Modify src/executor/mod.rs to accept file input
+  - Add script argument parsing
+  - Implement file reading and execution loop
+  - Add line number tracking for errors
+labels:
+- '1.0'
+- backend
+- critical
+- rush

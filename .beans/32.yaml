@@ -1,0 +1,133 @@
+id: '32'
+title: 'AI-001: Structured git log with JSON output'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.416829Z
+updated_at: 2026-01-30T18:49:24.416829Z
+description: |-
+  As an AI coding agent, I need git log to return structured JSON so I can analyze commit history programmatically without fragile parsing.
+
+  ## Priority: P0 - CRITICAL
+  Git log is queried constantly by AI agents to understand code evolution, find relevant commits, and generate changelogs.
+
+  ## Acceptance Criteria
+  - [ ] `git_log` builtin command implemented
+  - [ ] Human-readable output by default (like git log --oneline)
+  - [ ] `git_log --json` returns structured JSON array
+  - [ ] JSON includes: hash, author, date, message, files_changed
+  - [ ] `git_log --json -n N` limits to N commits
+  - [ ] `git_log --json --since="1 week ago"` date filtering
+  - [ ] `git_log --json path/to/file` file-specific history
+  - [ ] `git_log --json --grep="pattern"` search messages
+  - [ ] Performance: <5ms for 100 commits on large repos
+  - [ ] Error handling: clear messages for non-git repos
+  - [ ] cargo test passes with integration tests
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # AI agent: Get recent commits for context
+  git_log --json -n 10
+  # Returns:
+  # [
+  #   {
+  #     "hash": "a1b2c3d",
+  #     "short_hash": "a1b2c3d",
+  #     "author": "Alice <alice@example.com>",
+  #     "date": "2026-01-24T12:00:00Z",
+  #     "timestamp": 1706097600,
+  #     "message": "Add user authentication",
+  #     "files_changed": 5,
+  #     "insertions": 123,
+  #     "deletions": 45
+  #   },
+  #   ...
+  # ]
+
+  # AI agent: Find commits related to auth
+  git_log --json --grep="auth" -n 20
+
+  # AI agent: Get file history
+  git_log --json src/auth.rs
+
+  # Human: Quick overview
+  git_log -n 10
+  # a1b2c3d Add user authentication
+  # b2c3d4e Fix login bug
+  # ...
+  ```
+
+  ## Technical Implementation
+  1. **Create src/builtins/git_log.rs**
+     - Leverage existing GitContext from git_status.rs
+     - Use git2-rs crate (already in dependencies)
+     - Parse flags: --json, -n, --since, --grep, paths
+
+  2. **Data Structure**
+     ```rust
+     #[derive(Serialize)]
+     struct Commit {
+         hash: String,
+         short_hash: String,
+         author: String,
+         author_email: String,
+         date: String,  // ISO 8601
+         timestamp: i64,
+         message: String,
+         files_changed: usize,
+         insertions: usize,
+         deletions: usize,
+     }
+     ```
+
+  3. **Output Modes**
+     - Default: `{short_hash} {message_first_line}`
+     - `--json`: JSON array of Commit objects
+     - Pipe to jq-compatible format
+
+  4. **Performance Optimization**
+     - Lazy loading (don't compute stats unless needed)
+     - Limit default to 100 commits
+     - Cache git2 repo handle in GitContext
+
+  5. **Error Handling**
+     - Not a git repo: clear error message
+     - Invalid refs: helpful suggestion
+     - Permission errors: actionable message
+
+  ## Testing Strategy
+  - Unit tests: parsing, formatting, edge cases
+  - Integration tests:
+    - git_log in actual repo
+    - --json output validation
+    - Filter flags work correctly
+    - Performance benchmark (<5ms for 100 commits)
+  - Error cases: non-git repo, invalid flags
+
+  ## Documentation
+  - Add to README.md examples
+  - Create docs/AI_AGENT_GIT.md with:
+    - All git_log use cases for AI agents
+    - JSON schema reference
+    - Performance characteristics
+    - Comparison with git log + parsing
+
+  ## Dependencies
+  - git2-rs crate (already in Cargo.toml)
+  - serde_json for JSON serialization
+  - Extends GitContext from src/git.rs
+
+  ## Estimated Effort
+  40-50k tokens:
+  - Implementation: 20k
+  - Tests: 15k
+  - Documentation: 10k
+  - Debugging/refinement: 5k
+labels:
+- ai-agents
+- builtin
+- critical
+- git
+- json
+- p0

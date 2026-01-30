@@ -1,0 +1,28 @@
+id: '190'
+title: 'Basic awk builtin: field splitting and pattern matching'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:25.584728Z
+updated_at: 2026-01-30T18:49:25.584728Z
+description: |-
+  Implement basic awk functionality as a Rush builtin.
+
+  ## Scope
+  - Field splitting (default whitespace, -F for custom)
+  - $0, $1, $2... field references
+  - print and printf statements
+  - Pattern matching: /regex/ { action }
+  - BEGIN and END blocks
+  - NR, NF, FS, OFS built-in variables
+  - String concatenation
+
+  ## Acceptance Criteria
+  - [ ] echo 'a b c' | awk '{print $2}' -> b
+  - [ ] awk -F: '{print $1}' /etc/passwd -> usernames
+  - [ ] awk '/pattern/ {print}' file -> matching lines
+  - [ ] awk 'BEGIN{print "header"} {print NR, $0}' -> numbered lines
+  - [ ] cargo test passes
+
+  ## Files to Create/Modify
+  - src/builtins/awk.rs (new)
+  - src/builtins/mod.rs (register builtin)

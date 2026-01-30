@@ -1,0 +1,62 @@
+id: '173'
+title: 'SCRIPT-014: wait builtin'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:25.422680Z
+updated_at: 2026-01-30T18:49:25.422680Z
+description: |-
+  As a script writer, I need the wait builtin to wait for background jobs to complete.
+
+  ## Priority: P2 - MEDIUM
+  Completes job control functionality.
+
+  ## Acceptance Criteria
+  - [ ] `wait` waits for all background jobs
+  - [ ] `wait pid` waits for specific process
+  - [ ] `wait %job` waits for specific job
+  - [ ] Returns exit code of waited process
+  - [ ] Error if PID doesn't exist
+  - [ ] Works with multiple PIDs
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Wait for background job
+  sleep 5 &
+  job=$!
+  echo "Waiting..."
+  wait $job
+  echo "Done"
+
+  # Wait for all jobs
+  sleep 3 &
+  sleep 5 &
+  wait  # Waits for both
+
+  # Get exit code
+  false &
+  job=$!
+  wait $job
+  echo $?  # 1
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/wait.rs
+  - Use libc::waitpid() or std::process::Child::wait()
+  - Integrate with job manager
+  - Track job PIDs
+
+  ## Testing
+  - Wait for single job
+  - Wait for all jobs
+  - Exit code propagation
+  - Error on invalid PID
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- job-control
+- p2
+- scripting

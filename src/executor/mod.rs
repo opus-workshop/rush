@@ -691,10 +691,12 @@ impl Executor {
                     );
 
                     let mut error_msg = format!("Command not found: '{}'", command_name);
-
+                                
                     if !suggestions.is_empty() {
-                        error_msg.push_str("\n\n");
-                        error_msg.push_str(&self.suggestion_engine.format_suggestions(&suggestions));
+                        error_msg.push_str("\n\nDid you mean:\n");
+                        for suggestion in suggestions.iter().take(3) {
+                            error_msg.push_str(&format!("  {}\n", suggestion.text));
+                        }
                     }
 
                     anyhow!(error_msg)
@@ -1028,8 +1030,10 @@ impl Executor {
                                 let mut error_msg = format!("Command not found: '{}'", command.name);
                                 
                                 if !suggestions.is_empty() {
-                                    error_msg.push_str("\n\n");
-                                    error_msg.push_str(&corrector.format_suggestions(&suggestions));
+                                    error_msg.push_str("\n\nDid you mean:\n");
+                                    for suggestion in suggestions.iter().take(3) {
+                                        error_msg.push_str(&format!("  {}\n", suggestion.text));
+                                    }
                                 }
                                 
                                 Err(anyhow!(error_msg))
@@ -2666,7 +2670,7 @@ impl ExecutionResult {
     //     } else {
     //         error.to_text()
     //     };
-    //
+
     //     Self {
     //         output: Output::Text(String::new()),
     //         stderr,
@@ -2831,7 +2835,7 @@ mod tests {
             &mut executor,
             "for i in 1 2; do for j in a b; do echo $i$j; done; done",
         );
-        // echo $i$j produces "1 a" because they are separate args
+        // echo $i$j produces "1a" because they are separate args
         assert_eq!(result.stdout(), "1a\n1b\n2a\n2b\n");
     }
 
@@ -3068,5 +3072,208 @@ mod tests {
             "until test $i -le 0; do echo $i; i=$((i-1)); done",
         );
         assert_eq!(result.stdout(), "3\n2\n1\n");
+    }
+
+    // --- Configuration file tests ---
+
+    #[test]
+    fn test_source_file_basic() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a simple config file with environment variable setting
+        fs::write(&config_file, "TEST_VAR=hello\necho $TEST_VAR\n").unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify the variable was set
+        assert_eq!(
+            executor.runtime_mut().get_variable("TEST_VAR"),
+            Some("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_source_file_with_alias() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with alias definition
+        fs::write(&config_file, "alias ll='ls -la'\n").unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify the alias was set
+        assert!(executor.runtime_mut().get_alias("ll").is_some());
+    }
+
+    #[test]
+    fn test_source_file_with_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with function definition
+        fs::write(&config_file, "my_func() { echo 'function called'; }\n").unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify the function was defined
+        assert!(executor.runtime_mut().get_function("my_func").is_some());
+    }
+
+    #[test]
+    fn test_source_file_nonexistent() {
+        use std::path::PathBuf;
+
+        let config_file = PathBuf::from("/nonexistent/path/config");
+        let mut executor = Executor::new_embedded();
+
+        // Should not error on nonexistent file (silently ignore)
+        let result = executor.source_file(&config_file);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_source_file_with_comments_and_blank_lines() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with comments and blank lines
+        let content = r#"
+# This is a comment
+TEST_VAR=value1
+
+# Another comment
+ANOTHER_VAR=value2
+"#;
+        fs::write(&config_file, content).unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify variables were set
+        assert_eq!(
+            executor.runtime_mut().get_variable("TEST_VAR"),
+            Some("value1".to_string())
+        );
+        assert_eq!(
+            executor.runtime_mut().get_variable("ANOTHER_VAR"),
+            Some("value2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_source_file_with_multiple_variables() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with multiple variables
+        let content = r#"
+VAR1=one
+VAR2=two
+VAR3=three
+"#;
+        fs::write(&config_file, content).unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify all variables were set
+        assert_eq!(
+            executor.runtime_mut().get_variable("VAR1"),
+            Some("one".to_string())
+        );
+        assert_eq!(
+            executor.runtime_mut().get_variable("VAR2"),
+            Some("two".to_string())
+        );
+        assert_eq!(
+            executor.runtime_mut().get_variable("VAR3"),
+            Some("three".to_string())
+        );
+    }
+
+    #[test]
+    fn test_source_file_error_handling() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with invalid syntax
+        fs::write(&config_file, "invalid $$$ syntax\n").unwrap();
+
+        let mut executor = Executor::new_embedded();
+
+        // Should not panic, errors should be handled gracefully
+        let result = executor.source_file(&config_file);
+        // The error may be reported but execution should continue
+        let _ = result;
+    }
+
+    #[test]
+    fn test_source_file_with_shell_options() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with set command for shell options
+        fs::write(&config_file, "set -e\nTEST_OPT=enabled\n").unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify variable was set even with set command
+        assert_eq!(
+            executor.runtime_mut().get_variable("TEST_OPT"),
+            Some("enabled".to_string())
+        );
+    }
+
+    #[test]
+    fn test_source_file_execution_continues_on_error() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_file = temp_dir.path().join("test_config");
+
+        // Create a config file with one invalid line and one valid line
+        let content = r#"
+invalid $$$ syntax
+VAR_AFTER_ERROR=should_be_set
+"#;
+        fs::write(&config_file, content).unwrap();
+
+        let mut executor = Executor::new_embedded();
+        executor.source_file(&config_file).unwrap();
+
+        // Verify that the variable after the error was still set
+        // (execution should continue despite error)
+        assert_eq!(
+            executor.runtime_mut().get_variable("VAR_AFTER_ERROR"),
+            Some("should_be_set".to_string())
+        );
     }
 }

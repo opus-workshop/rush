@@ -1,0 +1,11 @@
+id: '166'
+title: Startup Optimization - Lazy Initialization
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.354045Z
+updated_at: 2026-01-30T18:49:25.354045Z
+description: "## Problem\nRush startup is ~8.6ms vs bash's ~6.8ms (1.27x slower). User CPU time is 5.0ms vs bash's 1.3ms - suggesting expensive initialization.\n\n## Current Benchmark Results (hyperfine -N, 100 runs)\n- Rush: 8.6ms ± 2.0ms\n- bash: 6.8ms ± 2.7ms  \n- zsh: 8.6ms ± 2.1ms\n\nRush matches zsh but is slower than bash. The high user CPU time (5.0ms vs 1.3ms) indicates heavy initialization work.\n\n## Root Cause Analysis\nDuring `Executor::new()`, these are created eagerly:\n1. `Runtime::new()` - environment, variables\n2. `Builtins::new()` - all builtin commands registered\n3. `Corrector::new()` - spell-checking infrastructure  \n4. `TerminalControl::new()` - terminal setup\n\nFor `-c \"exit\"`, most of this initialization is wasted.\n\n## Proposed Solution\nImplement lazy initialization for expensive components:\n\n```rust\nstruct Executor {\n    runtime: Runtime,\n    builtins: OnceCell<Builtins>,  // Lazy\n    corrector: OnceCell<Corrector>, // Lazy\n    // ...\n}\n\nimpl Executor {\n    fn builtins(&self) -> &Builtins {\n        self.builtins.get_or_init(|| Builtins::new())\n    }\n}\n```\n\n## Acceptance Criteria\n- [ ] Profile current initialization to identify bottlenecks\n- [ ] Implement lazy initialization for Builtins\n- [ ] Implement lazy initialization for Corrector\n- [ ] Startup time reduced to <7ms (match bash)\n- [ ] No regression in functionality\n- [ ] All tests pass\n- [ ] Benchmark before/after documented\n\n## Expected Impact\nTarget: Reduce startup from 8.6ms to <7ms (20% improvement)"
+labels:
+- optimization
+- performance
+- startup

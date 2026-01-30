@@ -1,0 +1,69 @@
+id: '69'
+title: Performance Benchmarking and Verification
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.620858Z
+updated_at: 2026-01-30T18:49:24.620858Z
+description: |-
+  Comprehensive benchmarking suite to measure and verify all performance improvements.
+
+  ## Priority: P1 - Important
+  Essential for validating optimizations and preventing regressions.
+
+  ## Objectives
+  - Establish baseline performance metrics
+  - Measure impact of each optimization
+  - Create automated benchmark suite
+  - Prevent performance regressions
+
+  ## Acceptance Criteria
+  - [ ] Benchmark suite using hyperfine or criterion
+  - [ ] Measure daemon startup overhead
+  - [ ] Measure command execution latency
+  - [ ] Measure throughput (commands/sec)
+  - [ ] Compare before/after for each optimization
+  - [ ] Document results in benchmarks/RESULTS.md
+  - [ ] CI integration to detect regressions
+  - [ ] Target achieved: <5.5ms total, <1ms overhead
+
+  ## Benchmarks to Track
+  1. **Cold Start**: First command after daemon start
+  2. **Warm Execution**: Subsequent commands
+  3. **Concurrent Load**: Multiple clients
+  4. **Large Output**: Commands with MB+ output
+  5. **Error Cases**: Failed commands, timeouts
+
+  ## Metrics
+  - Latency: p50, p95, p99
+  - Throughput: commands/second
+  - Memory: daemon RSS, worker RSS
+  - CPU: daemon CPU%, worker CPU%
+
+  ## Implementation
+  - Create benches/ directory
+  - Add benchmark scripts
+  - Use hyperfine for end-to-end
+  - Use criterion for microbenchmarks
+  - Document methodology
+
+  ## Files Created
+  - benches/daemon_latency.rs
+  - benches/throughput.sh
+  - benchmarks/RESULTS.md
+
+  ## Expected Results
+  | Metric | Baseline | After Binary | After Workers | After Reuse | Target |
+  |--------|----------|--------------|---------------|-------------|--------|
+  | Latency | 9.3ms | 8.9ms | 6.0ms | 4.5ms | <5.5ms |
+  | Overhead | 4.8ms | 4.4ms | 1.5ms | 0.0ms | <1.0ms |
+
+  ## Estimated Effort
+  2-3 hours
+
+  ## Dependencies
+  Run after each optimization to measure impact
+labels:
+- benchmarking
+- daemon
+- performance
+- testing

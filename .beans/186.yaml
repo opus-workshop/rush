@@ -1,0 +1,10 @@
+id: '186'
+title: Implement cross-session history sync
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:25.547446Z
+updated_at: 2026-01-30T18:49:25.547446Z
+description: 'Add history synchronization across multiple Rush sessions: 1) Real-time or periodic sync, 2) Conflict resolution for concurrent edits, 3) Optional cloud sync support, 4) Privacy controls, 5) Session-specific vs global history'
+labels:
+- enhancement
+- phase5

@@ -1,0 +1,45 @@
+id: '82'
+title: 'POSIX-020: Implement IFS field splitting'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.702520Z
+updated_at: 2026-01-30T18:49:24.702520Z
+description: |-
+  Implement IFS-based field splitting for word expansion.
+
+  ## Context
+  POSIX requires word splitting based on IFS (Internal Field Separator) variable. Currently not fully implemented.
+
+  ## Acceptance Criteria
+  - Implement IFS variable (default: space, tab, newline)
+  - Apply IFS splitting to unquoted variable expansions
+  - Apply IFS splitting to command substitution
+  - Test default IFS: `var="a b c"; for x in $var; do echo $x; done`
+  - Test custom IFS: `IFS=:; var="a:b:c"; for x in $var; do echo $x; done`
+  - Test IFS with multiple chars: `IFS=:,; var="a:b,c"; for x in $var; do echo $x; done`
+  - Test quoted expansions skip IFS: `for x in "$var"; do echo $x; done`
+  - Test empty IFS (no splitting): `IFS=; var="a b c"; echo $var`
+  - Add integration tests
+  - Document IFS behavior
+
+  ## POSIX Requirements
+  - IFS contains characters used for field splitting
+  - Default IFS is <space><tab><newline>
+  - Unquoted expansions are split on IFS characters
+  - Quoted expansions ("$var") are NOT split
+  - Empty IFS means no splitting
+
+  ## Files to Modify
+  - src/runtime/mod.rs (track IFS variable)
+  - src/executor/mod.rs (apply IFS splitting in variable expansion)
+  - src/executor/mod.rs (apply IFS splitting in command substitution)
+  - tests/ifs_tests.rs (add comprehensive tests)
+
+  ## Estimated Effort
+  50-60k tokens (complex splitting logic, many edge cases, add tests)
+labels:
+- critical
+- ifs
+- parser
+- posix
+- quoting

@@ -1,0 +1,31 @@
+id: '25'
+title: 'US-005: Confirmation Prompts for Destructive Operations'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.383687Z
+updated_at: 2026-01-30T18:49:24.383687Z
+description: |-
+  As a cautious user, I want confirmation prompts before destructive operations so that I don't accidentally delete important files.
+
+  ## Acceptance Criteria
+  - [ ] rm -rf prompts for confirmation
+  - [ ] Shows what will be deleted (file count, size)
+  - [ ] y/N prompt with default to No
+  - [ ] Can force with --yes flag to skip prompt
+  - [ ] Works in scripts (auto-yes or auto-no based on flag)
+  - [ ] Integrates with undo system
+  - [ ] cargo test passes (all tests including prompt tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+  - [ ] Manual testing: verify prompts appear and work correctly
+
+  ## Technical Notes
+  - Add prompt logic to rm builtin
+  - Calculate total size before deletion
+  - Add --yes and --force flags
+  - Make it work non-interactively for scripts
+labels:
+- '1.0'
+- feature
+- rush
+- safety

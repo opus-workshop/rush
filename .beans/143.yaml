@@ -1,0 +1,32 @@
+id: '143'
+title: Remove Unused Tokio Dependency
+status: open
+priority: 0
+created_at: 2026-01-30T18:49:25.145578Z
+updated_at: 2026-01-30T18:49:25.145578Z
+description: |-
+  ## Problem
+  The `tokio` crate with `features = ["full"]` is listed in Cargo.toml but has **zero imports** anywhere in the Rush codebase. This adds significant binary bloat (~0.5-1ms of load time) and increases compile times.
+
+  ## Evidence
+  - Profiling agent grep'd entire codebase: no `use tokio`, no `tokio::` references
+  - Binary size is 5.5MB — tokio's async runtime, I/O drivers, and timer wheels are all linked but never called
+  - Estimated startup cost: 0.5-1ms for loading/relocating dead code pages
+
+  ## Implementation
+  1. Remove `tokio = { version = "1", features = ["full"] }` from Cargo.toml
+  2. Run `cargo build --release` to verify no compilation errors
+  3. Run full test suite to verify nothing breaks
+  4. Measure binary size reduction (expect ~500KB-1MB smaller)
+  5. Re-run `hyperfine` startup benchmark to measure improvement
+
+  ## Acceptance Criteria
+  - [ ] tokio removed from Cargo.toml
+  - [ ] `cargo build --release` succeeds
+  - [ ] `cargo test` passes
+  - [ ] Binary size measurably smaller
+  - [ ] Startup time measurably improved (hyperfine before/after)
+labels:
+- binary-size
+- performance
+- quick-win

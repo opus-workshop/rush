@@ -1,0 +1,42 @@
+id: '70'
+title: 'POSIX-001: Re-enable and test read builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.626905Z
+updated_at: 2026-01-30T18:49:24.626905Z
+description: |-
+  Re-enable the commented-out `read` builtin and ensure it works correctly with full POSIX semantics.
+
+  ## Context
+  The `read` builtin exists at `src/builtins/read.rs` but is commented out in `src/builtins/mod.rs`. It needs to be uncommented, tested, and verified.
+
+  ## Acceptance Criteria
+  - Uncomment `read` module in src/builtins/mod.rs
+  - Uncomment read builtin registration
+  - Test basic read functionality: `read VAR`
+  - Test reading multiple variables: `read VAR1 VAR2 VAR3`
+  - Test reading from stdin in pipelines: `echo "hello" | read VAR`
+  - Test IFS-based word splitting (if IFS is available, else note limitation)
+  - Test -r flag (disable backslash escapes)
+  - Test -p flag (prompt)
+  - Add integration tests
+  - Update help text
+
+  ## POSIX Requirements
+  - Read one line from stdin
+  - Split into words based on IFS
+  - Assign words to variables (first word → first var, etc.)
+  - Last variable gets all remaining words
+  - Exit code 0 on success, non-zero on EOF
+
+  ## Files to Modify
+  - src/builtins/mod.rs (uncomment)
+  - src/builtins/read.rs (verify/fix implementation)
+  - tests/builtin_tests.rs or similar (add tests)
+
+  ## Estimated Effort
+  30-40k tokens (re-enable, fix issues, add tests)
+labels:
+- builtin
+- critical
+- posix

@@ -1,0 +1,32 @@
+id: '24'
+title: 'US-004: Configuration File Support'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.379406Z
+updated_at: 2026-01-30T18:49:24.379406Z
+description: |-
+  As a Rush user, I want a startup config file (~/.rushrc) so that I can customize my environment, aliases, and preferences.
+
+  ## Acceptance Criteria
+  - [ ] Loads ~/.rushrc on startup (if exists)
+  - [ ] Supports setting environment variables
+  - [ ] Supports defining aliases
+  - [ ] Supports defining functions
+  - [ ] Supports setting shell options
+  - [ ] Errors in config show helpful messages
+  - [ ] Can skip config with --no-config flag
+  - [ ] cargo test passes (all tests including config tests)
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+  - [ ] Manual testing: create ~/.rushrc and verify it loads
+
+  ## Technical Notes
+  - Create config module
+  - Parse Rush script syntax from file
+  - Execute config before REPL starts
+  - Add error handling for bad config
+  - Document config file format
+labels:
+- '1.0'
+- feature
+- rush

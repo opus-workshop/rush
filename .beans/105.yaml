@@ -1,0 +1,20 @@
+id: '105'
+title: 'Builtin Reference: Shell Control Commands'
+status: open
+priority: 3
+created_at: 2026-01-30T18:49:24.854604Z
+updated_at: 2026-01-30T18:49:24.854604Z
+description: |-
+  Document shell control builtins in docs/BUILTINS.md.
+
+  ## Scope
+  - jobs, fg, bg, alias, unalias, history, set, test/[, type
+  - Job control, alias management, shell options
+  - Full reference format
+
+  ## Acceptance Criteria
+  - [ ] All control builtins documented
+  - [ ] Job control section complete
+
+  ## Deliverable
+  docs/BUILTINS.md (control section)

@@ -1,0 +1,65 @@
+id: '185'
+title: 'UNIQUE-002: watch builtin'
+status: open
+priority: 4
+created_at: 2026-01-30T18:49:25.538085Z
+updated_at: 2026-01-30T18:49:25.538085Z
+description: |-
+  As a developer, I want a built-in watch command so I can monitor command output over time.
+
+  ## Priority: P3 - NICE TO HAVE
+  Unique to Rush - quality of life feature.
+
+  ## Acceptance Criteria
+  - [ ] `watch command` runs command every 2 seconds
+  - [ ] `watch -n N command` custom interval
+  - [ ] Clear screen between runs
+  - [ ] Show timestamp and iteration count
+  - [ ] Ctrl-C to exit
+  - [ ] Highlight changes (optional)
+  - [ ] Exit on error (optional: -e flag)
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Watch test results
+  watch cargo test
+
+  # Monitor git status
+  watch -n 1 git status
+
+  # Watch file changes
+  watch "ls -l | grep myfile"
+
+  # Exit on error
+  watch -e "cargo build && cargo test"
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/watch.rs
+  - Loop with sleep interval
+  - Clear terminal between runs
+  - Execute command and capture output
+  - Optional: diff highlighting
+
+  ## Differentiation
+  - Built-in GNU watch equivalent
+  - Faster startup than external watch
+  - Integrated with Rush builtins
+  - Better error messages
+
+  ## Testing
+  - Basic watching
+  - Custom intervals
+  - Exit on error
+  - Ctrl-C handling
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- differentiation
+- monitoring
+- p3
+- unique

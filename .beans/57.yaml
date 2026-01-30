@@ -1,0 +1,23 @@
+id: '57'
+title: Delete junk files from repo
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.550554Z
+updated_at: 2026-01-30T18:49:24.550554Z
+description: |-
+  Remove all backup, temporary, and agent-artifact files cluttering the repository. This is the single highest-impact cleanup item — transforms first impression from 'messy WIP' to 'professional project'.
+
+  ## Completion Notes
+
+  Deleted 80 files totaling 31,217 lines:
+  - 54 `.bak3`/`.bak4` files in `src/builtins/` (duplicated copies of every builtin)
+  - 6 `.bak5`/`.final2`/`.final4` files in `src/daemon/`
+  - 5 `.bak`/`.bak2`/`.final`/`.final2`/`.final3` files in `src/executor/`
+  - 1 `.final2` file in `src/builtins/mod.rs.final2`
+  - 1 `.bak` file in `src/runtime/`
+  - 10 `.ralph-tui/iterations/*.log` files
+  - 3 root test scripts: `test_script.sh`, `test_builtin_demo.sh`, `test_unset.sh`
+
+  Several files from the original bead description were already deleted before this task ran (agent status markdown files, most root test scripts, Oops.rej, patches, signal.rs.rej). Only files actually present on disk were cleaned up.
+
+  `cargo build --release` verified passing after all deletions. Commit: 868b53b

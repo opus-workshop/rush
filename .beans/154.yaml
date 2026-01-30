@@ -1,0 +1,40 @@
+id: '154'
+title: 'FOUNDATION-FIX-004: Command not found exit code (127)'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.239938Z
+updated_at: 2026-01-30T18:49:25.239938Z
+description: |-
+  Fix exit codes for command not found - should return 127, not error message.
+
+  ## Problem
+  Command not found returns error message and incorrect exit code:
+  ```bash
+  nonexistent_cmd_12345 2>/dev/null; echo $?
+  # Error: Command not found: 'nonexistent_cmd_12345'
+  # Plus suggestions printed despite 2>/dev/null
+  # Exit code not 127
+  ```
+
+  ## Expected Behavior
+  - Command not found exits with code 127 (POSIX standard)
+  - Error message goes to stderr
+  - Can be captured with `2>/dev/null`
+  - Suggestions should not print when redirected
+
+  ## Acceptance Criteria
+  - [ ] `nonexistent_cmd; echo $?` outputs `127`
+  - [ ] `nonexistent_cmd 2>/dev/null; echo $?` outputs `127`
+  - [ ] Error message goes to stderr
+  - [ ] Suggestions not shown when stderr redirected
+  - [ ] Exit code 127 is propagated correctly
+  - [ ] Smoke test: command not found test passes
+
+  ## Technical Notes
+  - Set exit code $? to 127 on command not found
+  - Make error handling respect redirects
+  - Don't print suggestions to stderr when it's redirected
+labels:
+- executor
+- exit-codes
+- foundation

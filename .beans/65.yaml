@@ -1,0 +1,47 @@
+id: '65'
+title: Fix tokenizer splitting paths on forward slash
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.597655Z
+updated_at: 2026-01-30T18:49:24.597655Z
+description: |-
+  ## Problem
+
+  Rush's tokenizer incorrectly treats `/` as a token separator in unquoted arguments. This causes paths like `benches/rush_benchmark.py` to be split into two separate tokens: `benches` and `/rush_benchmark.py`.
+
+  ## Reproduction
+
+  ```bash
+  ./target/release/rush -c 'echo benches/rush_benchmark.py'
+  # Output: benches /rush_benchmark.py  (incorrectly split)
+
+  ./target/release/rush -c 'cat benches/rush_benchmark.py'
+  # Error: cat: benches: Is a directory
+  # Error: cat: /rush_benchmark.py: No such file or directory
+  ```
+
+  ## Expected Behavior
+
+  Paths should be treated as single tokens:
+  ```bash
+  ./target/release/rush -c 'echo benches/rush_benchmark.py'
+  # Expected: benches/rush_benchmark.py
+  ```
+
+  ## Workaround
+
+  Quoting the path works:
+  ```bash
+  ./target/release/rush -c 'python3 "benches/rush_benchmark.py"'
+  ```
+
+  ## Impact
+
+  This breaks basic shell usage - running commands with relative or absolute paths requires quoting, which is non-standard behavior.
+
+  ## Location
+
+  The bug is likely in `src/lexer/mod.rs` or `src/parser/mod.rs` where tokens are split.
+labels:
+- bug
+- parser

@@ -1,0 +1,45 @@
+id: '89'
+title: 'POSIX-027: Implement standard shell variables'
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.746671Z
+updated_at: 2026-01-30T18:49:24.746671Z
+description: |-
+  Implement standard shell variables (SHELL, PWD, OLDPWD, PPID, SHLVL).
+
+  ## Context
+  POSIX shells set certain standard variables. Rush should too.
+
+  ## Acceptance Criteria
+  - Set SHELL to path of rush executable
+  - Set PWD automatically when cd changes directory
+  - Set OLDPWD to previous directory (for cd -)
+  - Set PPID to parent process ID
+  - Set SHLVL and increment when spawning subshells
+  - Implement cd - (go to OLDPWD)
+  - Test OLDPWD tracks previous directory
+  - Test SHLVL increments in subshells
+  - Test PWD stays in sync with actual directory
+  - Add integration tests
+  - Document variables
+
+  ## POSIX Requirements
+  - SHELL: pathname of the shell
+  - PWD: current working directory
+  - OLDPWD: previous working directory
+  - PPID: parent process ID (readonly)
+  - SHLVL: shell nesting level (not POSIX but common)
+
+  ## Files to Modify
+  - src/main.rs (set SHELL, PPID, SHLVL on startup)
+  - src/builtins/mod.rs builtin_cd (update PWD, OLDPWD)
+  - src/runtime/mod.rs (track these variables)
+  - tests/shell_variables_tests.rs (add tests)
+
+  ## Estimated Effort
+  35-45k tokens (implement variable tracking, cd - support, add tests)
+labels:
+- important
+- posix
+- shell-vars
+- variables

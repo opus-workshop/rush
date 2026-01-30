@@ -1,0 +1,57 @@
+id: '11'
+title: Migration Guide from Bash/Zsh
+status: open
+priority: 2
+created_at: 2026-01-30T18:49:24.324654Z
+updated_at: 2026-01-30T18:49:24.324654Z
+description: |-
+  Help users transition from their current shell.
+
+  ## Purpose
+  Make switching to Rush less scary and more successful.
+
+  ## Contents
+  1. **What's Different**
+     - Syntax differences
+     - Missing features (and workarounds)
+     - New capabilities (undo, speed)
+     - Breaking changes from bash
+
+  2. **Quick Start for Bash Users**
+     - 80% compatible commands
+     - What just works
+     - What needs adjustment
+     - Common gotchas
+
+  3. **Quick Start for Zsh Users**
+     - Notable differences
+     - Plugin equivalents
+     - Oh-My-Zsh migration
+     - Theme alternatives
+
+  4. **Porting Scripts**
+     - Testing compatibility
+     - Common rewrites needed
+     - When to stay with bash
+     - Dual-shell strategy
+
+  5. **Porting Configs**
+     - .bashrc → .rushrc
+     - .zshrc → .rushrc
+     - Aliases
+     - Functions
+     - Environment variables
+
+  ## Format
+  - Side-by-side examples
+  - Before (bash) / After (rush)
+  - Compatibility matrix
+  - Migration checklist
+
+  ## Deliverable
+  docs/MIGRATION.md
+  Script: scripts/migrate-bashrc.sh
+labels:
+- documentation
+- migration
+- phase4

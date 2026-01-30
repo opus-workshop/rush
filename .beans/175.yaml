@@ -1,0 +1,59 @@
+id: '175'
+title: 'SCRIPT-002: true/false builtins'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.441486Z
+updated_at: 2026-01-30T18:49:25.441486Z
+description: |-
+  As a shell scripter, I need true and false builtins so I can write conditionals and infinite loops.
+
+  ## Priority: P0 - CRITICAL
+  Essential for any conditional logic or loops.
+
+  ## Acceptance Criteria
+  - [ ] `true` always exits with code 0
+  - [ ] `false` always exits with code 1
+  - [ ] Work in conditionals: `if true; then echo yes; fi`
+  - [ ] Work in loops: `while true; do echo loop; sleep 1; done`
+  - [ ] Work with && and ||: `true && echo yes`, `false || echo no`
+  - [ ] Ignore all arguments (POSIX behavior)
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Infinite loop
+  while true; do
+    echo "Running..."
+    sleep 1
+  done
+
+  # Conditionals
+  if true; then
+    echo "This always runs"
+  fi
+
+  # Logic
+  true && echo "Success" || echo "Failure"
+  false && echo "Won't print" || echo "Will print"
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/mod.rs as simple functions
+  - `builtin_true` returns ExecutionResult with exit_code 0
+  - `builtin_false` returns ExecutionResult with exit_code 1
+  - No stdout/stderr output
+
+  ## Testing
+  - Exit codes
+  - Use in conditionals
+  - Use in loops
+  - With && and ||
+
+  ## Estimated Effort: 1 hour
+labels:
+- builtin
+- critical
+- p0
+- scripting

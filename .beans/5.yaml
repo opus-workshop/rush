@@ -1,0 +1,12 @@
+id: '5'
+title: Daemon Performance Optimization - Achieve <1ms Startup
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.300475Z
+updated_at: 2026-01-30T18:49:24.300475Z
+description: "Optimize Rush daemon to achieve sub-millisecond startup overhead.\n\n## Current Status\n- Direct execution: 4.5ms ± 0.8ms\n- Daemon execution: 9.3ms ± 1.6ms\n- **Current overhead: 4.8ms** (vs target of 0.4ms)\n\n## Goal\nReduce daemon overhead from 4.8ms to <1ms through architectural improvements.\n\n## Success Criteria\n- Daemon execution < 5.5ms (better than direct execution)\n- Ideally < 2ms total (80%+ improvement)\n- All tests passing\n- No regression in functionality\n- Stdout/stderr capture still working\n\n## Strategy\nThree-phase optimization approach:\n1. **Binary serialization** (80 LOC, quick win) - 0.3ms saved\n2. **Persistent workers** (250 LOC, core fix) - 2-3ms saved  \n3. **Reusable executors** (120 LOC, polish) - 1-2ms saved\n\n## Philosophy\nProfile-driven optimization:\n- Measure before/after each change\n- Focus on biggest bottlenecks first\n- Don't over-engineer\n- Keep code maintainable"
+labels:
+- daemon
+- epic
+- optimization
+- performance

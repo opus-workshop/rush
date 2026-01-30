@@ -1,0 +1,45 @@
+id: '78'
+title: 'POSIX-017: Implement while loop'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.676536Z
+updated_at: 2026-01-30T18:49:24.676536Z
+description: |-
+  Implement POSIX while loop syntax and execution.
+
+  ## Context
+  Rush has for loops but not while loops. Essential for POSIX compliance.
+
+  ## Acceptance Criteria
+  - Add while parsing to parser
+  - Add While node to AST
+  - Implement while execution in executor
+  - Test basic while: `i=0; while [ $i -lt 5 ]; do echo $i; i=$((i+1)); done`
+  - Test while with break
+  - Test while with continue
+  - Test nested while loops
+  - Test while with pipelines in condition
+  - Test exit code propagation (last command in last iteration)
+  - Add integration tests
+  - Document syntax
+
+  ## POSIX Requirements
+  - `while list1; do list2; done`
+  - Executes list2 repeatedly as long as list1 exits with 0
+  - Exit code is last command executed in list2, or 0 if never executed
+  - break/continue affect while loops
+
+  ## Files to Create/Modify
+  - src/parser.rs (add while parsing)
+  - src/ast.rs (add While node)
+  - src/executor/mod.rs (add while execution, handle BreakSignal/ContinueSignal)
+  - tests/while_loop_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (implement parsing, execution, break/continue integration, add tests)
+labels:
+- control-flow
+- critical
+- loops
+- parser
+- posix

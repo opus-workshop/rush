@@ -1,0 +1,59 @@
+id: '174'
+title: 'SCRIPT-015: pushd/popd/dirs builtins'
+status: open
+priority: 4
+created_at: 2026-01-30T18:49:25.432141Z
+updated_at: 2026-01-30T18:49:25.432141Z
+description: |-
+  As a power user, I need directory stack commands for easy navigation.
+
+  ## Priority: P3 - NICE TO HAVE
+  Quality of life feature for directory navigation.
+
+  ## Acceptance Criteria
+  - [ ] `pushd dir` pushes current dir and changes to new dir
+  - [ ] `popd` pops directory stack and changes to it
+  - [ ] `dirs` shows directory stack
+  - [ ] `dirs -c` clears stack
+  - [ ] `pushd` with no args swaps top two dirs
+  - [ ] Stack persists in session
+  - [ ] cargo test passes
+  - [ ] cargo build --release succeeds
+  - [ ] cargo clippy -- -D warnings passes
+
+  ## Use Cases
+  ```bash
+  # Navigate with stack
+  cd /usr/local
+  pushd /tmp        # Now in /tmp, stack: /usr/local
+  pushd /home       # Now in /home, stack: /usr/local /tmp
+  dirs              # /home /tmp /usr/local
+  popd              # Back to /tmp
+  popd              # Back to /usr/local
+
+  # Quick swap
+  pushd /var/log
+  pushd /etc
+  pushd             # Swap /etc and /var/log
+  ```
+
+  ## Technical Implementation
+  - Add to src/builtins/dirs.rs
+  - Runtime stores Vec<PathBuf> directory stack
+  - pushd: push current, cd to new
+  - popd: pop and cd
+  - dirs: display stack
+
+  ## Testing
+  - Push directories
+  - Pop directories
+  - Display stack
+  - Clear stack
+  - Swap behavior
+
+  ## Estimated Effort: 1 day
+labels:
+- builtin
+- navigation
+- p3
+- scripting

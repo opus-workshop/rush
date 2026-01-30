@@ -1,0 +1,44 @@
+id: '161'
+title: 'FOUNDATION-006: Arithmetic expansion'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:25.307281Z
+updated_at: 2026-01-30T18:49:25.307281Z
+description: |-
+  ## Problem
+  Arithmetic expansion `$(( ))` doesn't work.
+
+  ## Current Behavior
+  ```bash
+  echo $((1+2))      # Error or wrong output
+  x=5; echo $((x+3)) # Error or wrong output
+  ```
+
+  ## Expected Behavior
+  ```bash
+  echo $((1+2))      # Output: 3
+  echo $((3*4))      # Output: 12
+  x=5; echo $((x+3)) # Output: 8
+  echo $((5>3))      # Output: 1
+  echo $((5<3))      # Output: 0
+  ```
+
+  ## Implementation
+  1. Lexer/parser must recognize `$(( ... ))` as arithmetic expansion
+  2. Implement arithmetic evaluator supporting:
+     - Basic ops: + - * / %
+     - Comparisons: < > <= >= == !=
+     - Bitwise: & | ^ ~ << >>
+     - Logical: && || !
+     - Assignment: = += -= *= /=
+     - Variable references (no $ needed inside)
+     - Parentheses for grouping
+  3. Variables inside expand to their numeric value (0 if unset/non-numeric)
+
+  ## Test Cases
+  ```bash
+  test_case "arithmetic expansion" 'echo $((1+2))' '3'
+  test_case "arithmetic multiply" 'echo $((3*4))' '12'
+  test_case "arithmetic with var" 'x=5; echo $((x+3))' '8'
+  test_case "arithmetic compare" 'echo $((5>3))' '1'
+  ```

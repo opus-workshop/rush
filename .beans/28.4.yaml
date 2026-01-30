@@ -1,0 +1,10 @@
+id: '28.4'
+title: Homebrew formula and installation testing
+status: open
+priority: 2
+created_at: 2026-01-30T19:02:21.900755Z
+updated_at: 2026-01-30T19:02:37.379205Z
+description: Create Homebrew tap and formula. Test installation on clean macOS and Linux machines. Document installation process.
+parent: '28'
+dependencies:
+- '28.1'

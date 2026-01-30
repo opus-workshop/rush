@@ -1,0 +1,45 @@
+id: '73'
+title: 'POSIX-012: Implement command builtin'
+status: open
+priority: 1
+created_at: 2026-01-30T18:49:24.645501Z
+updated_at: 2026-01-30T18:49:24.645501Z
+description: |-
+  Implement the `command` builtin for bypassing shell functions and aliases.
+
+  ## Context
+  The `command` builtin runs commands, bypassing function and alias lookup. Similar to `builtin` but also works for external commands.
+
+  ## Acceptance Criteria
+  - Create src/builtins/command.rs
+  - Implement command builtin
+  - Register in src/builtins/mod.rs
+  - Test `command cmd`: bypasses functions/aliases, runs builtin or external
+  - Test `command -p cmd`: use default PATH
+  - Test `command -v cmd`: print command type (like `type`)
+  - Test `command -V cmd`: verbose command type
+  - Test with function shadowing builtin
+  - Test with alias shadowing command
+  - Add integration tests
+  - Update help text
+
+  ## POSIX Requirements
+  - Execute command bypassing function lookup
+  - `-p` uses default PATH instead of current PATH
+  - `-v` prints description of command (similar to type)
+  - `-V` prints verbose description
+  - Exit code: command's exit code, or error code if not found
+
+  ## Files to Create/Modify
+  - src/builtins/command.rs (new file)
+  - src/builtins/mod.rs (register builtin)
+  - src/executor/mod.rs (may need to expose command resolution logic)
+  - tests/command_tests.rs (add tests)
+
+  ## Estimated Effort
+  45-55k tokens (implement resolution logic, add all flags, add tests)
+labels:
+- builtin
+- critical
+- execution
+- posix
