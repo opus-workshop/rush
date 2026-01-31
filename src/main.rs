@@ -63,8 +63,26 @@ fn main() -> Result<()> {
                     // fast_execute_c never returns (calls process::exit)
                 }
                 "--check" if i + 1 < args.len() => {
-                    // Handle compatibility check
-                    run_compatibility_check(&args[i + 1]);
+                    // Handle compatibility check with optional --migrate and --fix flags
+                    let mut show_migrate = false;
+                    let mut apply_fix = false;
+                    let mut j = i + 2;
+
+                    while j < args.len() {
+                        match args[j].as_str() {
+                            "--migrate" => {
+                                show_migrate = true;
+                                j += 1;
+                            }
+                            "--fix" => {
+                                apply_fix = true;
+                                j += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+
+                    run_compatibility_check(&args[i + 1], show_migrate, apply_fix);
                     // run_compatibility_check calls process::exit
                 }
                 "--benchmark" if i + 1 < args.len() => {
@@ -754,8 +772,8 @@ fn execute_line_with_context(
 }
 
 /// Run compatibility check on a bash script
-fn run_compatibility_check(script_path: &str) -> ! {
-    use compat::{ScriptAnalyzer, CompatibilityReport};
+fn run_compatibility_check(script_path: &str, show_migrate: bool, apply_fix: bool) -> ! {
+    use compat::{ScriptAnalyzer, CompatibilityReport, MigrationEngine};
 
     // Read the script file
     let script_content = match fs::read_to_string(script_path) {
@@ -773,6 +791,26 @@ fn run_compatibility_check(script_path: &str) -> ! {
     // Generate and display report
     let report = CompatibilityReport::generate(script_path, &analysis);
     println!("{}", report.format_report());
+
+    // Handle migration suggestions if requested
+    if show_migrate && !report.migration_suggestions.is_empty() {
+        if apply_fix {
+            // Apply safe transformations and write to file
+            let fixed_content = MigrationEngine::apply_fixes(&script_content, &report.migration_suggestions);
+            let output_path = format!("{}.migrated", script_path);
+
+            match fs::write(&output_path, fixed_content) {
+                Ok(_) => {
+                    println!("\nMigrated script written to: {}", output_path);
+                    println!("Review the changes and replace the original if satisfied.");
+                }
+                Err(e) => {
+                    eprintln!("Error writing migrated script: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
 
     // Exit with appropriate code
     std::process::exit(report.exit_code());

@@ -6,6 +6,7 @@
 use super::analyzer::AnalysisResult;
 use super::database::CompatDatabase;
 use super::features::RushSupportStatus;
+use super::migrate::{MigrationEngine, MigrationSuggestion};
 use std::collections::BTreeMap;
 
 /// A single issue found during compatibility analysis
@@ -45,6 +46,8 @@ pub struct CompatibilityReport {
     pub unsupported: FeatureGroup,
     /// Overall compatibility percentage
     pub compatibility_percentage: f32,
+    /// Migration suggestions for bash-isms
+    pub migration_suggestions: Vec<MigrationSuggestion>,
 }
 
 impl CompatibilityReport {
@@ -108,6 +111,9 @@ impl CompatibilityReport {
             100.0 // Empty script is "compatible"
         };
 
+        // Generate migration suggestions
+        let migration_suggestions = MigrationEngine::suggest_migrations(analysis);
+
         Self {
             filename: source_filename.to_string(),
             lines_analyzed: analysis.lines_analyzed,
@@ -115,6 +121,7 @@ impl CompatibilityReport {
             warnings,
             unsupported,
             compatibility_percentage,
+            migration_suggestions,
         }
     }
 
@@ -220,6 +227,12 @@ impl CompatibilityReport {
             ));
         }
 
+        // Migration suggestions section
+        if !self.migration_suggestions.is_empty() {
+            output.push('\n');
+            output.push_str(&MigrationEngine::format_suggestions(&self.migration_suggestions));
+        }
+
         output
     }
 
@@ -260,6 +273,7 @@ mod tests {
                 feature_count: 0,
             },
             compatibility_percentage: 100.0,
+            migration_suggestions: vec![],
         };
 
         assert_eq!(report.exit_code(), 0);
@@ -288,6 +302,7 @@ mod tests {
                 feature_count: 0,
             },
             compatibility_percentage: 50.0,
+            migration_suggestions: vec![],
         };
 
         assert_eq!(report.exit_code(), 1);
@@ -316,6 +331,7 @@ mod tests {
                 feature_count: 1,
             },
             compatibility_percentage: 0.0,
+            migration_suggestions: vec![],
         };
 
         assert_eq!(report.exit_code(), 2);
@@ -344,6 +360,7 @@ mod tests {
                 feature_count: 0,
             },
             compatibility_percentage: 100.0,
+            migration_suggestions: vec![],
         };
 
         let formatted = report.format_report();
