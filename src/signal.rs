@@ -1,4 +1,6 @@
 use anyhow::Result;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 use signal_hook::consts::{SIGCHLD, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU};
 use signal_hook::iterator::Signals;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -14,11 +16,21 @@ pub static SIGNAL_NUMBER: AtomicI32 = AtomicI32::new(0);
 /// Flag indicating if a terminal stop signal was received
 pub static TERMINAL_STOP: AtomicBool = AtomicBool::new(false);
 
+/// Global flag for SIGINT received (separate from shutdown to allow interrupt without exit)
+static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
+
+/// Counter for consecutive SIGINT presses
+static SIGINT_COUNT: AtomicI32 = AtomicI32::new(0);
+
+/// Process group ID of the foreground job (0 if none)
+static FOREGROUND_PGID: AtomicI32 = AtomicI32::new(0);
+
 /// Signal handler state shared between main thread and signal handler thread
 #[derive(Clone)]
 pub struct SignalHandler {
     shutdown_flag: Arc<AtomicBool>,
     sigchld_flag: Arc<AtomicBool>,
+    interactive_mode: Arc<AtomicBool>,
 }
 
 impl SignalHandler {
@@ -27,14 +39,36 @@ impl SignalHandler {
         Self {
             shutdown_flag: Arc::new(AtomicBool::new(false)),
             sigchld_flag: Arc::new(AtomicBool::new(false)),
+            interactive_mode: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Create a new signal handler for interactive mode
+    pub fn new_interactive() -> Self {
+        Self {
+            shutdown_flag: Arc::new(AtomicBool::new(false)),
+            sigchld_flag: Arc::new(AtomicBool::new(false)),
+            interactive_mode: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Set interactive mode
+    pub fn set_interactive(&self, interactive: bool) {
+        self.interactive_mode.store(interactive, Ordering::SeqCst);
+    }
+
+    /// Check if in interactive mode
+    pub fn is_interactive(&self) -> bool {
+        self.interactive_mode.load(Ordering::SeqCst)
     }
 
     /// Setup signal handlers for SIGINT, SIGTERM, SIGHUP, and SIGCHLD
     pub fn setup(&self) -> Result<()> {
-        let mut signals = Signals::new([SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP, SIGTTIN, SIGTTOU])?;
+        let mut signals =
+            Signals::new([SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP, SIGTTIN, SIGTTOU])?;
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
         let sigchld_flag = Arc::clone(&self.sigchld_flag);
+        let interactive_mode = Arc::clone(&self.interactive_mode);
 
         thread::spawn(move || {
             for sig in signals.forever() {
@@ -42,7 +76,21 @@ impl SignalHandler {
                     SIGINT => {
                         SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
                         SIGNAL_NUMBER.store(SIGINT, Ordering::SeqCst);
-                        shutdown_flag.store(true, Ordering::SeqCst);
+                        SIGINT_RECEIVED.store(true, Ordering::SeqCst);
+                        SIGINT_COUNT.fetch_add(1, Ordering::SeqCst);
+
+                        // Forward signal to foreground process group if any
+                        let fg_pgid = FOREGROUND_PGID.load(Ordering::SeqCst);
+                        if fg_pgid > 0 {
+                            // Send SIGINT to the process group (negative PID)
+                            let _ = kill(Pid::from_raw(-fg_pgid), Signal::SIGINT);
+                        }
+
+                        // In interactive mode, don't set shutdown flag on SIGINT
+                        // (shell should stay alive, just interrupt current command)
+                        if !interactive_mode.load(Ordering::SeqCst) {
+                            shutdown_flag.store(true, Ordering::SeqCst);
+                        }
                     }
                     SIGTERM => {
                         SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
@@ -109,11 +157,49 @@ impl SignalHandler {
         self.sigchld_flag.store(false, Ordering::SeqCst);
     }
 
+    /// Check if SIGINT was received
+    pub fn sigint_received(&self) -> bool {
+        SIGINT_RECEIVED.load(Ordering::SeqCst)
+    }
+
+    /// Get the SIGINT count (for detecting multiple Ctrl-C presses)
+    pub fn sigint_count(&self) -> i32 {
+        SIGINT_COUNT.load(Ordering::SeqCst)
+    }
+
+    /// Reset the SIGINT count
+    pub fn reset_sigint_count(&self) {
+        SIGINT_COUNT.store(0, Ordering::SeqCst);
+    }
+
+    /// Set the foreground process group ID
+    pub fn set_foreground_pgid(&self, pgid: i32) {
+        FOREGROUND_PGID.store(pgid, Ordering::SeqCst);
+    }
+
+    /// Clear the foreground process group ID
+    pub fn clear_foreground_pgid(&self) {
+        FOREGROUND_PGID.store(0, Ordering::SeqCst);
+    }
+
+    /// Get the foreground process group ID
+    pub fn foreground_pgid(&self) -> i32 {
+        FOREGROUND_PGID.load(Ordering::SeqCst)
+    }
+
+    /// Clear the SIGINT flag
+    pub fn clear_sigint(&self) {
+        SIGINT_RECEIVED.store(false, Ordering::SeqCst);
+        SIGNAL_RECEIVED.store(false, Ordering::SeqCst);
+        SIGNAL_NUMBER.store(0, Ordering::SeqCst);
+    }
+
     /// Reset the signal state
     pub fn reset(&self) {
         SIGNAL_RECEIVED.store(false, Ordering::SeqCst);
         SIGNAL_NUMBER.store(0, Ordering::SeqCst);
         TERMINAL_STOP.store(false, Ordering::SeqCst);
+        SIGINT_RECEIVED.store(false, Ordering::SeqCst);
         self.shutdown_flag.store(false, Ordering::SeqCst);
     }
 
@@ -152,6 +238,11 @@ pub fn signal_number() -> i32 {
     SIGNAL_NUMBER.load(Ordering::SeqCst)
 }
 
+/// Check if SIGINT was received
+pub fn sigint_received() -> bool {
+    SIGINT_RECEIVED.load(Ordering::SeqCst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +253,16 @@ mod tests {
         assert!(!handler.should_shutdown());
         assert!(!handler.signal_received());
         assert_eq!(handler.signal_number(), 0);
+        assert!(!handler.is_interactive());
+    }
+
+    #[test]
+    fn test_signal_handler_interactive() {
+        let handler = SignalHandler::new_interactive();
+        assert!(handler.is_interactive());
+
+        handler.set_interactive(false);
+        assert!(!handler.is_interactive());
     }
 
     #[test]
@@ -176,6 +277,7 @@ mod tests {
         handler.reset();
         assert!(!handler.signal_received());
         assert_eq!(handler.signal_number(), 0);
+        assert!(!handler.sigint_received());
     }
 
     #[test]
@@ -204,5 +306,32 @@ mod tests {
         // Full integration testing is done in tests/signal_handling_tests.rs
         let handler = SignalHandler::new();
         assert!(handler.setup().is_ok());
+    }
+
+    #[test]
+    fn test_foreground_pgid() {
+        let handler = SignalHandler::new();
+        assert_eq!(handler.foreground_pgid(), 0);
+
+        handler.set_foreground_pgid(1234);
+        assert_eq!(handler.foreground_pgid(), 1234);
+
+        handler.clear_foreground_pgid();
+        assert_eq!(handler.foreground_pgid(), 0);
+    }
+
+    #[test]
+    fn test_sigint_count() {
+        let handler = SignalHandler::new();
+        handler.reset();
+
+        assert_eq!(handler.sigint_count(), 0);
+
+        // Manual increment for testing
+        SIGINT_COUNT.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(handler.sigint_count(), 1);
+
+        handler.reset_sigint_count();
+        assert_eq!(handler.sigint_count(), 0);
     }
 }
