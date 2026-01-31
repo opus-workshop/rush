@@ -9,6 +9,7 @@ use crate::terminal::TerminalControl;
 use anyhow::{anyhow, Result};
 use std::io::Write;
 use std::process::{Command as StdCommand, Stdio};
+use std::time::Instant;
 
 /// Execute a pipeline of commands with proper streaming and error handling
 ///
@@ -52,6 +53,10 @@ pub fn execute_pipeline(
         let is_first = i == 0;
         let is_last = i == pipeline.commands.len() - 1;
 
+        // Check if timing is being collected
+        let should_time = crate::builtins::time::is_collecting_timing();
+        let stage_start = if should_time { Some(Instant::now()) } else { None };
+
         let result = execute_pipeline_command(
             command,
             runtime,
@@ -62,6 +67,13 @@ pub fn execute_pipeline(
                 Some(&previous_output)
             },
         )?;
+
+        // Record stage timing if collecting
+        if let Some(start) = stage_start {
+            let elapsed = start.elapsed();
+            let is_builtin = builtins.is_builtin(&command.name);
+            crate::builtins::time::record_stage_timing(command.name.clone(), is_builtin, elapsed);
+        }
 
         // Track exit code for PIPESTATUS
         pipestatus.push(result.exit_code);
@@ -133,12 +145,30 @@ fn execute_pipeline_elements(
         let is_first = i == 0;
         let is_last = i == elements.len() - 1;
 
+        // Check if timing is being collected
+        let should_time = crate::builtins::time::is_collecting_timing();
+        let stage_start = if should_time { Some(Instant::now()) } else { None };
+
         let result = execute_element(
             element,
             runtime,
             builtins,
             if is_first { None } else { Some(&previous_output) },
         )?;
+
+        // Record stage timing if collecting
+        if let Some(start) = stage_start {
+            let elapsed = start.elapsed();
+            let stage_name = match element {
+                PipelineElement::Command(cmd) => cmd.name.clone(),
+                PipelineElement::Subshell(_) => "subshell".to_string(),
+            };
+            let is_builtin = match element {
+                PipelineElement::Command(cmd) => builtins.is_builtin(&cmd.name),
+                PipelineElement::Subshell(_) => false,
+            };
+            crate::builtins::time::record_stage_timing(stage_name, is_builtin, elapsed);
+        }
 
         pipestatus.push(result.exit_code);
 

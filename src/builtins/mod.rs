@@ -42,7 +42,7 @@ mod shift;
 mod test;
 pub mod trap; // Public so runtime and executor can access TrapSignal
 mod type_builtin;
-mod time;
+pub mod time; // Public so executor can access timing functions
 mod undo;
 mod unset;
 mod wait;
