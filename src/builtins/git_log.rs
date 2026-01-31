@@ -34,6 +34,7 @@ pub fn builtin_git_log(args: &[String], runtime: &mut Runtime) -> Result<Executi
     let mut json_output = false;
     let mut limit: Option<usize> = None;
     let mut since: Option<String> = None;
+    let mut until: Option<String> = None;
     let mut grep_pattern: Option<String> = None;
     let mut path_filter: Option<String> = None;
     let mut i = 0;
@@ -55,6 +56,14 @@ pub fn builtin_git_log(args: &[String], runtime: &mut Runtime) -> Result<Executi
                     i += 1;
                 } else {
                     return Err(anyhow!("--since requires an argument"));
+                }
+            }
+            "--until" => {
+                if i + 1 < args.len() {
+                    until = Some(args[i + 1].clone());
+                    i += 1;
+                } else {
+                    return Err(anyhow!("--until requires an argument"));
                 }
             }
             "--grep" => {
@@ -96,9 +105,14 @@ pub fn builtin_git_log(args: &[String], runtime: &mut Runtime) -> Result<Executi
     let limit = limit.unwrap_or(100); // Default limit to prevent very long output
     let mut count = 0;
 
-    // Parse --since if provided
+    // Parse --since and --until if provided
     let since_timestamp = if let Some(since_str) = &since {
-        parse_since(&since_str)?
+        parse_relative_time(since_str)?
+    } else {
+        None
+    };
+    let until_timestamp = if let Some(until_str) = &until {
+        parse_relative_time(until_str)?
     } else {
         None
     };
@@ -113,9 +127,16 @@ pub fn builtin_git_log(args: &[String], runtime: &mut Runtime) -> Result<Executi
         let commit = repo.find_commit(oid)
             .map_err(|e| anyhow!("Failed to find commit: {}", e))?;
 
-        // Apply --since filter
+        // Apply --since filter (commits must be newer than since_ts)
         if let Some(since_ts) = since_timestamp {
             if commit.time().seconds() < since_ts {
+                continue;
+            }
+        }
+
+        // Apply --until filter (commits must be older than until_ts)
+        if let Some(until_ts) = until_timestamp {
+            if commit.time().seconds() > until_ts {
                 continue;
             }
         }
@@ -181,7 +202,7 @@ pub fn builtin_git_log(args: &[String], runtime: &mut Runtime) -> Result<Executi
     Ok(ExecutionResult::success(output))
 }
 
-fn parse_since(since_str: &str) -> Result<Option<i64>> {
+fn parse_relative_time(time_str: &str) -> Result<Option<i64>> {
     // Simple parsing for common patterns
     // Full implementation would use a datetime parser
     let now = SystemTime::now()
@@ -189,18 +210,18 @@ fn parse_since(since_str: &str) -> Result<Option<i64>> {
         .unwrap()
         .as_secs() as i64;
 
-    if since_str.ends_with(" days ago") || since_str.ends_with(" day ago") {
-        let parts: Vec<&str> = since_str.split_whitespace().collect();
+    if time_str.ends_with(" days ago") || time_str.ends_with(" day ago") {
+        let parts: Vec<&str> = time_str.split_whitespace().collect();
         if let Ok(days) = parts[0].parse::<i64>() {
             return Ok(Some(now - days * 86400));
         }
-    } else if since_str.ends_with(" weeks ago") || since_str.ends_with(" week ago") {
-        let parts: Vec<&str> = since_str.split_whitespace().collect();
+    } else if time_str.ends_with(" weeks ago") || time_str.ends_with(" week ago") {
+        let parts: Vec<&str> = time_str.split_whitespace().collect();
         if let Ok(weeks) = parts[0].parse::<i64>() {
             return Ok(Some(now - weeks * 7 * 86400));
         }
-    } else if since_str.ends_with(" months ago") || since_str.ends_with(" month ago") {
-        let parts: Vec<&str> = since_str.split_whitespace().collect();
+    } else if time_str.ends_with(" months ago") || time_str.ends_with(" month ago") {
+        let parts: Vec<&str> = time_str.split_whitespace().collect();
         if let Ok(months) = parts[0].parse::<i64>() {
             return Ok(Some(now - months * 30 * 86400));
         }
@@ -305,20 +326,26 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_since_days() {
-        let result = parse_since("7 days ago").unwrap();
+    fn test_parse_relative_time_days() {
+        let result = parse_relative_time("7 days ago").unwrap();
         assert!(result.is_some());
     }
 
     #[test]
-    fn test_parse_since_weeks() {
-        let result = parse_since("2 weeks ago").unwrap();
+    fn test_parse_relative_time_weeks() {
+        let result = parse_relative_time("2 weeks ago").unwrap();
         assert!(result.is_some());
     }
 
     #[test]
-    fn test_parse_since_invalid() {
-        let result = parse_since("invalid").unwrap();
+    fn test_parse_relative_time_months() {
+        let result = parse_relative_time("3 months ago").unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_relative_time_invalid() {
+        let result = parse_relative_time("invalid").unwrap();
         assert!(result.is_none());
     }
 }
