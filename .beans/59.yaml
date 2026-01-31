@@ -14,9 +14,6 @@ description: |-
   - Root test scripts: /test_*.sh, /test_*.rush
   - Agent status artifacts: /BEAD_*.md, /*_STATUS.md, /*_SUMMARY.md, /*_IMPLEMENTATION.md, /*_VERIFICATION.md
 
-  Do NOT gitignore .beads/ (that is intentionally tracked for issue management).
-
   Acceptance criteria:
   - git status no longer shows backup/temp files as untracked
   - Future .bak/.tmp files are automatically ignored
-  - .beads/ directory remains tracked

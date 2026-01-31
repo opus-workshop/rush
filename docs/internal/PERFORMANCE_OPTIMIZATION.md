@@ -257,7 +257,7 @@ sudo flamegraph -o startup.svg ./target/release/rush -c "exit"
 ## References
 
 - Current benchmark results: `BENCHMARK_RESULTS_UPDATED.md`
-- Beads for missing features: `.beads/issues.jsonl`
+- Beans for missing features: `bn list`
 - Phase 4 script execution: rush-j1d bead
 - Daemon mode concept: rush-7sz bead (Phase 5)
 

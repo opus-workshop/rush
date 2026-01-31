@@ -663,7 +663,7 @@ Should print nothing and exit with code 1
 Don't file bugs for:
 - Features that aren't implemented (check docs first)
 - Bash-isms that Rush doesn't claim to support
-- "It would be nice if..." (use beads for features)
+- "It would be nice if..." (use beans for features)
 - Performance being "only" 50x faster instead of 200x
 - Cosmetic issues unless they affect usability
 

@@ -264,7 +264,7 @@ Compatibility: 87% (31/36 features)
 3. Consider rush-hn3 (Error Messages) for differentiation
 4. Others can be post-launch based on feedback
 
-All epics created as beads issues:
+All epics created as beans issues:
 - rush-hn1 through rush-hn6
 - Detailed acceptance criteria
 - Technical implementation notes
