@@ -22,3 +22,4 @@ description: |-
   ## Files
   - src/completion/git.rs (new)
   - src/completion/mod.rs (register)
+verify: cargo test --lib && cargo clippy -- -D warnings

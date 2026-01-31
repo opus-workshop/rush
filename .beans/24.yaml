@@ -30,3 +30,4 @@ labels:
 - '1.0'
 - feature
 - rush
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

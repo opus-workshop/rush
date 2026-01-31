@@ -7,7 +7,6 @@ pub mod render;
 
 /// Core value types for structured data in rush shell
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum Value {
     // Primitives
     String(String),

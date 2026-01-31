@@ -7,3 +7,4 @@ updated_at: 2026-01-30T18:49:24.933477Z
 description: 'Add benchmark tracking to CI pipeline. Scope: GitHub Actions workflow for benchmarks, performance regression detection, alert on more than 10 percent regression, store historical results. Acceptance Criteria: CI runs benchmarks on every PR, alerts on performance regression, historical tracking works. Files: .github/workflows/benchmark.yml (new), scripts/check_regression.sh (new)'
 labels:
 - benchmark
+verify: 'cargo build --release && ls -lh target/release/rush'

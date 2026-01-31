@@ -50,3 +50,4 @@ labels:
 - build
 - performance
 - pgo
+verify: cargo test --lib && cargo clippy -- -D warnings

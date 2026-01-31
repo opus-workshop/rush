@@ -31,3 +31,4 @@ acceptance: |-
   - cargo build succeeds
   - cargo test passes
 parent: rush-hn2
+verify: 'cargo build --release && cargo test && ./target/release/rush -c "echo hello" | head -1'

@@ -45,3 +45,4 @@ description: |-
 labels:
 - bug
 - parser
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

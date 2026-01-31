@@ -60,3 +60,4 @@ labels:
 - p2
 - rush
 - stability
+verify: cargo test --lib builtins

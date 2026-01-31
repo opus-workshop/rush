@@ -54,3 +54,4 @@ labels:
 - rush
 - shell-options
 - stability
+verify: cargo test --lib builtins

@@ -33,3 +33,4 @@ parent: rush-hn6
 dependencies:
 - rush-hn6.2
 - rush-hn6.4
+verify: cargo test --lib && cargo clippy -- -D warnings

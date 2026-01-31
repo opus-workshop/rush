@@ -22,3 +22,4 @@ description: |-
   ## Files
   - src/completion/fuzzy.rs (new)
   - src/completion/engine.rs (integrate)
+verify: cargo test --lib && cargo clippy -- -D warnings

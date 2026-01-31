@@ -426,7 +426,7 @@ mod tests {
             "Apple".to_string(),
             "1.99".to_string(),
         ], &mut runtime).unwrap();
-        assert_eq!(result.stdout(), "Apple                       1.99\n");
+        assert_eq!(result.stdout(), "Apple                      1.99\n");
         assert_eq!(result.exit_code, 0);
     }
 

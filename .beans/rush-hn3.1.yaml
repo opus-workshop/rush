@@ -41,3 +41,4 @@ acceptance: |-
   - cargo test passes
   - Help text is accessible via public API
 parent: rush-hn3
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

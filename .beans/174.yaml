@@ -57,3 +57,4 @@ labels:
 - navigation
 - p3
 - scripting
+verify: cargo test --lib builtins::pushd

@@ -34,3 +34,4 @@ description: |-
   All tests passing. Ready for CI integration.
 labels:
 - benchmark
+verify: 'cargo build --release && ls -lh target/release/rush'

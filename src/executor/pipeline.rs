@@ -1,11 +1,9 @@
 use super::{ExecutionResult, Output, Executor, CallStack};
 use crate::builtins::Builtins;
-use crate::correction::Corrector;
 use crate::executor::suggestions::SuggestionEngine;
 use crate::glob_expansion;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
-use crate::terminal::TerminalControl;
 use anyhow::{anyhow, Result};
 use std::io::Write;
 use std::process::{Command as StdCommand, Stdio};

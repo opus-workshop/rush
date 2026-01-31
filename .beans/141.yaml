@@ -50,3 +50,4 @@ labels:
 - performance
 - quick-win
 - startup
+verify: cargo build --release && hyperfine './target/release/rush -c echo' 'bash -c echo'

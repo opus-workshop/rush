@@ -38,6 +38,7 @@ description: |-
 
   ## Estimated Effort
   45-55k tokens (implement resolution logic, add all flags, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - builtin
 - critical

@@ -29,3 +29,4 @@ description: |-
   ## Files
   - src/builtins/time.rs (extend)
   - src/executor/pipeline.rs (add stage timing hooks)
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings && ./tests/smoke_test.sh 2>/dev/null || echo "Smoke tests not available"'

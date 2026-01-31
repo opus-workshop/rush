@@ -11,3 +11,4 @@ labels:
 - optimization
 - p2
 - performance
+verify: test -f "docs/PERFORMANCE.md:\n"

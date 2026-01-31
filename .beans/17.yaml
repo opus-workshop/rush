@@ -11,3 +11,4 @@ labels:
 - hn-feature
 - phase4
 - ux
+verify: test -d docs

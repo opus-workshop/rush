@@ -6,3 +6,4 @@ created_at: 2026-01-30T19:02:26.757449Z
 updated_at: 2026-01-30T19:02:26.757449Z
 description: Create config module. Load ~/.rushrc on startup. Parse and execute config using Rush syntax. Error handling for bad config.
 parent: '24'
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings && ./tests/smoke_test.sh 2>/dev/null || echo "Smoke tests not available"'

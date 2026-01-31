@@ -22,3 +22,5 @@ description: |-
   ## Files
   - src/executor/mod.rs (add timing checkpoints)
   - src/executor/profile.rs (new - profile data structures)
+
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings

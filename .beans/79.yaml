@@ -37,6 +37,7 @@ description: |-
 
   ## Estimated Effort
   40-50k tokens (similar to while, implement parsing, execution, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - control-flow
 - critical

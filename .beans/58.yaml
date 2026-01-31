@@ -15,3 +15,4 @@ description: |-
   - LICENSE-MIT exists with correct MIT text
   - LICENSE-APACHE exists with correct Apache 2.0 text
   - GitHub recognizes the license on the repo page
+verify: test -f LICENSE-MIT && test -f LICENSE-APACHE && grep -q 'MIT License' LICENSE-MIT

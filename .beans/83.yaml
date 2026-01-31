@@ -42,3 +42,4 @@ labels:
 - posix
 - processes
 - terminal
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

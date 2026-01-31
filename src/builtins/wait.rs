@@ -4,7 +4,6 @@ use crate::jobs::JobStatus;
 use anyhow::{anyhow, Result};
 use nix::sys::wait::{waitpid, WaitPidFlag};
 use nix::unistd::Pid;
-use std::process::Command;
 
 /// Wait for background jobs to complete
 ///
@@ -275,6 +274,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Spawns processes that are not children of the shell"]
     fn test_wait_multiple_jobs() {
         let mut runtime = Runtime::new();
 

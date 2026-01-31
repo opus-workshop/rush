@@ -33,3 +33,4 @@ labels:
 - login-shell
 - rush
 - stability
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

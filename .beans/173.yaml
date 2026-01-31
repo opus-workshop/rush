@@ -60,3 +60,4 @@ labels:
 - job-control
 - p2
 - scripting
+verify: cargo test --lib builtins::wait

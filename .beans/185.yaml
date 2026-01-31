@@ -63,3 +63,4 @@ labels:
 - monitoring
 - p3
 - unique
+verify: cargo test --lib builtins

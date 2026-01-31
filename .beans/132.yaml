@@ -21,3 +21,4 @@ description: |-
   ## Files
   - src/completion/flags.rs (new - flag definitions)
   - src/builtins/*.rs (add completion metadata)
+verify: cargo test --lib builtins

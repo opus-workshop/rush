@@ -37,6 +37,7 @@ description: |-
 
   ## Estimated Effort
   50-60k tokens (complex splitting logic, many edge cases, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - critical
 - ifs

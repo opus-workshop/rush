@@ -25,5 +25,6 @@ description: |-
   - src/main.rs (add --benchmark flag)
   - src/benchmark/mod.rs (new module)
   - src/benchmark/runner.rs (benchmark execution)
+verify: cargo build --release && ./target/release/rush --benchmark
 labels:
 - benchmark

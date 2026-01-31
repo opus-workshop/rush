@@ -36,6 +36,7 @@ description: |-
 
   ## Estimated Effort
   30-40k tokens (re-enable, test, fix issues)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - builtin
 - critical

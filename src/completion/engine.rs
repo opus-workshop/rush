@@ -1,5 +1,5 @@
 // Tab completion engine with fuzzy matching and caching
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};

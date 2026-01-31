@@ -47,3 +47,4 @@ labels:
 - rush
 - stability
 - substitution
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

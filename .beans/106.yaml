@@ -19,3 +19,4 @@ description: |-
 
   ## Deliverable
   docs/TROUBLESHOOTING.md
+verify: cargo test --lib && cargo clippy -- -D warnings

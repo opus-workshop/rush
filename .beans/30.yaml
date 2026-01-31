@@ -8,3 +8,4 @@ description: 'Current pipeline implementation is basic. Need to support: 1) Mult
 labels:
 - enhancement
 - phase4
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

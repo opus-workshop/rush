@@ -23,5 +23,6 @@ description: |-
   ## Files
   - src/benchmark/compare.rs (new)
   - src/benchmark/mod.rs (register)
+verify: cargo build --release && ./target/release/rush --benchmark compare
 labels:
 - benchmark

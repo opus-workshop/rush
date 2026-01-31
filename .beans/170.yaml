@@ -57,3 +57,4 @@ labels:
 - builtin
 - p2
 - scripting
+verify: cargo test --lib builtins::command

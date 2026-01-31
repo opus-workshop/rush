@@ -42,3 +42,4 @@ labels:
 - posix
 - signals
 - terminal
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

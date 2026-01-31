@@ -9,3 +9,4 @@ labels:
 - architecture
 - enhancement
 - phase5
+verify: cargo test --lib builtins

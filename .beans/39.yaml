@@ -172,3 +172,4 @@ labels:
 - http
 - json
 - p2
+verify: test -f "docs/HTTP_BUILTIN.md:"

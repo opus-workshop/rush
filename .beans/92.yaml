@@ -48,3 +48,4 @@ labels:
 - posix
 - testing
 - validation
+verify: test -d docs

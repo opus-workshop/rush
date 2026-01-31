@@ -21,3 +21,4 @@ description: |-
   ## Files
   - src/completion/custom.rs (new - script loader)
   - src/completion/mod.rs (integrate)
+verify: cargo test --lib && cargo clippy -- -D warnings

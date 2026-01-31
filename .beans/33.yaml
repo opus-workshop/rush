@@ -10,3 +10,4 @@ labels:
 - documentation
 - examples
 - p2
+verify: test -f "docs/AI_AGENT_GUIDE.md"

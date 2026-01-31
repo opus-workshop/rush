@@ -39,3 +39,4 @@ description: |-
   test_case "function return" 'ret5() { return 5; }; ret5; echo $?' '5'
   test_case "local variables" 'f() { local x=inner; echo $x; }; x=outer; f; echo $x' $'inner\nouter'
   ```
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

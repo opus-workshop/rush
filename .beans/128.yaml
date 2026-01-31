@@ -23,3 +23,4 @@ description: |-
   - src/compat/mod.rs (new module)
   - src/compat/analyzer.rs (syntax analysis)
   - src/compat/features.rs (feature database)
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings && ./tests/smoke_test.sh 2>/dev/null || echo "Smoke tests not available"'

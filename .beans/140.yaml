@@ -5,6 +5,7 @@ priority: 1
 created_at: 2026-01-30T18:49:25.121775Z
 updated_at: 2026-01-30T18:49:25.121775Z
 description: 'The test_track_and_undo_modify test fails in parallel execution mode due to shared ~/.rush_undo directory causing race conditions. Fix by: 1) Using unique test directories per test, 2) Ensuring proper cleanup, 3) Using test isolation'
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - bug
 - testing

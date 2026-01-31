@@ -36,3 +36,4 @@ description: |-
   - Added CI badge and license badge after the # Rush heading in README.md
   - Used paiml org as specified in bead description
   - Commit: 3e6f739
+verify: 'test -f LICENSE-MIT && test -f LICENSE-APACHE && test -f README.md && test -f CONTRIBUTING.md && grep -q "MIT OR Apache-2.0" Cargo.toml'

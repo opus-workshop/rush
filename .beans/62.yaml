@@ -12,3 +12,4 @@ description: |-
   - Created CHANGELOG.md following keepachangelog.com format with [Unreleased] section listing all major features
   - Updated README.md Contributing section with link to CONTRIBUTING.md
   - Committed: 34ed9ff
+verify: 'test -f LICENSE-MIT && test -f LICENSE-APACHE && test -f README.md && test -f CONTRIBUTING.md && grep -q "MIT OR Apache-2.0" Cargo.toml'

@@ -1,4 +1,4 @@
-use crate::executor::{ExecutionResult, Output};
+use crate::executor::ExecutionResult;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;

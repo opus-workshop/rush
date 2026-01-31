@@ -19,3 +19,4 @@ description: |-
 
   ## Deliverable
   docs/BUILTINS.md (core section)
+verify: cargo test --lib builtins

@@ -9,3 +9,4 @@ labels:
 - ai
 - enhancement
 - phase5
+verify: cargo test --lib

@@ -9,3 +9,4 @@ labels:
 - fast-path
 - performance
 - startup
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

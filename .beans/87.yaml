@@ -44,3 +44,4 @@ labels:
 - important
 - job-control
 - posix
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

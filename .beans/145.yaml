@@ -40,3 +40,4 @@ description: |-
   test_succeeds "jobs builtin" 'sleep 0.1 & jobs'
   test_succeeds "wait builtin" 'sleep 0.1 & wait'
   ```
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

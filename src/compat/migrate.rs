@@ -328,7 +328,7 @@ impl MigrationEngine {
         match suggestion.feature_id.as_str() {
             "command_subst_backtick" => {
                 // Replace `cmd` with $(cmd)
-                let mut result = line.to_string();
+                let result = line.to_string();
 
                 // Simple backtick replacement (handles basic cases)
                 if result.contains('`') {

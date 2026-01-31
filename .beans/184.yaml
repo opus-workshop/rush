@@ -66,3 +66,4 @@ labels:
 - differentiation
 - p3
 - unique
+verify: cargo test --lib builtins

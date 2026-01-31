@@ -37,6 +37,7 @@ description: |-
 
   ## Estimated Effort
   40-50k tokens (re-enable, test process replacement, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - builtin
 - critical

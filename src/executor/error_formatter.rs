@@ -49,6 +49,12 @@ impl ErrorFormatter {
             output.push_str(&Self::format_additional_context(context));
         }
 
+        // Help text from database
+        if let Some(help) = error.get_help() {
+            output.push('\n');
+            output.push_str(&Self::format_help(help));
+        }
+
         output
     }
 

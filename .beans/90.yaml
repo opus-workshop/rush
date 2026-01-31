@@ -44,3 +44,4 @@ labels:
 - posix
 - quoting
 - testing
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

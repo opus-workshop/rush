@@ -22,3 +22,4 @@ description: |-
   ## Files
   - src/compat/migrate.rs (migration engine)
   - src/compat/report.rs (integrate suggestions)
+verify: cargo test --lib && cargo clippy -- -D warnings

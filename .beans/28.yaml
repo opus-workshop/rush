@@ -30,3 +30,4 @@ labels:
 - distribution
 - infrastructure
 - rush
+verify: cargo build --release && cargo clippy -- -D warnings

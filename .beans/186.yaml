@@ -8,3 +8,4 @@ description: 'Add history synchronization across multiple Rush sessions: 1) Real
 labels:
 - enhancement
 - phase5
+verify: cargo test --lib

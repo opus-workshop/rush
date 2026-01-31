@@ -1,0 +1,302 @@
+================================================================================
+RUSH BEANS: VERIFICATION PATTERNS & COMMANDS (First 20 Beans Analysis)
+================================================================================
+
+EXECUTIVE SUMMARY:
+7 distinct verification patterns identified across 20 beans. All require
+cargo test/build, but differ in feature-specific verification commands.
+
+================================================================================
+PATTERN 1: CARGO-BASED CHECKS (Universal Foundation)
+================================================================================
+Frequency: ALL 20 BEANS + every sub-component
+Base Command:
+    cargo build --release
+    cargo test
+    cargo clippy -- -D warnings
+
+Why: Rust requires compilation, unit tests, and linting to pass.
+When: Apply to every bean first, then layer pattern-specific checks.
+
+Example Beans: 141, 143, 21, 22.1, 23, 32, 34, 35, 43, 49, 50
+
+================================================================================
+PATTERN 2: FUNCTIONAL/BEHAVIORAL TESTS (7 beans)
+================================================================================
+Frequency: 18, 19, 21, 22.1, 23, 43, 50
+Key Verification: Does the feature work as intended in actual shell usage?
+
+Acceptance Criteria Types:
+  A) Shell syntax tests (variable assignment, globs, control flow, arithmetic)
+  B) Pipeline/redirection tests (multi-stage pipes, file redirects, stderr)
+  C) Script execution (file-based, shebang, arguments, exit codes)
+
+Primary Verify Commands:
+  - ./tests/smoke_test.sh                           # Run all functional tests
+  - echo "cmd" | ./target/release/rush              # Pipe test
+  - echo 'echo $1' | ./target/release/rush arg1     # Args test
+  - ./target/release/rush < script.sh               # Redirect test
+  - ./target/release/rush -c 'FOO=bar; echo $FOO'   # Inline test
+
+Expected Result: Exit code 0, correct output, no errors
+
+Bean 18 (Shell Foundation) - Most comprehensive:
+  Criterion: Smoke test passes 120/120 tests (100%)
+  Verify: ./tests/smoke_test.sh | grep -c PASS
+
+================================================================================
+PATTERN 3: FILE EXISTENCE & STRUCTURE (2 beans)
+================================================================================
+Frequency: 58 (Add LICENSE files), 4 (Rush HN Readiness Cleanup)
+Key Verification: Do required files exist with correct content?
+
+File Types:
+  1. License files (LICENSE-MIT, LICENSE-APACHE)
+  2. Documentation (README.md, CONTRIBUTING.md, CHANGELOG.md)
+  3. Configuration (Cargo.toml metadata, .gitignore)
+
+Primary Verify Commands:
+  test -f LICENSE-MIT && test -f LICENSE-APACHE
+  grep -q "MIT License" LICENSE-MIT
+  test -f CONTRIBUTING.md && test -f README.md
+  grep -q "badge" README.md
+  grep -q "license =" Cargo.toml
+
+Expected Result: All files present, GitHub recognizes license
+
+Bean 58 (Add LICENSE files) - Simple:
+  Criterion: LICENSE-MIT exists, LICENSE-APACHE exists, GitHub recognizes
+  Verify: test -f LICENSE-MIT && test -f LICENSE-APACHE
+
+================================================================================
+PATTERN 4: PERFORMANCE BENCHMARKING (4 beans)
+================================================================================
+Frequency: 141, 5, 12, 13
+Key Verification: Is the performance improvement measurable and real?
+
+Measurement Types:
+  A) Startup time (hyperfine - microsecond precision)
+  B) Binary size (ls -lh, du -h)
+  C) Memory usage (/usr/bin/time -v)
+  D) Pipeline throughput (seq 1M | command | time)
+
+Primary Verify Commands:
+  hyperfine './target/release/rush -c "echo"' 'bash -c "echo"' --prepare sync
+  ls -lh target/release/rush                    # Binary size
+  /usr/bin/time -v ./target/release/rush -c ls # Memory/time stats
+  seq 1000000 | ./target/release/rush -c 'sort | uniq' # Throughput
+
+Expected Result: Show before/after improvement in output
+
+Bean 141 (Allocator optimization):
+  Criterion: Startup time measurably improved, binary size same/smaller
+  Verify: hyperfine ./target/release/rush-old vs ./target/release/rush
+
+Bean 5 (Daemon optimization):
+  Criterion: Daemon execution < 5.5ms, all tests passing
+  Verify: hyperfine 'rush -c pwd' && cargo test
+
+================================================================================
+PATTERN 5: JSON STRUCTURED OUTPUT (3 beans)
+================================================================================
+Frequency: 32 (git_log), 34 (git_diff), 35 (git_status)
+Key Verification: Is JSON valid, complete, performant, and error-handled?
+
+Verification Steps:
+  1. JSON validity: command --json | jq . >/dev/null
+  2. Required fields: command --json | jq -e '.field'
+  3. Performance: time command --json (target: <5-10ms)
+  4. Error handling: command in non-git-repo returns helpful error
+  5. Edge cases: binary files, renames, large diffs
+
+Primary Verify Commands:
+  ./target/release/rush -c 'git_log --json' | jq .
+  ./target/release/rush -c 'git_status --json' | jq '.branch, .staged, .unstaged'
+  time ./target/release/rush -c 'git_log --json -n 100'
+  cd /tmp && ./target/release/rush -c 'git_diff --json' 2>&1 | grep error
+
+Expected Result: Valid JSON, <5-10ms execution, clear error messages
+
+Bean 32 (git_log --json):
+  Criterion: Returns valid JSON array with hash, author, date, message, files_changed; <5ms for 100 commits
+  Verify: time ./target/release/rush -c 'git_log --json -n 100' | jq '.[] | {hash, author, date}'
+
+Bean 34 (git_diff --json):
+  Criterion: Returns files/hunks/changes JSON; handles binary; <10ms
+  Verify: ./target/release/rush -c 'git_diff --json' | jq '.files[].path'
+
+Bean 35 (git_status --json):
+  Criterion: Returns branch, staged, unstaged, untracked, ahead/behind; <5ms
+  Verify: ./target/release/rush -c 'git_status --json' | jq '.branch'
+
+================================================================================
+PATTERN 6: STABILITY & SIGNAL HANDLING (3 beans)
+================================================================================
+Frequency: 43 (Non-TTY), 49 (Signals), 50 (File Redirection)
+Key Verification: Does system integration work reliably without breaking?
+
+Verification Steps:
+  1. Non-TTY mode: echo "cmd" | rush (works)
+  2. Signal handling: Ctrl-C exits cleanly, no orphans
+  3. Exit codes: Commands return correct codes
+  4. Redirections: >, >>, <, 2>, 2>&1 all work
+  5. Cleanup: No orphaned processes, no state corruption
+
+Primary Verify Commands:
+  echo "echo test" | ./target/release/rush
+  timeout 1 ./target/release/rush -c 'sleep 10' && test $? -eq 130
+  ps aux | grep rush | grep -v grep || echo "No orphans"
+  echo 'echo test > /tmp/out.txt' | ./target/release/rush && test -f /tmp/out.txt
+  ./target/release/rush -c 'exit 42' && test $? -eq 42
+
+Expected Result: Exit 0, correct behavior, no orphaned processes
+
+Bean 43 (Non-TTY mode):
+  Criterion: TTY detection, reedline in interactive, stdin reader in non-TTY
+  Verify: echo "pwd" | ./target/release/rush
+
+Bean 49 (Signal handling):
+  Criterion: SIGINT/SIGTERM/SIGHUP handlers, cleanup, exit 130 for SIGINT
+  Verify: timeout 1 ./target/release/rush -c 'sleep 10' || test $? -eq 130
+
+Bean 50 (File redirection):
+  Criterion: >, >>, <, 2>, 2>&1, &> all work with pipes
+  Verify: echo 'echo test > /tmp/out.txt' | ./target/release/rush && test -f /tmp/out.txt
+
+================================================================================
+PATTERN 7: EPIC/REFERENCE BEANS (3 beans - Composed of Sub-Beans)
+================================================================================
+Frequency: 2 (AI Agent Batteries), 6 (POSIX Compliance), 19 (Scripting)
+Key Verification: Are all child beans implemented and passing?
+
+Verification Approach:
+  1. List all child beans in epic
+  2. Verify each child bean using its pattern above
+  3. When all children pass, epic passes
+  4. cargo test covers integration across all children
+
+Primary Verify Commands:
+  bn show 2  # Check children
+  cargo test  # Verify integration
+
+Bean 2 (AI Agent Batteries - EPIC):
+  Dependencies: Beans 32, 34, 35 + more
+  Criterion: All git commands support --json, structured errors, 10x faster
+  Verify: When all git sub-beans (32, 34, 35) pass
+
+Bean 6 (POSIX Compliance - EPIC):
+  Dependencies: Beans 18, 21, 22.1, 23, 19 + more
+  Criterion: All POSIX builtins, parameters, control flow, 90%+ test pass
+  Verify: cargo test posix_ && ./tests/posix_compliance.sh
+
+Bean 19 (Scripting Support - EPIC):
+  Dependencies: Multiple builtin beans
+  Criterion: Tier 1/2/3 builtins, ~/.rushrc executable
+  Verify: cargo test scripting_ && ./tests/scripting_tests.sh
+
+================================================================================
+QUICK DECISION TREE: Which Pattern for My Bean?
+================================================================================
+
+Is it performance-focused? (startup, size, memory, throughput)
+  → PATTERN 4: Benchmarking
+     Verify: hyperfine before/after, ls -lh, time
+
+Does it require JSON output? (git_log, git_diff, git_status with --json)
+  → PATTERN 5: JSON Output
+     Verify: command --json | jq . && time command
+
+Does it add shell features? (pipes, redirects, variables, control flow, scripts)
+  → PATTERN 2: Functional Tests
+     Verify: ./tests/smoke_test.sh or echo "cmd" | rush
+
+Does it add/modify files only? (licenses, docs, config)
+  → PATTERN 3: File Checks
+     Verify: test -f FILE && grep PATTERN FILE
+
+Does it affect system integration? (TTY, signals, cleanup)
+  → PATTERN 6: Stability
+     Verify: echo "cmd" | rush && ps aux | grep rush
+
+Is it an epic combining multiple beans?
+  → PATTERN 7: Epic Reference
+     Verify: bn show <id> && cargo test
+
+(And ALWAYS apply PATTERN 1 first: cargo test/build/clippy)
+
+================================================================================
+VERIFICATION CHECKLIST (Universal Template)
+================================================================================
+
+For any bean:
+
+  1. cargo build --release           # Must compile
+  2. cargo test                      # All tests pass
+  3. cargo clippy -- -D warnings     # No code quality issues
+  4. [Pattern-specific command]      # Feature verification
+  5. Verify no regressions           # Smoke test if applicable
+
+Example for Bean 32 (git_log --json):
+  ✓ cargo build --release
+  ✓ cargo test
+  ✓ cargo clippy -- -D warnings
+  ✓ time ./target/release/rush -c 'git_log --json -n 100' | jq .
+  ✓ ./tests/smoke_test.sh (no regressions)
+
+================================================================================
+FILES CREATED
+================================================================================
+
+1. /Users/asher/tt/rush/research/acceptance_criteria_patterns.md
+   - Detailed analysis with code examples
+   - Pattern explanations and philosophy
+   - File locations and structure
+
+2. /Users/asher/tt/rush/research/verify_commands_quick_ref.csv
+   - All 20 beans in CSV format
+   - Quick lookup: Bean → Verify Command
+   - Effort estimates
+
+3. /Users/asher/tt/rush/research/verification_patterns_by_type.md
+   - Pattern-by-pattern deep dive
+   - Concrete bash command examples
+   - Universal checklist template
+
+4. /Users/asher/tt/rush/research/bean_verification_summary.txt
+   - This file: executive summary
+   - Quick decision tree
+   - Pattern reference guide
+
+================================================================================
+KEY INSIGHTS
+================================================================================
+
+1. Universal Base (100%): cargo test && cargo build --release
+   Every bean needs this. No exceptions.
+
+2. Shell-Specific (35%): Functional behavior tests
+   Shells require real testing. Compilation ≠ functionality.
+
+3. Performance is Measurable (20%): Use hyperfine, not guessing
+   Before/after timing proves optimization works.
+
+4. AI-Native = JSON (15%): Structured output with <5-10ms targets
+   Git integration supports AI agents effectively.
+
+5. Stability = System Integration (15%): Signal/TTY/cleanup testing
+   Production shells need robust handling.
+
+6. Epics Decompose (15%): Reference sub-beans
+   Large features are verified through children.
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Use verify_commands_quick_ref.csv when implementing any bean
+2. Reference verification_patterns_by_type.md for pattern details
+3. Apply universal checklist first (cargo test/build/clippy)
+4. Then apply pattern-specific verify command
+5. When blocked, check acceptance_criteria_patterns.md for examples
+
+================================================================================

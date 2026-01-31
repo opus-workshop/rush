@@ -1,0 +1,199 @@
+P0  58    Add LICENSE files
+P0  141    Custom Allocator (mimalloc) for Faster Startup
+P0  143    Remove Unused Tokio Dependency
+P1  2    AI Agent Batteries Included
+P1  4    Rush HN Readiness Cleanup
+P1  5    Daemon Performance Optimization - Achieve <1ms Startup
+P1  6    POSIX Compliance - Full Unix Shell Support
+P1  12    Benchmark Reproducibility Suite
+P1  13    Performance Profiling Built-in
+P1  18    Shell Foundation - Make Rush Actually Work
+P1  19    Rush Scripting Support - Essential Builtins
+P1  21    US-003: Robust Pipeline Implementation
+P1  22.1    Basic redirections: >, >>, 2>, <
+P1  23    US-001: Script Execution
+P1  32    AI-001: Structured git log with JSON output
+P1  34    AI-002: Structured git diff with JSON output
+P1  35    AI-003: Extend git_status with --json and full file listing
+P1  43    STABILITY-001: Non-TTY Mode Support
+P1  49    STABILITY-002: Signal Handling
+P1  50    STABILITY-003: File Redirection Support
+P1  51    STABILITY-004: Subshell Support
+P1  52    STABILITY-005: Exit Code Propagation
+P1  57    Delete junk files from repo
+P1  59    Harden .gitignore
+P1  63    Audit and fix critical production panics
+P1  67    Persistent Worker Process Pool
+P1  70    POSIX-001: Re-enable and test read builtin
+P1  71    POSIX-010: Implement continue builtin
+P1  72    POSIX-011: Implement colon (:) no-op builtin
+P1  73    POSIX-012: Implement command builtin
+P1  74    POSIX-013: Implement readonly builtin
+P1  75    POSIX-014: Implement full positional parameters
+P1  76    POSIX-015: Implement special variables
+P1  77    POSIX-016: Implement here-documents
+P1  78    POSIX-017: Implement while loop
+P1  79    POSIX-018: Implement until loop
+P1  80    POSIX-002: Re-enable and test return builtin
+P1  81    POSIX-019: Implement case statement
+P1  82    POSIX-020: Implement IFS field splitting
+P1  91    POSIX-003: Re-enable and test shift builtin
+P1  93    POSIX-004: Re-enable and test local builtin
+P1  94    POSIX-005: Re-enable and test trap builtin
+P1  95    POSIX-006: Re-enable and test eval builtin
+P1  96    POSIX-007: Re-enable and test exec builtin
+P1  97    POSIX-008: Re-enable and test kill builtin
+P1  98    POSIX-009: Implement break builtin
+P1  113    Benchmark runner script (rush --benchmark)
+P1  114    Benchmark comparison mode (Rush vs bash/zsh)
+P1  117    Profiling timing infrastructure in executor
+P1  120    Error context tracking in parser and executor
+P1  121    Rich error types with visual error formatter
+P1  139    US-001: Script Execution
+P1  140    Fix test flakiness in parallel undo tests
+P1  142    Fix benchmark comparison script (compare.sh)
+P1  144    FOUNDATION-001: Fix lexer dot-splitting in filenames
+P1  147    FOUNDATION-005a: if/then/elif/else/fi syntax
+P1  148    FOUNDATION-005b: while/until loop syntax
+P1  149    FOUNDATION-005c: for loop syntax
+P1  150    FOUNDATION-005d: case statement syntax
+P1  151    FOUNDATION-FIX-001: Bracket test syntax [ ]
+P1  152    FOUNDATION-FIX-002: Set command with positional parameters
+P1  153    FOUNDATION-FIX-003: Absolute path command execution
+P1  154    FOUNDATION-FIX-004: Command not found exit code (127)
+P1  155    FOUNDATION-002: Implement glob expansion
+P1  156    FOUNDATION-FIX-005: Bare filename argument parsing
+P1  157    FOUNDATION-FIX-006: Git log builtin exit code
+P1  158    FOUNDATION-003: Implement tilde expansion
+P1  159    FOUNDATION-004: Fix variable assignment syntax
+P1  160    FOUNDATION-005: POSIX control flow syntax
+P1  161    FOUNDATION-006: Arithmetic expansion
+P1  165    PHF or Static Array for Builtins Map
+P1  166    Startup Optimization - Lazy Initialization
+P1  168    SCRIPT-001: read builtin
+P1  175    SCRIPT-002: true/false builtins
+P1  176    SCRIPT-003: return builtin
+P1  177    SCRIPT-004: local builtin
+P1  178    SCRIPT-005: shift builtin
+P2  1    Rush 1.0 Critical Features
+P2  rush-hn2.1    Profile JSON output for tooling integration
+P2  rush-hn3.1    Help text database for common errors
+P2  3    Rush Shell Stability - Login Shell Ready
+P2  7    User Guide - Common Tasks
+P2  8    Configuration Guide
+P2  11    Migration Guide from Bash/Zsh
+P2  14    Rust-Quality Error Messages
+P2  15    Time Builtin with Breakdown
+P2  16    Script Compatibility Checker
+P2  20    Text Processing Builtins (sed/awk)
+P2  22    US-002: File Redirections
+P2  24    US-004: Configuration File Support
+P2  24.1    Config file loading: ~/.rushrc parsing and execution
+P2  25    US-005: Confirmation Prompts for Destructive Operations
+P2  28.1    GitHub Actions workflow setup for releases
+P2  28.2    Pre-built binaries: macOS (Intel + ARM)
+P2  28.3    Pre-built binaries: Linux (x86_64)
+P2  30    Improve pipeline support for complex multi-stage pipelines
+P2  36    AI-004: JSON query and manipulation builtins
+P2  37    AI-005: Add --json flag to ls builtin
+P2  38    AI-006: Add --json flag to find and grep builtins
+P2  40    AI-008: Structured error responses with error types
+P2  42    Fix 60x performance regression with external command output
+P2  44    STABILITY-010: Error Recovery
+P2  47    STABILITY-013: Integration Tests for Login Shell
+P2  48    STABILITY-014: Real-World Stability Testing (1 Week Trial)
+P2  53    STABILITY-006: Proper Variable Expansion
+P2  54    STABILITY-007: Wildcard Expansion (Globbing)
+P2  55    STABILITY-008: Command Substitution
+P2  60    Clean docs/ directory
+P2  61    Add Cargo.toml metadata and README badges
+P2  62    Add CONTRIBUTING.md and CHANGELOG.md
+P2  64    Add configuration file support
+P2  65    Fix tokenizer splitting paths on forward slash
+P2  66    Binary Serialization for IPC Protocol
+P2  68    Reusable Executor Instances
+P2  69    Performance Benchmarking and Verification
+P2  83    POSIX-021: Implement process groups
+P2  84    POSIX-022: Implement terminal control
+P2  85    POSIX-023: Implement SIGCHLD handler
+P2  86    POSIX-024: Implement terminal signals
+P2  87    POSIX-025: Implement full job specifications
+P2  88    POSIX-026: Implement arbitrary FD redirection
+P2  89    POSIX-027: Implement standard shell variables
+P2  90    POSIX-028: Audit and test quoting behavior
+P2  99    User Guide: Navigation and File Operations
+P2  100    User Guide: Pipelines, Variables, and Job Control
+P2  101    Configuration Guide: Init Files and Common Config
+P2  102    Configuration Guide: Integrations and Example Configs
+P2  108    Migration Guide: Bash Users Quick Start
+P2  109    Migration Guide: Zsh Users and Script Porting
+P2  110    Add -c flag for non-interactive command execution
+P2  111    Startup Optimization - Fast Path for -c Flag
+P2  115    Benchmark report generation (markdown + HTML)
+P2  116    Benchmark CI integration for regression tracking
+P2  118    profile builtin command for interactive profiling
+P2  119    Profile JSON output for tooling integration
+P2  122    Suggestion engine for command and flag typos
+P2  123    Script error context with function stack traces
+P2  125    Basic time builtin for command timing
+P2  126    Pipeline stage timing breakdown in time builtin
+P2  128    Bash script syntax analyzer for compatibility checking
+P2  129    Rush compatibility database for bash features
+P2  136    Implement job control (background jobs)
+P2  137    Optional git2 Feature Flag for Binary Size
+P2  138    Add shell script execution support
+P2  145    FOUNDATION-010: Job control and background jobs
+P2  146    FOUNDATION-011: Subshell execution
+P2  162    FOUNDATION-007: Function definitions
+P2  163    FOUNDATION-008: Here-documents
+P2  164    FOUNDATION-009: Command substitution in strings
+P2  167    Reduce baseline command execution overhead
+P2  169    SCRIPT-010: unset builtin
+P2  179    SCRIPT-006: trap builtin
+P2  180    SCRIPT-007: printf builtin
+P2  181    SCRIPT-008: eval builtin
+P2  182    SCRIPT-009: exec builtin
+P2  183    Add sed and awk alternative builtins
+P2  188    Basic sed builtin: substitution and deletion
+P2  189    Advanced sed: address ranges, hold space, multi-command
+P2  190    Basic awk builtin: field splitting and pattern matching
+P2  191    Advanced awk: variables, math, and built-in functions
+P3  9    Builtin Command Reference
+P3  10    Troubleshooting Guide
+P3  17    Advanced Shell Completion System
+P3  26    US-006: Better Error Messages with Suggestions
+P3  27    US-008: Command Suggestions (Did You Mean?)
+P3  29    Add custom themes and prompt configuration
+P3  31    Implement plugin system for extensibility
+P3  33    AI-010: Documentation and examples for AI agent integration
+P3  39    AI-007: HTTP fetch builtin with structured responses
+P3  41    AI-009: Performance benchmarking and optimization for AI agent workloads
+P3  45    STABILITY-011: Login Shell Initialization
+P3  46    STABILITY-012: Shell Options (set command)
+P3  56    STABILITY-009: Job Control (Background Jobs)
+P3  92    POSIX-029: POSIX test suite integration
+P3  103    Builtin Reference: Core Commands (cd, echo, export, exit, pwd)
+P3  104    Builtin Reference: File and Search Commands
+P3  105    Builtin Reference: Shell Control Commands
+P3  106    Troubleshooting Guide: Common Errors and Recovery
+P3  107    Troubleshooting Guide: Performance and Compatibility
+P3  124    Help text database for common errors
+P3  127    Time builtin comparison mode vs bash/zsh
+P3  130    Auto-migration suggestions for bash-to-rush conversion
+P3  131    Core completion engine with command and file completion
+P3  132    Builtin flag and option completion
+P3  133    Git-aware completion (branches, remotes, files)
+P3  134    Custom completion script loading system
+P3  135    Fuzzy matching and description hints for completions
+P3  170    SCRIPT-011: command builtin
+P3  171    SCRIPT-012: builtin builtin
+P3  172    SCRIPT-013: kill builtin
+P3  173    SCRIPT-014: wait builtin
+P3  186    Implement cross-session history sync
+P3  187    Profile-Guided Optimization (PGO) Build
+P3  192    Advanced Shell Completion System
+P4  28    US-007: CI/CD and Distribution
+P4  112    Add AI-powered command suggestions
+P4  174    SCRIPT-015: pushd/popd/dirs builtins
+P4  184    UNIQUE-001: bench builtin
+P4  185    UNIQUE-002: watch builtin

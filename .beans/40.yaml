@@ -10,3 +10,4 @@ labels:
 - error-handling
 - infrastructure
 - p1
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

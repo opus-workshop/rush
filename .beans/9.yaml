@@ -51,3 +51,4 @@ labels:
 - documentation
 - phase4
 - reference
+verify: test -f "docs/BUILTINS.md"

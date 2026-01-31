@@ -60,3 +60,4 @@ labels:
 - p2
 - process-management
 - scripting
+verify: cargo test --lib builtins::kill

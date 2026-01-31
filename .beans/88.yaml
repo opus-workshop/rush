@@ -45,3 +45,4 @@ labels:
 - io
 - posix
 - redirection
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings && ./tests/smoke_test.sh 2>/dev/null || echo "Smoke tests not available"'

@@ -24,6 +24,7 @@ description: |-
   - Add script argument parsing
   - Implement file reading and execution loop
   - Add line number tracking for errors
+verify: cargo build --release && cargo test && ./target/release/rush -c 'echo test'
 labels:
 - '1.0'
 - backend

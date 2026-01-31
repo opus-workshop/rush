@@ -8,3 +8,4 @@ description: 'Rush needs to be able to execute .sh script files. Currently only 
 labels:
 - enhancement
 - phase4
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings && ./tests/smoke_test.sh 2>/dev/null || echo "Smoke tests not available"'

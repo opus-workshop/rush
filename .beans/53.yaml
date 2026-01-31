@@ -50,3 +50,4 @@ labels:
 - rush
 - stability
 - variables
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

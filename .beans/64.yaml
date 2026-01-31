@@ -8,3 +8,4 @@ description: 'Rush needs a configuration file system (.rushrc or similar) to: 1)
 labels:
 - enhancement
 - phase4
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

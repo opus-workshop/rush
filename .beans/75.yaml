@@ -42,6 +42,7 @@ description: |-
 
   ## Estimated Effort
   50-60k tokens (wire up all params, test edge cases, handle quoting)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - critical
 - parameters

@@ -53,3 +53,4 @@ labels:
 - p1
 - rush
 - stability
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

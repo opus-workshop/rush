@@ -8,3 +8,4 @@ description: 'Add support for background job execution and control: 1) Backgroun
 labels:
 - enhancement
 - phase4
+verify: 'cargo build --release && cargo test && echo "echo test" | ./target/release/rush'

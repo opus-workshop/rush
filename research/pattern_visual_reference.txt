@@ -1,0 +1,274 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║           RUSH BEANS: VERIFICATION PATTERNS - VISUAL REFERENCE             ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 1: CARGO-BASED CHECKS                                  [UNIVERSAL] │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: ALL 20 BEANS (100%)                                            │
+│  Frequency: EVERY bean, first thing to verify                              │
+│                                                                              │
+│  Command Chain:                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ cargo build --release                                              │  │
+│  │ $ cargo test                                                         │  │
+│  │ $ cargo clippy -- -D warnings                                        │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Beans: 141, 143, 21, 22.1, 23, 32, 34, 35, 43, 49, 50                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 2: FUNCTIONAL/BEHAVIORAL TESTS            [SHELL FEATURES: 7 BEANS]│
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 18, 19, 21, 22.1, 23, 43, 50                                  │
+│  When: Feature requires shell behavior testing                             │
+│  Why: Compilation ≠ correct shell behavior                                 │
+│                                                                              │
+│  Test Types:                                                                │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐  │
+│  │ Variable Assignment  │  │ Pipes & Redirects    │  │ Script Exec     │  │
+│  │ ────────────────────│  │ ──────────────────────│  │ ────────────────│  │
+│  │ FOO=bar              │  │ cmd | grep | sort    │  │ rush script.sh  │  │
+│  │ echo $FOO            │  │ cmd > file.txt       │  │ Shebang support │  │
+│  │ Globs (*.rs)         │  │ cmd < input.txt      │  │ $1, $2, $@      │  │
+│  │ Control flow         │  │ 2> errors.log        │  │ Exit codes      │  │
+│  │ Arithmetic $((1+2))  │  │ 2>&1 (combine)       │  │ Line numbers    │  │
+│  └──────────────────────┘  └──────────────────────┘  └─────────────────┘  │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ ./tests/smoke_test.sh                   # Full test suite         │  │
+│  │ $ echo "echo test" | ./target/release/rush # Pipe test             │  │
+│  │ $ echo 'echo $1' | ./target/release/rush arg1 # Args test          │  │
+│  │ $ ./target/release/rush -c 'FOO=bar; echo $FOO' # Inline test      │  │
+│  │ $ ./target/release/rush < script.sh       # File redirect test     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 3: FILE EXISTENCE & STRUCTURE              [FILE CHECKS: 2 BEANS]  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 58 (Add LICENSE), 4 (HN Readiness)                            │
+│  When: Bean involves creating/modifying files                              │
+│  Why: Documentation & metadata matter for adoption                         │
+│                                                                              │
+│  File Categories:                                                           │
+│  ┌────────────────┐  ┌───────────────────┐  ┌─────────────────────┐       │
+│  │ Licenses       │  │ Documentation     │  │ Configuration       │       │
+│  │ ──────────────│  │ ──────────────────│  │ ────────────────────│       │
+│  │ LICENSE-MIT   │  │ README.md         │  │ Cargo.toml metadata │       │
+│  │ LICENSE-APACHE│  │ CONTRIBUTING.md   │  │ .gitignore hardened │       │
+│  │              │  │ CHANGELOG.md      │  │ GH recognizes       │       │
+│  └────────────────┘  └───────────────────┘  └─────────────────────┘       │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ test -f LICENSE-MIT && test -f LICENSE-APACHE                      │  │
+│  │ $ grep -q "MIT License" LICENSE-MIT                                 │  │
+│  │ $ grep -q "license =" Cargo.toml                                    │  │
+│  │ $ test -f README.md && grep -q "badge" README.md                    │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 4: PERFORMANCE BENCHMARKING          [PERFORMANCE: 4 BEANS]        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 141 (mimalloc), 5 (Daemon), 12 (Benchmark), 13 (Profiling)    │
+│  When: Bean claims performance improvement                                 │
+│  Why: Needs before/after measurement to prove value                        │
+│                                                                              │
+│  Measurement Types:                                                         │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                      │  │
+│  │  Startup Time          Binary Size         Memory           Throughput  │
+│  │  ─────────────         ──────────          ──────           ──────────  │
+│  │  hyperfine -l 1000     ls -lh              /usr/bin/time    seq 1M      │
+│  │  target timing         du -h               -v command       | command   │
+│  │  before/after          reduction check     check resident   | wc        │
+│  │                                            set size         | time      │
+│  │                                                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ hyperfine ./target/release/rush-old -c "echo" \                   │  │
+│  │           ./target/release/rush -c "echo" --prepare sync             │  │
+│  │ $ ls -lh target/release/rush | awk '{print $5}'                     │  │
+│  │ $ time ./target/release/rush -c 'command' > /dev/null               │  │
+│  │ $ seq 1000000 | ./target/release/rush -c 'sort | wc'              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Expected: Show measurable improvement in output                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 5: JSON STRUCTURED OUTPUT         [AI-AGENTS: 3 BEANS]             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 32 (git_log), 34 (git_diff), 35 (git_status)                  │
+│  When: Command needs JSON output for AI agent parsing                       │
+│  Why: Structured data is 10x faster than text parsing                       │
+│                                                                              │
+│  Verification Layers:                                                       │
+│  ┌────────────────────────────────────────────────────────────────────┐   │
+│  │ 1. JSON VALIDITY          2. REQUIRED FIELDS                       │   │
+│  │    command --json | jq .     command --json | jq -e '.field'      │   │
+│  │                                                                    │   │
+│  │ 3. PERFORMANCE            4. ERROR HANDLING                        │   │
+│  │    time command --json        cd /tmp && command --json 2>&1     │   │
+│  │    (target: <5-10ms)          (should return helpful error)      │   │
+│  │                                                                    │   │
+│  │ 5. EDGE CASES                                                      │   │
+│  │    Binary files, renames, large diffs, untracked files           │   │
+│  └────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ ./target/release/rush -c 'git_log --json' | jq .                 │  │
+│  │ $ time ./target/release/rush -c 'git_log --json -n 100'           │  │
+│  │ $ ./target/release/rush -c 'git_status --json' | \                │  │
+│  │   jq '.branch, .staged, .unstaged'                                │  │
+│  │ $ cd /tmp && ./target/release/rush -c 'git_diff --json' 2>&1      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 6: STABILITY & SIGNAL HANDLING       [SYSTEM INTEGRATION: 3 BEANS] │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 43 (Non-TTY), 49 (Signals), 50 (Redirects)                    │
+│  When: Bean affects system integration or critical paths                    │
+│  Why: Production shells must handle edge cases gracefully                   │
+│                                                                              │
+│  Verification Areas:                                                        │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ Non-TTY Mode        Signal Handling       Exit Codes        Cleanup  │  │
+│  │ ──────────────      ──────────────       ──────────────     ────────│  │
+│  │ echo | rush         Ctrl-C (SIGINT)      exit 42            No      │  │
+│  │ rush < file         SIGTERM              test $? -eq 42      orphans │  │
+│  │ $(rush -c cmd)      SIGHUP               exit 0              No      │  │
+│  │ Cron jobs           cleanup on signal    SIGINT → 130        state   │  │
+│  │                     no orphans           SIGTERM → 143       corrupt │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ echo "echo test" | ./target/release/rush                          │  │
+│  │ $ timeout 1 ./target/release/rush -c 'sleep 10' || \               │  │
+│  │   test $? -eq 130  # SIGINT = 130                                  │  │
+│  │ $ ps aux | grep rush | grep -v grep || echo "✓ No orphans"        │  │
+│  │ $ ./target/release/rush -c 'exit 42'; test $? -eq 42              │  │
+│  │ $ echo 'echo test > /tmp/out.txt' | ./target/release/rush          │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PATTERN 7: EPIC/REFERENCE BEANS            [COMPOSED FEATURES: 3 BEANS]    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Applies to: 2 (AI Batteries), 6 (POSIX), 19 (Scripting)                   │
+│  When: Bean is an Epic that contains multiple sub-beans                     │
+│  Why: Epic verification = all child beans passing + integration test        │
+│                                                                              │
+│  Verification Approach:                                                     │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                      │  │
+│  │  EPIC #2 (AI Agent Batteries)                                       │  │
+│  │  ├── Bean 32 (git_log --json)      [PATTERN 5: JSON]               │  │
+│  │  ├── Bean 34 (git_diff --json)     [PATTERN 5: JSON]               │  │
+│  │  ├── Bean 35 (git_status --json)   [PATTERN 5: JSON]               │  │
+│  │  └── EPIC PASSES when all children pass + cargo test               │  │
+│  │                                                                      │  │
+│  │  EPIC #6 (POSIX Compliance)                                         │  │
+│  │  ├── Bean 18 (Shell Foundation)    [PATTERN 2: Functional]         │  │
+│  │  ├── Bean 21 (Pipelines)           [PATTERN 2: Functional]         │  │
+│  │  ├── Bean 22.1 (Redirections)      [PATTERN 2: Functional]         │  │
+│  │  ├── Bean 23 (Script Exec)         [PATTERN 2: Functional]         │  │
+│  │  └── EPIC PASSES when all children pass + ./tests/posix_test.sh    │  │
+│  │                                                                      │  │
+│  │  EPIC #19 (Scripting Support)                                       │  │
+│  │  ├── Multiple builtin beans        [PATTERN 2: Functional]         │  │
+│  │  └── EPIC PASSES when builtins work + scripts execute              │  │
+│  │                                                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Primary Verify Commands:                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ $ bn show <epic_id>                    # See child beans            │  │
+│  │ $ cargo test                           # Integration test           │  │
+│  │ $ ./tests/posix_compliance.sh          # Feature-specific test      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        UNIVERSAL VERIFICATION CHECKLIST                    ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║  □ Step 1: CARGO BUILD (Must compile)                                     ║
+║    $ cargo build --release                                               ║
+║    Expected: ✓ Success                                                   ║
+║                                                                            ║
+║  □ Step 2: CARGO TEST (All tests pass)                                    ║
+║    $ cargo test                                                          ║
+║    Expected: ✓ test result: ok                                           ║
+║                                                                            ║
+║  □ Step 3: CARGO CLIPPY (No code quality issues)                          ║
+║    $ cargo clippy -- -D warnings                                         ║
+║    Expected: ✓ Finished release                                          ║
+║                                                                            ║
+║  □ Step 4: PATTERN-SPECIFIC VERIFICATION (Feature works)                  ║
+║    See pattern above for specific command based on bean type              ║
+║    Expected: ✓ Feature verification passes                               ║
+║                                                                            ║
+║  □ Step 5: REGRESSION CHECK (No regressions)                              ║
+║    $ ./tests/smoke_test.sh                                               ║
+║    Expected: ✓ All tests passing (or no decrease in pass rate)           ║
+║                                                                            ║
+║  ✓✓✓ BEAN VERIFICATION COMPLETE ✓✓✓                                       ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                       DECISION TREE: WHICH PATTERN?                       ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                            ║
+║  Does bean claim performance improvement?                                 ║
+║    YES → PATTERN 4 (Benchmarking): hyperfine before/after                 ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  Does bean require JSON output (git_* with --json)?                       ║
+║    YES → PATTERN 5 (JSON Output): command --json | jq                     ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  Does bean add/modify shell features (commands, pipes, redirects)?        ║
+║    YES → PATTERN 2 (Functional): ./tests/smoke_test.sh or echo | rush     ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  Does bean add/modify files only (licenses, docs, config)?                ║
+║    YES → PATTERN 3 (File Checks): test -f && grep                         ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  Does bean affect system integration (TTY, signals, cleanup)?             ║
+║    YES → PATTERN 6 (Stability): echo | rush, timeout, ps aux              ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  Is bean an Epic containing multiple sub-beans?                           ║
+║    YES → PATTERN 7 (Epic Reference): Verify children, then cargo test     ║
+║    NO  → Continue                                                         ║
+║                                                                            ║
+║  (Always start with PATTERN 1: cargo build/test/clippy)                   ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+

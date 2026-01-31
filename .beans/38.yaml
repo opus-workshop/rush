@@ -171,3 +171,4 @@ labels:
 - enhancement
 - json
 - p1
+verify: 'cargo build --release && cargo test && ./target/release/rush -c "echo hello" | head -1'

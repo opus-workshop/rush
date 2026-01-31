@@ -67,3 +67,4 @@ labels:
 - daemon
 - performance
 - testing
+verify: 'cargo build --release && ls -lh target/release/rush'

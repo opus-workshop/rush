@@ -22,3 +22,4 @@ description: |-
   ## Files
   - src/compat/database.rs (feature database)
   - src/compat/features.rs (feature definitions)
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

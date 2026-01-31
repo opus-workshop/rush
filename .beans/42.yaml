@@ -46,3 +46,4 @@ description: |-
 labels:
 - bug
 - perf
+verify: 'cargo build --release && ls -lh target/release/rush'

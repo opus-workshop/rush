@@ -1,5 +1,5 @@
 use super::{Table, Value};
-use nu_ansi_term::{Color, Style};
+use nu_ansi_term::Color;
 use std::collections::HashMap;
 
 /// Table renderer with automatic column width adjustment and color support
@@ -90,7 +90,7 @@ impl TableRenderer {
     }
 
     fn calculate_column_widths(&self, table: &Table) -> Vec<usize> {
-        let available_width = self.max_width.unwrap_or(120);
+        let _available_width = self.max_width.unwrap_or(120);
 
         table
             .columns

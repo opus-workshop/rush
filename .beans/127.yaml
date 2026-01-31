@@ -19,3 +19,4 @@ description: |-
 
   ## Files
   - src/builtins/time.rs (add --compare flag)
+verify: cargo test --lib builtins

@@ -1,8 +1,8 @@
-use crate::executor::{ExecutionResult, Output};
+use crate::executor::ExecutionResult;
 use crate::git::GitContext;
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
-use git2::{Repository, Oid, Commit as Git2Commit, DiffOptions};
+use git2::{Repository, Commit as Git2Commit, DiffOptions};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -38,6 +38,7 @@ description: |-
 
   ## Estimated Effort
   40-50k tokens (implement tracking, wire up expansion, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - critical
 - posix

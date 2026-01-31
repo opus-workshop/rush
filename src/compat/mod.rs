@@ -14,8 +14,8 @@ pub mod analyzer;
 pub mod report;
 pub mod migrate;
 
-pub use features::{RushCompatFeature, RushSupportStatus, rush_compat_features};
-pub use database::{CompatDatabase, CompatSummary, MigrationStep};
-pub use analyzer::{ScriptAnalyzer, AnalysisResult, FeatureOccurrence};
-pub use report::{CompatibilityReport, CompatibilityIssue, FeatureGroup};
-pub use migrate::{MigrationEngine, MigrationSuggestion, MigrationComplexity, DiffPreview};
+pub use features::RushCompatFeature;
+pub use database::CompatDatabase;
+pub use analyzer::ScriptAnalyzer;
+pub use report::CompatibilityReport;
+pub use migrate::MigrationEngine;

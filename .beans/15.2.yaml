@@ -34,3 +34,4 @@ acceptance: |-
 parent: '15'
 dependencies:
 - '15.1'
+verify: cargo test --lib builtins

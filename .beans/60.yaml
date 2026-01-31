@@ -18,3 +18,4 @@ description: |-
   **docs/README.md:** Created navigation index organized by category.
 
   No docs deleted, only reorganized via git mv.
+verify: 'cargo build --release && cargo test && cargo clippy -- -D warnings'

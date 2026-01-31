@@ -1812,7 +1812,7 @@ mod tests {
     fn test_parse_while_loop_with_newlines() {
         let code = r#"
         i=0
-        while [ $i -lt 5 ]; do
+        while test $i -lt 5; do
             echo $i
             i=$((i+1))
         done

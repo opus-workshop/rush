@@ -38,6 +38,7 @@ description: |-
 
   ## Estimated Effort
   55-60k tokens (complex parsing, variable expansion, add tests)
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings
 labels:
 - critical
 - io

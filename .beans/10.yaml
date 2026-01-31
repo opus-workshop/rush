@@ -54,3 +54,4 @@ labels:
 - documentation
 - phase4
 - troubleshooting
+verify: test -f "docs/TROUBLESHOOTING.md"

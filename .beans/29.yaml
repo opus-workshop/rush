@@ -9,3 +9,4 @@ labels:
 - enhancement
 - phase5
 - ux
+verify: cargo test --lib

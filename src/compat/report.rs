@@ -7,7 +7,6 @@ use super::analyzer::AnalysisResult;
 use super::database::CompatDatabase;
 use super::features::RushSupportStatus;
 use super::migrate::{MigrationEngine, MigrationSuggestion};
-use std::collections::BTreeMap;
 
 /// A single issue found during compatibility analysis
 #[derive(Debug, Clone)]
