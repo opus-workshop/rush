@@ -336,6 +336,113 @@ impl Executor {
         }
     }
 
+    fn expand_variables_in_literal(&mut self, input: &str) -> Result<String> {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '$' {
+                if let Some(next_char) = chars.peek() {
+                    match next_char {
+                        '(' => {
+                            // Command substitution $(...)
+                            let mut cmd_str = String::from("$");
+                            chars.next(); // consume '('
+                            let mut depth = 1;
+                            while let Some(ch) = chars.peek() {
+                                if *ch == '(' {
+                                    depth += 1;
+                                } else if *ch == ')' {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        chars.next(); // consume ')'
+                                        break;
+                                    }
+                                }
+                                cmd_str.push(*ch);
+                                chars.next();
+                            }
+                            let expanded = self.expand_command_substitutions_in_string(&cmd_str)?;
+                            result.push_str(&expanded);
+                        }
+                        // Special variables
+                        '#' => {
+                            chars.next();
+                            result.push_str(&self.runtime.param_count().to_string());
+                        }
+                        '@' => {
+                            chars.next();
+                            result.push_str(&self.runtime.get_positional_params().join(" "));
+                        }
+                        '*' => {
+                            chars.next();
+                            result.push_str(&self.runtime.get_positional_params().join(" "));
+                        }
+                        '?' => {
+                            chars.next();
+                            result.push_str(&self.runtime.get_last_exit_code().to_string());
+                        }
+                        '!' => {
+                            chars.next();
+                            if let Some(pid) = self.runtime.get_last_bg_pid() {
+                                result.push_str(&pid.to_string());
+                            }
+                        }
+                        '$' => {
+                            chars.next();
+                            result.push_str(&std::process::id().to_string());
+                        }
+                        '-' => {
+                            chars.next();
+                            result.push_str(&self.runtime.get_option_flags());
+                        }
+                        '_' => {
+                            chars.next();
+                            result.push_str(&self.runtime.get_last_arg());
+                        }
+                        // Alphanumeric variables
+                        c if c.is_ascii_digit() || c.is_ascii_alphabetic() || *c == '_' => {
+                            let mut var_name = String::new();
+                            while let Some(ch) = chars.peek() {
+                                if ch.is_ascii_alphanumeric() || *ch == '_' {
+                                    var_name.push(*ch);
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            // Check if it's a positional parameter
+                            if let Ok(index) = var_name.parse::<usize>() {
+                                if index > 0 {
+                                    if let Some(value) = self.runtime.get_positional_param(index) {
+                                        result.push_str(&value);
+                                    }
+                                } else if index == 0 {
+                                    if let Some(val) = self.runtime.get_variable("0") {
+                                        result.push_str(&val);
+                                    } else {
+                                        result.push_str("rush");
+                                    }
+                                }
+                            } else if let Some(value) = self.runtime.get_variable(&var_name) {
+                                result.push_str(&value);
+                            }
+                        }
+                        _ => {
+                            result.push(c);
+                        }
+                    }
+                } else {
+                    result.push(c);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+
+        Ok(result)
+    }
+
     fn apply_redirects(&self, mut result: ExecutionResult, redirects: &[Redirect]) -> Result<ExecutionResult> {
         use std::fs::{File, OpenOptions};
         use std::io::Write;
@@ -1826,12 +1933,8 @@ impl Executor {
     fn resolve_argument(&mut self, arg: &Argument) -> Result<String> {
         match arg {
             Argument::Literal(s) => {
-                // Expand command substitutions inside literal strings
-                if s.contains("$(") || s.contains('`') {
-                    self.expand_command_substitutions_in_string(s)
-                } else {
-                    Ok(s.clone())
-                }
+                // Expand variables and command substitutions in literal strings
+                self.expand_variables_in_literal(s)
             }
             Argument::Variable(var) => {
                 // Strip single $ from variable name (use strip_prefix to remove only one $)
