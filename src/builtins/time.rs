@@ -2,12 +2,36 @@ use crate::executor::{ExecutionResult, Output};
 use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use std::time::Instant;
+use std::cell::RefCell;
 use libc;
+
+/// Timing data for a single pipeline stage
+#[derive(Debug, Clone)]
+pub struct StageTiming {
+    pub name: String,
+    pub is_builtin: bool,
+    pub elapsed: std::time::Duration,
+}
+
+/// Global timing collection state
+struct TimingState {
+    collecting: bool,
+    timings: Vec<StageTiming>,
+}
+
+thread_local! {
+    static TIMING_STATE: RefCell<TimingState> = RefCell::new(TimingState {
+        collecting: false,
+        timings: Vec::new(),
+    });
+}
 
 /// The time builtin command
 ///
 /// Measures and reports execution time of a command.
 /// Shows real (wall-clock), user (CPU in user mode), and sys (CPU in kernel mode) time.
+///
+/// For pipelines, shows per-stage timing breakdown.
 ///
 /// Usage:
 ///   time command [args...]
@@ -17,6 +41,15 @@ use libc;
 ///   real    0m0.123s
 ///   user    0m0.100s
 ///   sys     0m0.020s
+///
+/// For pipelines:
+///   Stage    Time      Type
+///   ----------------------------
+///   find     123.5ms   builtin
+///   grep     45.2ms    builtin
+///   wc       12.1ms    builtin
+///   overhead 5.0ms     -
+///   total    185.8ms   -
 ///
 /// Examples:
 ///   time echo hello
@@ -45,17 +78,32 @@ pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     let statements = parser.parse()
         .map_err(|e| anyhow!("time: parse error: {}", e))?;
 
-    // Create a temporary executor with the current runtime state
-    let mut executor = Executor::new_embedded();
-
-    // Copy the current runtime state into the executor
-    *executor.runtime_mut() = runtime.clone();
+    // Check if this is a pipeline
+    let is_pipeline = statements.len() == 1 && matches!(
+        &statements[0],
+        crate::parser::ast::Statement::Pipeline(_)
+    );
 
     // Record the start time (for wall-clock time)
     let start_time = Instant::now();
 
     // Get CPU time before execution (if available on this platform)
     let cpu_time_before = get_cpu_time();
+
+    // Enable timing collection if pipeline
+    if is_pipeline {
+        TIMING_STATE.with(|ts| {
+            let mut state = ts.borrow_mut();
+            state.collecting = true;
+            state.timings.clear();
+        });
+    }
+
+    // Create a temporary executor with the current runtime state
+    let mut executor = Executor::new_embedded();
+
+    // Copy the current runtime state into the executor
+    *executor.runtime_mut() = runtime.clone();
 
     // Execute the parsed statements
     let result = executor.execute(statements)
@@ -66,6 +114,11 @@ pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
 
     // Get CPU time after execution
     let cpu_time_after = get_cpu_time();
+
+    // Disable timing collection
+    TIMING_STATE.with(|ts| {
+        ts.borrow_mut().collecting = false;
+    });
 
     // Copy back the runtime state to preserve variable changes
     *runtime = executor.runtime_mut().clone();
@@ -79,7 +132,14 @@ pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
     };
 
     // Format timing output
-    let timing_output = format_timing(elapsed_real, user_time, sys_time);
+    let timing_output = if is_pipeline {
+        TIMING_STATE.with(|ts| {
+            let state = ts.borrow();
+            format_pipeline_timing(&state.timings, elapsed_real)
+        })
+    } else {
+        format_timing(elapsed_real, user_time, sys_time)
+    };
 
     // Combine the command output with timing information
     let combined_output = format!(
@@ -95,6 +155,75 @@ pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         exit_code: result.exit_code,
         error: result.error,
     })
+}
+
+/// Record timing for a pipeline stage
+pub fn record_stage_timing(name: String, is_builtin: bool, elapsed: std::time::Duration) {
+    TIMING_STATE.with(|ts| {
+        let mut state = ts.borrow_mut();
+        if state.collecting {
+            state.timings.push(StageTiming { name, is_builtin, elapsed });
+        }
+    });
+}
+
+/// Check if timing collection is enabled
+pub fn is_collecting_timing() -> bool {
+    TIMING_STATE.with(|ts| {
+        ts.borrow().collecting
+    })
+}
+
+/// Format pipeline timing output as a table
+fn format_pipeline_timing(timings: &[StageTiming], total_elapsed: std::time::Duration) -> String {
+    if timings.is_empty() {
+        // Fallback to POSIX format if no stage timings were collected
+        return format_timing(total_elapsed, total_elapsed, std::time::Duration::ZERO);
+    }
+
+    let mut output = String::new();
+
+    // Calculate overhead (total time - sum of all stages)
+    let stages_total: std::time::Duration = timings.iter().map(|t| t.elapsed).sum();
+    let overhead = if total_elapsed > stages_total {
+        total_elapsed - stages_total
+    } else {
+        std::time::Duration::ZERO
+    };
+
+    // Header
+    output.push_str("Stage\t\tTime\t\tType\n");
+    output.push_str("─────────────────────────────────────\n");
+
+    // Stage entries
+    for timing in timings {
+        let time_str = format_duration_ms(timing.elapsed);
+        let type_str = if timing.is_builtin { "builtin" } else { "external" };
+        output.push_str(&format!("{}\t\t{}\t\t{}\n", timing.name, time_str, type_str));
+    }
+
+    // Overhead line
+    let overhead_str = format_duration_ms(overhead);
+    output.push_str(&format!("overhead\t{}\t\t-\n", overhead_str));
+
+    // Total line
+    let total_str = format_duration_ms(total_elapsed);
+    output.push_str(&format!("total\t\t{}\t\t-\n", total_str));
+
+    output
+}
+
+/// Format a duration as milliseconds with appropriate precision
+fn format_duration_ms(d: std::time::Duration) -> String {
+    let ms = d.as_secs_f64() * 1000.0;
+    if ms < 1.0 {
+        format!("{:.2}ms", ms)
+    } else if ms < 1000.0 {
+        format!("{:.1}ms", ms)
+    } else {
+        let secs = d.as_secs_f64();
+        format!("{:.3}s", secs)
+    }
 }
 
 /// CPU timing information
@@ -241,5 +370,142 @@ mod tests {
 
         // Should show minutes
         assert!(output.contains("1m"));
+    }
+
+    #[test]
+    fn test_format_duration_ms_ms() {
+        // Test milliseconds
+        let d = std::time::Duration::from_millis(500);
+        let output = format_duration_ms(d);
+        assert!(output.contains("ms"));
+        assert!(output.contains("500"));
+    }
+
+    #[test]
+    fn test_format_duration_ms_seconds() {
+        // Test seconds
+        let d = std::time::Duration::from_secs_f64(1.5);
+        let output = format_duration_ms(d);
+        assert!(output.contains("s"));
+    }
+
+    #[test]
+    fn test_format_duration_ms_sub_ms() {
+        // Test sub-millisecond
+        let d = std::time::Duration::from_micros(500);
+        let output = format_duration_ms(d);
+        assert!(output.contains("ms"));
+    }
+
+    #[test]
+    fn test_pipeline_timing_formatter_empty() {
+        let timings: Vec<StageTiming> = vec![];
+        let total = std::time::Duration::from_millis(100);
+        let output = format_pipeline_timing(&timings, total);
+
+        // Should fall back to POSIX format for empty timings
+        assert!(output.contains("real"));
+        assert!(output.contains("user"));
+        assert!(output.contains("sys"));
+    }
+
+    #[test]
+    fn test_pipeline_timing_formatter_single_stage() {
+        let timings = vec![
+            StageTiming {
+                name: "echo".to_string(),
+                is_builtin: true,
+                elapsed: std::time::Duration::from_millis(10),
+            },
+        ];
+        let total = std::time::Duration::from_millis(15);
+        let output = format_pipeline_timing(&timings, total);
+
+        // Should show stage name and type
+        assert!(output.contains("echo"));
+        assert!(output.contains("builtin"));
+        assert!(output.contains("overhead"));
+        assert!(output.contains("total"));
+    }
+
+    #[test]
+    fn test_pipeline_timing_formatter_multi_stage() {
+        let timings = vec![
+            StageTiming {
+                name: "find".to_string(),
+                is_builtin: false,
+                elapsed: std::time::Duration::from_millis(100),
+            },
+            StageTiming {
+                name: "grep".to_string(),
+                is_builtin: true,
+                elapsed: std::time::Duration::from_millis(50),
+            },
+        ];
+        let total = std::time::Duration::from_millis(160);
+        let output = format_pipeline_timing(&timings, total);
+
+        // Should show both stages
+        assert!(output.contains("find"));
+        assert!(output.contains("external"));
+        assert!(output.contains("grep"));
+        assert!(output.contains("builtin"));
+        // Should show overhead calculation
+        assert!(output.contains("overhead"));
+        assert!(output.contains("total"));
+    }
+
+    #[test]
+    fn test_is_collecting_timing_default() {
+        // By default, timing collection should be disabled
+        TIMING_STATE.with(|ts| {
+            ts.borrow_mut().collecting = false;
+        });
+        assert!(!is_collecting_timing());
+    }
+
+    #[test]
+    fn test_record_stage_timing_enabled() {
+        // Enable timing collection
+        TIMING_STATE.with(|ts| {
+            let mut state = ts.borrow_mut();
+            state.collecting = true;
+            state.timings.clear();
+        });
+
+        record_stage_timing("test".to_string(), true, std::time::Duration::from_millis(10));
+
+        // Check that timing was recorded
+        TIMING_STATE.with(|ts| {
+            let state = ts.borrow();
+            assert_eq!(state.timings.len(), 1);
+            assert_eq!(state.timings[0].name, "test");
+            assert!(state.timings[0].is_builtin);
+        });
+
+        // Clean up
+        TIMING_STATE.with(|ts| {
+            let mut state = ts.borrow_mut();
+            state.collecting = false;
+            state.timings.clear();
+        });
+    }
+
+    #[test]
+    fn test_record_stage_timing_disabled() {
+        // Disable timing collection
+        TIMING_STATE.with(|ts| {
+            let mut state = ts.borrow_mut();
+            state.collecting = false;
+            state.timings.clear();
+        });
+
+        record_stage_timing("test".to_string(), true, std::time::Duration::from_millis(10));
+
+        // Check that timing was NOT recorded
+        TIMING_STATE.with(|ts| {
+            let state = ts.borrow();
+            assert_eq!(state.timings.len(), 0);
+        });
     }
 }
