@@ -16,6 +16,8 @@ struct ReadOptions {
     silent: bool,
     /// Timeout in seconds
     timeout: Option<u64>,
+    /// Raw mode (no backslash processing)
+    raw: bool,
     /// Variable names to read into
     variables: Vec<String>,
 }
@@ -41,13 +43,17 @@ impl ReadOptions {
                     "-s" => {
                         opts.silent = true;
                     }
+                    "-r" => {
+                        opts.raw = true;
+                    }
                     "-t" => {
                         // Next arg is the timeout
                         i += 1;
                         if i >= args.len() {
                             return Err(anyhow!("read: -t: option requires an argument"));
                         }
-                        let timeout = args[i].parse::<u64>()
+                        let timeout = args[i]
+                            .parse::<u64>()
                             .map_err(|_| anyhow!("read: -t: invalid timeout value: {}", args[i]))?;
                         opts.timeout = Some(timeout);
                     }
@@ -78,6 +84,7 @@ impl ReadOptions {
 /// - `read -p "Enter name: " name` - Display a prompt
 /// - `read -s password` - Silent input (for passwords)
 /// - `read -t 5 answer` - Timeout after 5 seconds
+/// - `read -r line` - Raw mode (no backslash processing)
 pub fn builtin_read(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     let opts = ReadOptions::parse(args)?;
 
@@ -100,14 +107,21 @@ pub fn builtin_read(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
             output: Output::Text(String::new()),
             stderr: String::new(),
             exit_code: 1,
-        error: None,
+            error: None,
         });
     }
 
     let line = line.unwrap();
 
+    // Process backslash escapes unless in raw mode
+    let processed_line = if opts.raw {
+        line
+    } else {
+        process_backslash_escapes(&line)
+    };
+
     // Split the line according to IFS and assign to variables
-    assign_variables(&opts.variables, &line, runtime);
+    assign_variables(&opts.variables, &processed_line, runtime);
 
     Ok(ExecutionResult::success(String::new()))
 }
@@ -132,7 +146,7 @@ pub fn builtin_read_with_stdin(
                 output: Output::Text(String::new()),
                 stderr: String::new(),
                 exit_code: 1,
-        error: None,
+                error: None,
             });
         }
         Ok(_) => {
@@ -149,8 +163,15 @@ pub fn builtin_read_with_stdin(
         }
     }
 
+    // Process backslash escapes unless in raw mode
+    let processed_line = if opts.raw {
+        line
+    } else {
+        process_backslash_escapes(&line)
+    };
+
     // Split the line according to IFS and assign to variables
-    assign_variables(&opts.variables, &line, runtime);
+    assign_variables(&opts.variables, &processed_line, runtime);
 
     Ok(ExecutionResult::success(String::new()))
 }
@@ -264,16 +285,58 @@ fn read_line_with_timeout(timeout_secs: u64, silent: bool) -> Result<Option<Stri
             // Timeout occurred
             Ok(None)
         }
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            Err(anyhow!("read: channel disconnected"))
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(anyhow!("read: channel disconnected")),
+    }
+}
+
+/// Process backslash escapes in a string (for non-raw mode)
+///
+/// In non-raw mode, backslash acts as an escape character:
+/// - `\\` becomes `\`
+/// - `\<newline>` is line continuation (removed)
+/// - Other backslash sequences: the backslash is removed
+fn process_backslash_escapes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            // Look at the next character
+            match chars.peek() {
+                Some(&'\\') => {
+                    // \\ -> \
+                    result.push('\\');
+                    chars.next();
+                }
+                Some(&'\n') => {
+                    // Line continuation: skip both backslash and newline
+                    chars.next();
+                }
+                Some(_) => {
+                    // Any other backslash sequence: remove backslash, keep char
+                    if let Some(next) = chars.next() {
+                        result.push(next);
+                    }
+                }
+                None => {
+                    // Trailing backslash at end of line: remove it
+                    // (acts as line continuation, but since there's no more input, just drop it)
+                }
+            }
+        } else {
+            result.push(ch);
         }
     }
+
+    result
 }
 
 /// Split line according to IFS and assign to variables
 fn assign_variables(variables: &[String], line: &str, runtime: &mut Runtime) {
     // Get IFS (Internal Field Separator) from runtime, default to space/tab/newline
-    let ifs = runtime.get_variable("IFS").unwrap_or_else(|| " \t\n".to_string());
+    let ifs = runtime
+        .get_variable("IFS")
+        .unwrap_or_else(|| " \t\n".to_string());
 
     if variables.len() == 1 {
         // Single variable: assign entire line
@@ -315,11 +378,9 @@ fn split_by_ifs<'a>(s: &'a str, ifs: &str) -> Vec<&'a str> {
                 fields.push(&s[current_field_start..i]);
                 in_field = false;
             }
-        } else {
-            if !in_field {
-                current_field_start = i;
-                in_field = true;
-            }
+        } else if !in_field {
+            current_field_start = i;
+            in_field = true;
         }
     }
 
@@ -402,7 +463,8 @@ mod tests {
         let opts = ReadOptions::parse(&["name".to_string()]).unwrap();
         assert_eq!(opts.variables, vec!["name"]);
         assert_eq!(opts.prompt, None);
-        assert_eq!(opts.silent, false);
+        assert!(!opts.silent);
+        assert!(!opts.raw);
         assert_eq!(opts.timeout, None);
     }
 
@@ -422,13 +484,20 @@ mod tests {
     fn test_parse_options_silent() {
         let opts = ReadOptions::parse(&["-s".to_string(), "password".to_string()]).unwrap();
         assert_eq!(opts.variables, vec!["password"]);
-        assert_eq!(opts.silent, true);
+        assert!(opts.silent);
+    }
+
+    #[test]
+    fn test_parse_options_raw() {
+        let opts = ReadOptions::parse(&["-r".to_string(), "line".to_string()]).unwrap();
+        assert_eq!(opts.variables, vec!["line"]);
+        assert!(opts.raw);
     }
 
     #[test]
     fn test_parse_options_timeout() {
-        let opts = ReadOptions::parse(&["-t".to_string(), "5".to_string(), "answer".to_string()])
-            .unwrap();
+        let opts =
+            ReadOptions::parse(&["-t".to_string(), "5".to_string(), "answer".to_string()]).unwrap();
         assert_eq!(opts.variables, vec!["answer"]);
         assert_eq!(opts.timeout, Some(5));
     }
@@ -446,7 +515,7 @@ mod tests {
         .unwrap();
         assert_eq!(opts.variables, vec!["pass"]);
         assert_eq!(opts.prompt, Some("Password: ".to_string()));
-        assert_eq!(opts.silent, true);
+        assert!(opts.silent);
         assert_eq!(opts.timeout, Some(10));
     }
 
@@ -479,12 +548,8 @@ mod tests {
         let mut runtime = Runtime::new();
         let stdin_data = b"test line\n";
 
-        let result = builtin_read_with_stdin(
-            &["var".to_string()],
-            &mut runtime,
-            stdin_data,
-        )
-        .unwrap();
+        let result =
+            builtin_read_with_stdin(&["var".to_string()], &mut runtime, stdin_data).unwrap();
 
         assert_eq!(result.exit_code, 0);
         assert_eq!(runtime.get_variable("var"), Some("test line".to_string()));
@@ -513,12 +578,8 @@ mod tests {
         let mut runtime = Runtime::new();
         let stdin_data = b"";
 
-        let result = builtin_read_with_stdin(
-            &["var".to_string()],
-            &mut runtime,
-            stdin_data,
-        )
-        .unwrap();
+        let result =
+            builtin_read_with_stdin(&["var".to_string()], &mut runtime, stdin_data).unwrap();
 
         // EOF should return exit code 1
         assert_eq!(result.exit_code, 1);
@@ -557,6 +618,105 @@ mod tests {
 
         assert_eq!(result.exit_code, 0);
         assert_eq!(runtime.get_variable("first"), Some("one".to_string()));
-        assert_eq!(runtime.get_variable("rest"), Some("two three four five".to_string()));
+        assert_eq!(
+            runtime.get_variable("rest"),
+            Some("two three four five".to_string())
+        );
+    }
+
+    #[test]
+    fn test_process_backslash_escapes_double_backslash() {
+        assert_eq!(process_backslash_escapes(r"hello\\world"), r"hello\world");
+    }
+
+    #[test]
+    fn test_process_backslash_escapes_escaped_char() {
+        // \n should become just n (backslash removed)
+        assert_eq!(process_backslash_escapes(r"hello\nworld"), "hellonworld");
+    }
+
+    #[test]
+    fn test_process_backslash_escapes_trailing_backslash() {
+        // Trailing backslash is removed
+        assert_eq!(process_backslash_escapes(r"hello\"), "hello");
+    }
+
+    #[test]
+    fn test_process_backslash_escapes_no_backslash() {
+        assert_eq!(process_backslash_escapes("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_builtin_read_with_stdin_raw_mode() {
+        let mut runtime = Runtime::new();
+        // Input contains backslashes - with -r they should be preserved
+        let stdin_data = b"hello\\nworld\n";
+
+        let result = builtin_read_with_stdin(
+            &["-r".to_string(), "var".to_string()],
+            &mut runtime,
+            stdin_data,
+        )
+        .unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        // In raw mode, backslashes are preserved
+        assert_eq!(
+            runtime.get_variable("var"),
+            Some(r"hello\nworld".to_string())
+        );
+    }
+
+    #[test]
+    fn test_builtin_read_with_stdin_non_raw_mode() {
+        let mut runtime = Runtime::new();
+        // Input contains backslashes - without -r they should be processed
+        let stdin_data = b"hello\\nworld\n";
+
+        let result =
+            builtin_read_with_stdin(&["var".to_string()], &mut runtime, stdin_data).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        // In non-raw mode, \n becomes just n
+        assert_eq!(
+            runtime.get_variable("var"),
+            Some("hellonworld".to_string())
+        );
+    }
+
+    #[test]
+    fn test_builtin_read_with_stdin_raw_preserves_double_backslash() {
+        let mut runtime = Runtime::new();
+        let stdin_data = b"path\\\\to\\\\file\n";
+
+        let result = builtin_read_with_stdin(
+            &["-r".to_string(), "path".to_string()],
+            &mut runtime,
+            stdin_data,
+        )
+        .unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        // In raw mode, both backslashes preserved
+        assert_eq!(
+            runtime.get_variable("path"),
+            Some(r"path\\to\\file".to_string())
+        );
+    }
+
+    #[test]
+    fn test_builtin_read_with_stdin_non_raw_double_backslash() {
+        let mut runtime = Runtime::new();
+        let stdin_data = b"path\\\\to\\\\file\n";
+
+        let result =
+            builtin_read_with_stdin(&["path".to_string()], &mut runtime, stdin_data).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        // In non-raw mode, \\ becomes \
+        assert_eq!(
+            runtime.get_variable("path"),
+            Some(r"path\to\file".to_string())
+        );
     }
 }
