@@ -55,6 +55,19 @@ const BUILTINS: &[BuiltinHelp] = &[
         ],
     },
     BuiltinHelp {
+        name: "exec",
+        brief: "Replace shell or modify redirections",
+        description: "Replace the shell process with a command, or perform permanent file descriptor redirections. With a command, exec replaces the shell and never returns. Without a command but with redirections, it permanently redirects the shell's file descriptors.",
+        usage: "exec [command [args ...]]\nexec [redirections]",
+        examples: &[
+            "exec ./server        # Replace shell with server",
+            "exec > output.log    # Redirect stdout permanently",
+            "exec 2>&1            # Redirect stderr to stdout",
+            "exec 3> file.txt     # Open fd 3 for writing",
+            "exec 3>&-            # Close fd 3",
+        ],
+    },
+    BuiltinHelp {
         name: "export",
         brief: "Set environment variables",
         description: "Set environment variables that will be passed to child processes. Variables must be specified in KEY=value format.",
@@ -235,6 +248,40 @@ const BUILTINS: &[BuiltinHelp] = &[
         ],
     },
     BuiltinHelp {
+        name: "break",
+        brief: "Exit from a loop",
+        description: "Exit from a for, while, or until loop. If N is specified, break from N enclosing loops. N must be >= 1. If N is greater than the number of enclosing loops, an error is returned.",
+        usage: "break [N]",
+        examples: &[
+            "break               # Exit innermost loop",
+            "break 1             # Same as 'break'",
+            "break 2             # Exit from 2 nested loops",
+        ],
+    },
+    BuiltinHelp {
+        name: "continue",
+        brief: "Resume the next iteration of a loop",
+        description: "Resume the next iteration of an enclosing for, while, or until loop. If N is specified, resume at the Nth enclosing loop. N must be >= 1. If N is greater than the number of enclosing loops, an error is returned.",
+        usage: "continue [N]",
+        examples: &[
+            "continue            # Skip to next iteration of innermost loop",
+            "continue 1          # Same as 'continue'",
+            "continue 2          # Skip to next iteration of 2nd enclosing loop",
+        ],
+    },
+    BuiltinHelp {
+        name: "return",
+        brief: "Return from a function",
+        description: "Return from a shell function with exit status N. If N is not specified, the return status is that of the last command executed in the function. Can only be used inside a function or sourced script.",
+        usage: "return [N]",
+        examples: &[
+            "return              # Return with status 0",
+            "return 0            # Return with status 0",
+            "return 1            # Return with status 1",
+            "return $?           # Return with last command's exit code",
+        ],
+    },
+    BuiltinHelp {
         name: "type",
         brief: "Display command type information",
         description: "Display information about command type. Shows whether a command is a builtin, alias, function, or external executable.",
@@ -243,6 +290,33 @@ const BUILTINS: &[BuiltinHelp] = &[
             "type cd             # Show type of cd command",
             "type ls grep        # Show type of multiple commands",
             "type -a python      # Show all locations of python",
+        ],
+    },
+    BuiltinHelp {
+        name: "trap",
+        brief: "Catch signals and execute commands",
+        description: "Set trap handlers that execute commands when signals are received. Supports signal names (INT, TERM, HUP) and numbers (2, 15, 1). Special traps: EXIT runs on shell exit, ERR runs when a command fails.",
+        usage: "trap [-lp] [command signal_spec ...]\ntrap - signal_spec ...    # Reset to default\ntrap '' signal_spec ...   # Ignore signal",
+        examples: &[
+            "trap                         # List current traps",
+            "trap -l                      # List available signals",
+            "trap 'echo bye' EXIT         # Run command on exit",
+            "trap 'echo caught' INT       # Catch Ctrl-C",
+            "trap 'cleanup' EXIT TERM HUP # Multiple signals",
+            "trap - INT                   # Reset INT to default",
+            "trap '' INT                  # Ignore INT signal",
+        ],
+    },
+    BuiltinHelp {
+        name: "eval",
+        brief: "Execute arguments as a shell command",
+        description: "Concatenates all arguments into a single string, then parses and executes that string as shell commands. This is useful for dynamic command construction. Variables are expanded twice: once by the shell when passing to eval, and once by eval when executing the command string.",
+        usage: "eval [arg ...]",
+        examples: &[
+            "eval echo hello              # Execute 'echo hello'",
+            "cmd='echo hello'; eval $cmd  # Execute command in variable",
+            "eval 'x=5; echo $x'          # Multiple statements",
+            "eval \"echo \\$HOME\"          # Double expansion",
         ],
     },
     BuiltinHelp {
@@ -267,7 +341,10 @@ pub fn builtin_help(args: &[String], _runtime: &mut Runtime) -> Result<Execution
         let command = &args[0];
         match find_builtin(command) {
             Some(builtin) => Ok(ExecutionResult::success(show_detailed_help(builtin))),
-            None => Err(anyhow!("help: no help topics match `{}`. Try `help` to see available commands.", command)),
+            None => Err(anyhow!(
+                "help: no help topics match `{}`. Try `help` to see available commands.",
+                command
+            )),
         }
     }
 }
@@ -283,10 +360,7 @@ fn show_all_builtins() -> String {
     output.push_str("Type 'help <command>' for more information on a specific command.\n\n");
 
     // Find the longest name for alignment
-    let max_name_len = BUILTINS.iter()
-        .map(|b| b.name.len())
-        .max()
-        .unwrap_or(0);
+    let max_name_len = BUILTINS.iter().map(|b| b.name.len()).max().unwrap_or(0);
 
     for builtin in BUILTINS {
         let colored_name = name_style.paint(builtin.name).to_string();
@@ -386,7 +460,10 @@ mod tests {
         let mut runtime = Runtime::new();
         let result = builtin_help(&["nonexistent".to_string()], &mut runtime);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no help topics match"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no help topics match"));
     }
 
     #[test]
