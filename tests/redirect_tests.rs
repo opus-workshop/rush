@@ -210,3 +210,146 @@ fn test_stderr_to_stdout_basic() {
         }
     }
 }
+
+#[test]
+fn test_pipe_with_stdout_redirect() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("pipe_output.txt");
+
+    // Test pipe with stdout redirect
+    let cmd = format!("echo hello | cat > {}", output_file.display());
+    execute_command(&cmd, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert_eq!(content.trim(), "hello");
+}
+
+#[test]
+fn test_pipe_with_append_redirect() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("pipe_append.txt");
+
+    // First write via pipe
+    let cmd1 = format!("echo first | cat > {}", output_file.display());
+    execute_command(&cmd1, &temp_dir).unwrap();
+
+    // Append via pipe
+    let cmd2 = format!("echo second | cat >> {}", output_file.display());
+    execute_command(&cmd2, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("first"));
+    assert!(content.contains("second"));
+}
+
+#[test]
+fn test_pipe_with_stderr_redirect() {
+    let temp_dir = setup_test_env();
+    let error_file = temp_dir.path().join("pipe_errors.log");
+
+    // Note: stderr redirect after pipe may not capture pipe's stderr
+    let cmd = format!("echo test | cat 2> {}", error_file.display());
+    let _ = execute_command(&cmd, &temp_dir);
+
+    // File should be created
+    assert!(error_file.exists());
+}
+
+#[test]
+fn test_pipe_with_both_redirect() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("pipe_both.log");
+
+    // Redirect both stdout and stderr through pipeline
+    let cmd = format!("echo hello | cat &> {}", output_file.display());
+    execute_command(&cmd, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("hello"));
+}
+
+#[test]
+fn test_multiple_pipes_with_redirect() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("multi_pipe.txt");
+
+    // Multiple pipes with final redirect (using echo to avoid grep color codes)
+    let cmd = format!("echo hello | cat | cat > {}", output_file.display());
+    execute_command(&cmd, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert_eq!(content.trim(), "hello");
+}
+
+#[test]
+fn test_grep_pipe_redirect() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("grep_result.txt");
+
+    // Create input file for piping through grep
+    let input_file = temp_dir.path().join("input.txt");
+    fs::write(&input_file, "apple\nbanana\napple pie\n").unwrap();
+
+    // Use grep with pipe and redirect
+    let cmd = format!("grep apple {} | cat > {}", input_file.display(), output_file.display());
+    execute_command(&cmd, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("apple"));
+}
+
+#[test]
+fn test_pipe_redirect_with_input_redirect() {
+    let temp_dir = setup_test_env();
+    let input_file = temp_dir.path().join("pipe_input.txt");
+    let output_file = temp_dir.path().join("pipe_output_from_input.txt");
+
+    // Create input file
+    fs::write(&input_file, "hello world\n").unwrap();
+
+    // Use cat directly on file and redirect to output
+    let cmd = format!("cat {} > {}", input_file.display(), output_file.display());
+    execute_command(&cmd, &temp_dir).unwrap();
+
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert_eq!(content.trim(), "hello world");
+}
+
+#[test]
+fn test_echo_with_all_redirect_types() {
+    let temp_dir = setup_test_env();
+    let stdout_file = temp_dir.path().join("out1.txt");
+    let stdout_file2 = temp_dir.path().join("out2.txt");
+
+    // Test basic redirect
+    execute_command(&format!("echo test1 > {}", stdout_file.display()), &temp_dir).unwrap();
+    let content = fs::read_to_string(&stdout_file).unwrap();
+    assert_eq!(content.trim(), "test1");
+
+    // Test append redirect
+    execute_command(&format!("echo test2 >> {}", stdout_file.display()), &temp_dir).unwrap();
+    let content = fs::read_to_string(&stdout_file).unwrap();
+    assert!(content.contains("test1"));
+    assert!(content.contains("test2"));
+
+    // Test both redirect
+    execute_command(&format!("echo test3 &> {}", stdout_file2.display()), &temp_dir).unwrap();
+    let content = fs::read_to_string(&stdout_file2).unwrap();
+    assert_eq!(content.trim(), "test3");
+}
+
+#[test]
+fn test_redirect_preserves_pipe_output() {
+    let temp_dir = setup_test_env();
+    let output_file = temp_dir.path().join("pipe_preserved.txt");
+
+    // Complex pipeline: echo -> wc -> cat -> redirect
+    let cmd = format!("echo 'hello world' | wc -c | cat > {}", output_file.display());
+    let _ = execute_command(&cmd, &temp_dir);
+
+    // File should exist and contain output
+    assert!(output_file.exists());
+    let content = fs::read_to_string(&output_file).unwrap();
+    // wc -c counts characters including newline
+    assert!(!content.is_empty());
+}

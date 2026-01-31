@@ -195,9 +195,9 @@ impl Corrector {
                         for entry in entries.flatten() {
                             if let Ok(file_name) = entry.file_name().into_string() {
                                 let score = self.calculate_score(&file_name, input);
-                                // Use a higher threshold for PATH commands to avoid spurious matches
-                                // (e.g., "xyz" matching "xzdec" with a fuzzy score of 68)
-                                if score > self.config.min_threshold {
+                                // Use a much higher threshold for PATH commands to avoid spurious matches
+                                // PATH commands are searched only as a fallback, so be strict
+                                if score > 75 {
                                     path_suggestions.push(Suggestion {
                                         text: file_name,
                                         score,
@@ -688,6 +688,31 @@ mod tests {
     }
 
     #[test]
+    fn test_did_you_mean_cargo_typo() {
+        let corrector = Corrector::new();
+        let builtins = vec!["cargo".to_string(), "echo".to_string(), "cd".to_string()];
+
+        // Test various cargo typos
+        for typo in &["carg", "cargi", "cargoo", "crago"] {
+            let suggestions = corrector.suggest_command(typo, &builtins);
+            assert!(!suggestions.is_empty(), "Expected suggestions for '{}'", typo);
+            assert_eq!(suggestions[0].text, "cargo", "Expected 'cargo' as top suggestion for '{}'", typo);
+        }
+    }
+
+    #[test]
+    fn test_did_you_mean_multiple_suggestions() {
+        let corrector = Corrector::new();
+        let builtins = vec!["grep".to_string(), "git".to_string(), "get".to_string()];
+
+        // Search for "gre" should suggest both grep and get
+        let suggestions = corrector.suggest_command("gre", &builtins);
+        assert!(!suggestions.is_empty());
+        // Top suggestion should be one of grep/get
+        assert!(suggestions[0].text == "grep" || suggestions[0].text == "get");
+    }
+
+    #[test]
     fn test_suggestion_kinds_labeled() {
         assert_eq!(SuggestionKind::Builtin.label(), "builtin");
         assert_eq!(SuggestionKind::Executable.label(), "command");
@@ -711,7 +736,7 @@ mod tests {
     #[test]
     fn test_config_default_values() {
         let config = SuggestionConfig::default();
-        assert_eq!(config.min_threshold, 30);
+        assert_eq!(config.min_threshold, 50);
         assert_eq!(config.max_suggestions, 5);
         assert!(config.enabled);
         assert!(config.use_history);

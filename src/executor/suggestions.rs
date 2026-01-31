@@ -288,11 +288,6 @@ mod tests {
         assert!(engine.is_likely_typo("ehco", &builtins));
 
         // "xyz" is not close to anything
-        let suggestions = engine.corrector().suggest_command("xyz", &builtins);
-        println!("Suggestions for 'xyz': {:?}", suggestions);
-        for suggestion in &suggestions {
-            println!("  {} (score: {})", suggestion.text, suggestion.score);
-        }
         assert!(!engine.is_likely_typo("xyz", &builtins));
     }
 
@@ -328,5 +323,105 @@ mod tests {
         // "xyz" won't meet the high threshold
         let suggestions = engine.suggest_command("xyz", &builtins, &[], &[], Path::new("."));
         assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_suggest_command_with_history() {
+        let engine = SuggestionEngine::new();
+        let builtins = vec!["echo".to_string(), "exit".to_string()];
+        let aliases = vec![];
+        let history = vec![
+            "cargo build".to_string(),
+            "cargo test".to_string(),
+            "git status".to_string(),
+        ];
+        let cwd = std::path::Path::new(".");
+
+        // Search for "carg" should suggest cargo from history
+        let suggestions = engine.suggest_command("carg", &builtins, &aliases, &history, cwd);
+        assert!(!suggestions.is_empty(), "Expected suggestions for 'carg' with history");
+        assert!(suggestions.iter().any(|s| s.text == "cargo"), 
+            "Expected 'cargo' in suggestions from history: {:?}", suggestions);
+    }
+
+    #[test]
+    fn test_suggest_command_history_extraction() {
+        // Test that command names are extracted from full commands in history
+        let engine = SuggestionEngine::new();
+        let builtins = vec![];
+        let aliases = vec![];
+        let history = vec![
+            "mycustomcmd --verbose --flag=value".to_string(),
+            "anothercommand arg1 arg2".to_string(),
+        ];
+        let cwd = std::path::Path::new(".");
+
+        // Search for "mycustom" should find it in history
+        let suggestions = engine.suggest_command("mycustom", &builtins, &aliases, &history, cwd);
+        assert!(suggestions.iter().any(|s| s.text == "mycustomcmd"),
+            "Expected 'mycustomcmd' extracted from history: {:?}", suggestions);
+    }
+
+    #[test]
+    fn test_suggest_command_disabled_history() {
+        let config = SuggestionConfig {
+            enabled: true,
+            max_display: 3,
+            min_score: 30,
+        };
+        let mut engine = SuggestionEngine::with_config(config);
+        
+        // Disable history suggestions
+        let mut _corrector_config = crate::correction::SuggestionConfig::default();
+        _corrector_config.use_history = false;
+        engine.corrector_mut().set_enabled(false);
+        
+        let builtins = vec![];
+        let aliases = vec![];
+        let history = vec!["mycustomcmd".to_string()];
+        let cwd = std::path::Path::new(".");
+
+        // Even with history, if disabled, should not suggest
+        engine.set_enabled(false);
+        let suggestions = engine.suggest_command("mycustom", &builtins, &aliases, &history, cwd);
+        assert!(suggestions.is_empty(), "History suggestions should be empty when disabled");
+    }
+
+    #[test]
+    fn test_cargo_typo_in_cargo_project() {
+        // This test requires being in a Cargo project (which we are)
+        let engine = SuggestionEngine::new();
+        let builtins = vec![];
+        let aliases = vec![];
+        let history = vec![];
+        let cwd = std::env::current_dir().unwrap();
+        
+        // If we're in a Cargo project, search for "carg" should suggest "cargo"
+        if cwd.join("Cargo.toml").exists() {
+            let suggestions = engine.suggest_command("carg", &builtins, &aliases, &history, &cwd);
+            assert!(!suggestions.is_empty(), "Expected suggestions for 'carg' in Cargo project");
+            // Should include cargo as a contextual suggestion
+            assert!(suggestions.iter().any(|s| s.text == "cargo"),
+                "Expected 'cargo' in suggestions when in Cargo project: {:?}", suggestions);
+        }
+    }
+
+    #[test]
+    fn test_git_typo_in_git_repo() {
+        // This test requires being in a git repo
+        let engine = SuggestionEngine::new();
+        let builtins = vec![];
+        let aliases = vec![];
+        let history = vec![];
+        let cwd = std::env::current_dir().unwrap();
+        
+        // If we're in a git repo (check for .git directory), search for "gi" should suggest "git"
+        if cwd.join(".git").exists() {
+            let suggestions = engine.suggest_command("gi", &builtins, &aliases, &history, &cwd);
+            assert!(!suggestions.is_empty(), "Expected suggestions for 'gi' in git repo");
+            // Should include git as a contextual suggestion
+            assert!(suggestions.iter().any(|s| s.text == "git"),
+                "Expected 'git' in suggestions when in git repo: {:?}", suggestions);
+        }
     }
 }

@@ -256,14 +256,106 @@ fn execute_pipeline_command(
     stdin: Option<&[u8]>,
 ) -> Result<ExecutionResult> {
     // Check if it's a builtin
-    if builtins.is_builtin(&command.name) {
+    let mut result = if builtins.is_builtin(&command.name) {
         let args = resolve_and_expand_arguments(&command.args, runtime);
 
         // Use execute_with_stdin to properly handle piped input
-        builtins.execute_with_stdin(&command.name, args, runtime, stdin)
+        builtins.execute_with_stdin(&command.name, args, runtime, stdin)?
     } else {
-        execute_external_pipeline_command(command, runtime, stdin)
+        execute_external_pipeline_command(command, runtime, stdin)?
+    };
+
+    // Apply redirects to the command's result
+    if !command.redirects.is_empty() {
+        result = apply_redirects_to_result(result, &command.redirects, runtime)?;
     }
+
+    Ok(result)
+}
+
+/// Apply redirects to an execution result
+fn apply_redirects_to_result(
+    mut result: ExecutionResult,
+    redirects: &[crate::parser::ast::Redirect],
+    runtime: &Runtime,
+) -> Result<ExecutionResult> {
+    use std::fs::{File, OpenOptions};
+    use std::io::Write;
+    use std::path::Path;
+
+    // Helper to resolve paths relative to cwd
+    let resolve_path = |target: &str| -> std::path::PathBuf {
+        let path = Path::new(target);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            runtime.get_cwd().join(target)
+        }
+    };
+
+    for redirect in redirects {
+        match &redirect.kind {
+            crate::parser::ast::RedirectKind::Stdout => {
+                if let Some(target) = &redirect.target {
+                    let resolved = resolve_path(target);
+                    let mut file = File::create(&resolved)
+                        .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                    file.write_all(result.stdout().as_bytes())
+                        .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                    result.clear_stdout();
+                }
+            }
+            crate::parser::ast::RedirectKind::StdoutAppend => {
+                if let Some(target) = &redirect.target {
+                    let resolved = resolve_path(target);
+                    let mut file = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&resolved)
+                        .map_err(|e| anyhow!("Failed to open '{}': {}", target, e))?;
+                    file.write_all(result.stdout().as_bytes())
+                        .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                    result.clear_stdout();
+                }
+            }
+            crate::parser::ast::RedirectKind::Stdin => {
+                // Stdin redirect doesn't apply to already-executed commands in a pipeline
+            }
+            crate::parser::ast::RedirectKind::Stderr => {
+                if let Some(target) = &redirect.target {
+                    let resolved = resolve_path(target);
+                    let mut file = File::create(&resolved)
+                        .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                    file.write_all(result.stderr.as_bytes())
+                        .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                    result.stderr.clear();
+                }
+            }
+            crate::parser::ast::RedirectKind::StderrToStdout => {
+                // Merge stderr into stdout
+                result.push_stdout(&result.stderr.clone());
+                result.stderr.clear();
+            }
+            crate::parser::ast::RedirectKind::Both => {
+                if let Some(target) = &redirect.target {
+                    let resolved = resolve_path(target);
+                    let mut file = File::create(&resolved)
+                        .map_err(|e| anyhow!("Failed to create '{}': {}", target, e))?;
+                    file.write_all(result.stdout().as_bytes())
+                        .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                    file.write_all(result.stderr.as_bytes())
+                        .map_err(|e| anyhow!("Failed to write to '{}': {}", target, e))?;
+                    result.clear_stdout();
+                    result.stderr.clear();
+                }
+            }
+            crate::parser::ast::RedirectKind::HereDoc | crate::parser::ast::RedirectKind::HereDocLiteral => {
+                // Here-documents provide stdin - not applicable in pipeline context for output redirection
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 fn execute_external_pipeline_command(
