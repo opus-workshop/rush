@@ -42,6 +42,7 @@ mod shift;
 mod test;
 pub mod trap; // Public so runtime and executor can access TrapSignal
 mod type_builtin;
+mod time;
 mod undo;
 mod unset;
 mod wait;
@@ -51,7 +52,7 @@ type BuiltinFn = fn(&[String], &mut Runtime) -> Result<ExecutionResult>;
 /// Process-global builtin table. Initialized once on first access via LazyLock.
 /// Uses &'static str keys to avoid per-Executor String allocations.
 static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|| {
-    let mut m: HashMap<&'static str, BuiltinFn> = HashMap::with_capacity(49);
+    let mut m: HashMap<&'static str, BuiltinFn> = HashMap::with_capacity(50);
     m.insert("cd", builtin_cd as BuiltinFn);
     m.insert("pwd", builtin_pwd);
     m.insert("echo", builtin_echo);
@@ -103,6 +104,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("rm", rm::builtin_rm);
     m.insert("wait", wait::builtin_wait);
     m.insert("profile", profile::builtin_profile);
+    m.insert("time", time::builtin_time);
     m
 });
 
