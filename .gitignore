@@ -1,5 +1,6 @@
 # Build
 /target
+/target-*
 
 # OS
 .DS_Store
@@ -8,19 +9,25 @@
 *.swp
 *.swo
 *~
+.idea/
+.vscode/
+*.orig
 
 # Agent artifacts
 *.bak
 *.bak[0-9]
+*.bak[0-9][0-9]
 *.tmp
 *.rej
 *.fix
 *.duperr
 *.final
 *.final[0-9]
+*.final[0-9][0-9]
 *.patch
 .ralph-tui/
 .claude/
+iterations/
 
 # Agent-generated root files
 /AGENTS.md
