@@ -345,8 +345,8 @@ impl Executor {
                 if let Some(next_char) = chars.peek() {
                     match next_char {
                         '(' => {
-                            // Command substitution $(...)
-                            let mut cmd_str = String::from("$");
+                            // Command substitution $(...) or arithmetic expansion $((expr))
+                            let mut cmd_str = String::from("$(");
                             chars.next(); // consume '('
                             let mut depth = 1;
                             while let Some(ch) = chars.peek() {
@@ -355,6 +355,7 @@ impl Executor {
                                 } else if *ch == ')' {
                                     depth -= 1;
                                     if depth == 0 {
+                                        cmd_str.push(')');
                                         chars.next(); // consume ')'
                                         break;
                                     }
@@ -2630,6 +2631,17 @@ pub(crate) fn expand_command_substitutions_in_string_static(input: &str, runtime
 
             if depth == 0 {
                 let substitution = &input[start..j];
+
+                // Check for arithmetic expansion: $((expr))
+                if substitution.starts_with("$((") && substitution.ends_with("))") {
+                    let expr = &substitution[3..substitution.len() - 2];
+                    if let Ok(value) = arithmetic::evaluate(expr, runtime) {
+                        result.push_str(&value.to_string());
+                        i = j;
+                        continue;
+                    }
+                }
+
                 let command = &substitution[2..substitution.len() - 1];
                 if let Ok(tokens) = crate::lexer::Lexer::tokenize(command) {
                     let mut parser = crate::parser::Parser::new(tokens);
