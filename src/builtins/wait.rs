@@ -186,6 +186,7 @@ fn parse_job_spec(spec: &str, runtime: &Runtime) -> Result<crate::jobs::Job> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn test_wait_no_jobs() {
