@@ -1,0 +1,36 @@
+id: rush-hn6.2
+title: Git-aware completion for branches, remotes, files
+status: open
+priority: 2
+created_at: 2026-01-31T16:31:44.664235Z
+updated_at: 2026-01-31T16:31:44.664235Z
+description: |-
+  Implement git-specific completion provider using git2 crate.
+
+  ## What to implement
+  - GitCompletionProvider for git command arguments
+  - Branch name completion (git checkout <TAB>)
+  - Remote name completion (git push <TAB>)
+  - Committed file completion (git show <TAB>)
+  - Staged/modified file completion (git add <TAB>)
+
+  ## Files to Modify
+  - src/completion/providers.rs or new src/completion/git_provider.rs
+  - src/builtins/git_*.rs (if git builtins exist)
+
+  ## Example Behavior
+  ```
+  git checkout <TAB>     → main, feature/xyz, release/1.0
+  git push origin <TAB>  → main, develop, staging
+  git add <TAB>          → modified files in working tree
+  ```
+acceptance: |-
+  - Branch completion works (git2 crate integration)
+  - Remote completion works
+  - File completion shows modified/staged files
+  - Performance acceptable (cache git data)
+  - Works in git repositories only (graceful fallback elsewhere)
+  - cargo test passes
+parent: rush-hn6
+dependencies:
+- rush-hn6.1

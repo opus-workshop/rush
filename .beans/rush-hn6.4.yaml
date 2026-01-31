@@ -1,0 +1,35 @@
+id: rush-hn6.4
+title: Fuzzy matching and description hints for completions
+status: open
+priority: 3
+created_at: 2026-01-31T16:31:48.253291Z
+updated_at: 2026-01-31T16:31:48.253291Z
+description: |-
+  Add fuzzy matching and description support to completion system.
+
+  ## What to implement
+  - FuzzyMatcher for prefix-agnostic matching
+  - Description formatting and alignment
+  - Filtering based on partial input
+  - Performance optimization for large result sets
+
+  ## Files to Modify
+  - src/completion/engine.rs (add fuzzy matching logic)
+  - src/completion/formatter.rs or inline helpers (description formatting)
+
+  ## Example Behavior
+  ```
+  ls -<TAB>l             → -l, --long (fuzzy matches 'l' to 'long')
+  find -<TAB>m           → -maxdepth, -mkdir (fuzzy matches 'm')
+  ```
+acceptance: |-
+  - Fuzzy matching works for partial input (not just prefix)
+  - Descriptions aligned and readable
+  - Large completion sets (100+ items) still fast
+  - Works with all completion providers
+  - Descriptions sourced from help metadata
+  - cargo test passes
+parent: rush-hn6
+dependencies:
+- rush-hn6.2
+- rush-hn6.4

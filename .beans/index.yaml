@@ -1,4 +1,12 @@
 beans:
+- id: rush-hn6.1
+  title: Builtin flag and option completion
+  status: open
+  priority: 2
+  parent: rush-hn6
+  dependencies:
+  - rush-hn6.1
+  updated_at: 2026-01-31T16:31:43.293644Z
 - id: '1'
   title: Rush 1.0 Critical Features
   status: open
@@ -8,6 +16,26 @@ beans:
   - epic
   - rush
   updated_at: 2026-01-30T18:49:24.283034Z
+- id: rush-hn2.1
+  title: Profile JSON output for tooling integration
+  status: open
+  priority: 2
+  parent: rush-hn2
+  updated_at: 2026-01-31T16:31:29.987796Z
+- id: rush-hn5.1
+  title: Auto-migration suggestions for bash-to-rush conversion
+  status: open
+  priority: 3
+  parent: rush-hn5
+  dependencies:
+  - rush-hn5.3
+  updated_at: 2026-01-31T16:31:36.069413Z
+- id: rush-hn3.1
+  title: Help text database for common errors
+  status: open
+  priority: 2
+  parent: rush-hn3
+  updated_at: 2026-01-31T16:31:29.343414Z
 - id: '2'
   title: AI Agent Batteries Included
   status: open
@@ -19,6 +47,14 @@ beans:
   - json
   - phase5
   updated_at: 2026-01-30T18:49:24.287446Z
+- id: rush-hn6.2
+  title: Git-aware completion for branches, remotes, files
+  status: open
+  priority: 2
+  parent: rush-hn6
+  dependencies:
+  - rush-hn6.1
+  updated_at: 2026-01-31T16:31:44.664235Z
 - id: '3'
   title: Rush Shell Stability - Login Shell Ready
   status: open
@@ -29,6 +65,23 @@ beans:
   - rush
   - stability
   updated_at: 2026-01-30T18:49:24.292328Z
+- id: rush-hn6.3
+  title: Custom completion script loading system
+  status: open
+  priority: 2
+  parent: rush-hn6
+  dependencies:
+  - rush-hn6.2
+  updated_at: 2026-01-31T16:31:46.532576Z
+- id: rush-hn6.4
+  title: Fuzzy matching and description hints for completions
+  status: open
+  priority: 3
+  parent: rush-hn6
+  dependencies:
+  - rush-hn6.2
+  - rush-hn6.4
+  updated_at: 2026-01-31T16:31:48.253291Z
 - id: '4'
   title: Rush HN Readiness Cleanup
   status: open
@@ -143,6 +196,22 @@ beans:
   - performance
   - phase4
   updated_at: 2026-01-30T18:49:24.340613Z
+- id: '15.1'
+  title: Pipeline stage timing breakdown in time builtin
+  status: open
+  priority: 2
+  parent: '15'
+  dependencies:
+  - '15.1'
+  updated_at: 2026-01-31T16:32:02.746490Z
+- id: '15.2'
+  title: Time builtin comparison mode vs bash/zsh
+  status: open
+  priority: 3
+  parent: '15'
+  dependencies:
+  - '15.1'
+  updated_at: 2026-01-31T16:32:18.376165Z
 - id: '16'
   title: Script Compatibility Checker
   status: open
@@ -1653,3 +1722,8 @@ beans:
   status: open
   priority: 2
   updated_at: 2026-01-30T18:49:25.593766Z
+- id: '192'
+  title: Advanced Shell Completion System
+  status: open
+  priority: 3
+  updated_at: 2026-01-31T16:31:41.639325Z

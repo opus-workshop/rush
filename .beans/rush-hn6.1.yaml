@@ -1,0 +1,34 @@
+id: rush-hn6.1
+title: Builtin flag and option completion
+status: open
+priority: 2
+created_at: 2026-01-31T16:31:43.293644Z
+updated_at: 2026-01-31T16:31:43.293644Z
+description: |-
+  Implement intelligent flag/option completion for all Rush builtins.
+
+  ## What to implement
+  - FlagCompletionProvider for builtin command flags
+  - Extract flags from builtin help metadata
+  - Support long and short flag variants
+  - Include flag descriptions in completion suggestions
+
+  ## Files to Modify
+  - src/completion/providers.rs or new src/completion/flag_provider.rs
+  - src/builtins/mod.rs (ensure flag metadata exported)
+
+  ## Example Behavior
+  ```
+  ls -<TAB>              → completes: -a, -l, -R, --all, --long, etc.
+  grep -<TAB>            → completes: -E, -i, -v, --extended-regex, etc.
+  find -type<TAB>        → completes: -type f, -type d, etc.
+  ```
+acceptance: |-
+  - All 20+ builtins provide flag completions
+  - Flags sourced from help metadata (not hardcoded)
+  - Short and long forms both work
+  - Descriptions shown in completion menu
+  - cargo test passes
+parent: rush-hn6
+dependencies:
+- rush-hn6.1
