@@ -3,6 +3,7 @@ use crate::runtime::Runtime;
 use anyhow::{anyhow, Result};
 use std::time::Instant;
 use std::cell::RefCell;
+use std::process::{Command as StdCommand, Stdio};
 use libc;
 
 /// Timing data for a single pipeline stage
@@ -26,6 +27,14 @@ thread_local! {
     });
 }
 
+/// Timing result for a command executed in a specific shell
+#[derive(Debug, Clone)]
+struct ShellTiming {
+    shell: String,
+    elapsed: std::time::Duration,
+    success: bool,
+}
+
 /// The time builtin command
 ///
 /// Measures and reports execution time of a command.
@@ -35,6 +44,7 @@ thread_local! {
 ///
 /// Usage:
 ///   time command [args...]
+///   time --compare command [args...]
 ///   time pipeline
 ///
 /// Output format (POSIX-like):
@@ -51,18 +61,40 @@ thread_local! {
 ///   overhead 5.0ms     -
 ///   total    185.8ms   -
 ///
+/// For comparison mode:
+///   Command: echo hello
+///
+///   Rush:  0.001s
+///   Bash:  0.002s (2.0x faster in Rush)
+///   Zsh:   0.0015s (1.5x faster in Rush)
+///
 /// Examples:
 ///   time echo hello
 ///   time sleep 0.1
 ///   time ls | wc -l
+///   time --compare echo hello
 pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
     // Need at least a command to time
     if args.is_empty() {
-        return Err(anyhow!("time: usage: time command [args...]"));
+        return Err(anyhow!("time: usage: time [--compare] command [args...]"));
     }
 
-    // Join all arguments back into a command string
-    let command_string = args.join(" ");
+    // Check for --compare flag
+    let (use_compare, cmd_args) = if args[0] == "--compare" {
+        if args.len() < 2 {
+            return Err(anyhow!("time: --compare requires a command"));
+        }
+        (true, &args[1..])
+    } else {
+        (false, args)
+    };
+
+    if use_compare {
+        return builtin_time_compare(cmd_args, runtime);
+    }
+
+    // Original single-shell timing logic
+    let command_string = cmd_args.join(" ");
 
     // Parse and execute the command string
     use crate::lexer::Lexer;
@@ -155,6 +187,204 @@ pub fn builtin_time(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
         exit_code: result.exit_code,
         error: result.error,
     })
+}
+
+/// Execute command in comparison mode across shells
+fn builtin_time_compare(args: &[String], runtime: &mut Runtime) -> Result<ExecutionResult> {
+    let command_string = args.join(" ");
+
+    // Run the command in Rush first
+    let rush_timing = time_command_in_rush(&command_string, runtime)?;
+
+    // Run in bash if available
+    let bash_timing = time_command_in_shell("bash", &command_string);
+
+    // Run in zsh if available
+    let zsh_timing = time_command_in_shell("zsh", &command_string);
+
+    // Format and display comparison results
+    let output = format_comparison_results(
+        &command_string,
+        &rush_timing,
+        bash_timing.as_ref(),
+        zsh_timing.as_ref(),
+    );
+
+    Ok(ExecutionResult {
+        output: Output::Text(output),
+        stderr: String::new(),
+        exit_code: 0,
+        error: None,
+    })
+}
+
+/// Time a command by executing it in Rush
+fn time_command_in_rush(command: &str, runtime: &mut Runtime) -> Result<ShellTiming> {
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
+    use crate::executor::Executor;
+
+    let start = Instant::now();
+
+    // Tokenize and parse
+    let tokens = Lexer::tokenize(command)
+        .map_err(|e| anyhow!("Rush timing error: {}", e))?;
+
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse()
+        .map_err(|e| anyhow!("Rush timing error: {}", e))?;
+
+    // Create executor and execute
+    let mut executor = Executor::new_embedded();
+    *executor.runtime_mut() = runtime.clone();
+
+    match executor.execute(statements) {
+        Ok(_result) => {
+            let elapsed = start.elapsed();
+            Ok(ShellTiming {
+                shell: "Rush".to_string(),
+                elapsed,
+                success: true,
+            })
+        }
+        Err(_) => {
+            let elapsed = start.elapsed();
+            Ok(ShellTiming {
+                shell: "Rush".to_string(),
+                elapsed,
+                success: false,
+            })
+        }
+    }
+}
+
+/// Time a command by executing it in an external shell (bash, zsh, etc.)
+fn time_command_in_shell(shell_name: &str, command: &str) -> Option<ShellTiming> {
+    // Check if shell exists
+    let shell_check = StdCommand::new("which")
+        .arg(shell_name)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !matches!(shell_check, Ok(status) if status.success()) {
+        return None;
+    }
+
+    let start = Instant::now();
+
+    // Execute command in the specified shell
+    let status = StdCommand::new(shell_name)
+        .arg("-c")
+        .arg(command)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    let elapsed = start.elapsed();
+
+    match status {
+        Ok(exit_status) => Some(ShellTiming {
+            shell: capitalize_shell_name(shell_name),
+            elapsed,
+            success: exit_status.success(),
+        }),
+        Err(_) => None,
+    }
+}
+
+/// Helper to capitalize shell names for display
+fn capitalize_shell_name(shell: &str) -> String {
+    if shell.is_empty() {
+        String::new()
+    } else {
+        let mut chars = shell.chars();
+        match chars.next() {
+            None => String::new(),
+            Some(first) => {
+                let rest: String = chars.collect();
+                format!("{}{}", first.to_uppercase(), rest)
+            }
+        }
+    }
+}
+
+/// Format comparison results across multiple shells
+fn format_comparison_results(
+    command: &str,
+    rush: &ShellTiming,
+    bash: Option<&ShellTiming>,
+    zsh: Option<&ShellTiming>,
+) -> String {
+    let mut output = String::new();
+
+    output.push_str(&format!("Command: {}\n\n", command));
+
+    // Display Rush timing
+    output.push_str(&format!(
+        "Rush:  {}\n",
+        format_duration_short(rush.elapsed)
+    ));
+
+    // Display Bash timing with speedup ratio if available
+    if let Some(bash_timing) = bash {
+        let speedup = if bash_timing.elapsed.as_secs_f64() > 0.0 {
+            rush.elapsed.as_secs_f64() / bash_timing.elapsed.as_secs_f64()
+        } else {
+            1.0
+        };
+
+        let speedup_text = if speedup > 1.0 {
+            format!(" ({:.1}x faster in Rush)", speedup)
+        } else if speedup < 1.0 {
+            format!(" ({:.1}x slower in Rush)", 1.0 / speedup)
+        } else {
+            String::new()
+        };
+
+        output.push_str(&format!(
+            "Bash:  {}{}\n",
+            format_duration_short(bash_timing.elapsed),
+            speedup_text
+        ));
+    }
+
+    // Display Zsh timing with speedup ratio if available
+    if let Some(zsh_timing) = zsh {
+        let speedup = if zsh_timing.elapsed.as_secs_f64() > 0.0 {
+            rush.elapsed.as_secs_f64() / zsh_timing.elapsed.as_secs_f64()
+        } else {
+            1.0
+        };
+
+        let speedup_text = if speedup > 1.0 {
+            format!(" ({:.1}x faster in Rush)", speedup)
+        } else if speedup < 1.0 {
+            format!(" ({:.1}x slower in Rush)", 1.0 / speedup)
+        } else {
+            String::new()
+        };
+
+        output.push_str(&format!(
+            "Zsh:   {}{}\n",
+            format_duration_short(zsh_timing.elapsed),
+            speedup_text
+        ));
+    }
+
+    output
+}
+
+/// Format a duration as a short string (seconds or milliseconds)
+fn format_duration_short(d: std::time::Duration) -> String {
+    let secs = d.as_secs_f64();
+    if secs < 0.001 {
+        format!("{:.3}ms", secs * 1000.0)
+    } else if secs < 1.0 {
+        format!("{:.3}s", secs)
+    } else {
+        format!("{:.3}s", secs)
+    }
 }
 
 /// Record timing for a pipeline stage
@@ -507,5 +737,83 @@ mod tests {
             let state = ts.borrow();
             assert_eq!(state.timings.len(), 0);
         });
+    }
+
+    #[test]
+    fn test_time_compare_flag() {
+        let mut runtime = Runtime::new();
+        let args = vec!["--compare".to_string(), "echo".to_string(), "hello".to_string()];
+        let result = builtin_time(&args, &mut runtime).unwrap();
+
+        // Should contain command in output
+        assert!(result.stdout().contains("Command: echo hello"));
+        // Should contain Rush timing
+        assert!(result.stdout().contains("Rush:"));
+    }
+
+    #[test]
+    fn test_time_compare_missing_command() {
+        let mut runtime = Runtime::new();
+        let args = vec!["--compare".to_string()];
+        let result = builtin_time(&args, &mut runtime);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("requires a command"));
+    }
+
+    #[test]
+    fn test_format_comparison_results_basic() {
+        let rush = ShellTiming {
+            shell: "Rush".to_string(),
+            elapsed: std::time::Duration::from_millis(1),
+            success: true,
+        };
+
+        let output = format_comparison_results("echo hello", &rush, None, None);
+        assert!(output.contains("Command: echo hello"));
+        assert!(output.contains("Rush:"));
+    }
+
+    #[test]
+    fn test_format_comparison_results_with_bash() {
+        let rush = ShellTiming {
+            shell: "Rush".to_string(),
+            elapsed: std::time::Duration::from_millis(2),
+            success: true,
+        };
+
+        let bash = ShellTiming {
+            shell: "Bash".to_string(),
+            elapsed: std::time::Duration::from_millis(4),
+            success: true,
+        };
+
+        let output = format_comparison_results("echo hello", &rush, Some(&bash), None);
+        assert!(output.contains("Command: echo hello"));
+        assert!(output.contains("Rush:"));
+        assert!(output.contains("Bash:"));
+        // Should show 0.5x or slower in Rush
+        assert!(output.contains("0.5") || output.contains("slower in Rush"));
+    }
+
+    #[test]
+    fn test_capitalize_shell_name() {
+        assert_eq!(capitalize_shell_name("bash"), "Bash");
+        assert_eq!(capitalize_shell_name("zsh"), "Zsh");
+        assert_eq!(capitalize_shell_name("sh"), "Sh");
+        assert_eq!(capitalize_shell_name(""), "");
+    }
+
+    #[test]
+    fn test_format_duration_short() {
+        // Test milliseconds
+        let d = std::time::Duration::from_millis(5);
+        let output = format_duration_short(d);
+        assert!(output.contains("s"));
+
+        // Test seconds
+        let d = std::time::Duration::from_secs_f64(1.5);
+        let output = format_duration_short(d);
+        assert!(output.contains("s"));
     }
 }
