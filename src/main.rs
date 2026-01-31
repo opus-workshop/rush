@@ -4,6 +4,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod arithmetic;
 mod benchmark;
 mod builtins;
+mod compat;
 mod completion;
 mod context;
 mod correction;
@@ -60,6 +61,11 @@ fn main() -> Result<()> {
                 "-c" if i + 1 < args.len() => {
                     fast_execute_c(&args[i + 1], enable_profile, profile_json);
                     // fast_execute_c never returns (calls process::exit)
+                }
+                "--check" if i + 1 < args.len() => {
+                    // Handle compatibility check
+                    run_compatibility_check(&args[i + 1]);
+                    // run_compatibility_check calls process::exit
                 }
                 "--benchmark" if i + 1 < args.len() => {
                     // Handle benchmark mode
@@ -607,10 +613,11 @@ fn print_help() {
     println!("  rush --no-config    Skip sourcing config files (alias for --no-rc)");
     println!("  rush <script.rush>  Execute a Rush script file");
     println!("  rush -c <command>   Execute command and exit");
+    println!("  rush --check <script.sh>             Check bash script compatibility");
     println!("  rush --profile -c <command>          Profile execution timing");
     println!("  rush --profile --json -c <command>   Profile as JSON for tooling");
-    println!("  rush --benchmark <mode> Run benchmarks (quick, full, compare)");
-    println!("  rush -h, --help     Show this help message");
+    println!("  rush --benchmark <mode>              Run benchmarks (quick, full, compare)");
+    println!("  rush -h, --help                      Show this help message");
     println!();
     println!("Examples:");
     println!("  rush script.rush");
@@ -618,11 +625,12 @@ fn print_help() {
     println!("  rush -c \"echo hello\"");
     println!("  rush -c \"ls -la\"");
     println!("  rush -c \"cat file.txt | grep pattern\"");
-    println!("  rush --profile -c \"echo hello\"                 # Profile with timing breakdown");
-    println!("  rush --profile --json -c \"echo hello\" | jq     # Profile as JSON, parse with jq");
-    println!("  rush --login        # Start login shell");
-    println!("  rush --benchmark quick   # Run quick benchmark (5-second smoke test)");
-    println!("  rush --benchmark full    # Run comprehensive benchmark suite");
+    println!("  rush --check my_script.sh            # Analyze bash script compatibility");
+    println!("  rush --profile -c \"echo hello\"      # Profile with timing breakdown");
+    println!("  rush --profile --json -c \"echo hello\" | jq  # Profile as JSON, parse with jq");
+    println!("  rush --login                         # Start login shell");
+    println!("  rush --benchmark quick               # Run quick benchmark");
+    println!("  rush --benchmark full                # Run comprehensive benchmark");
     println!();
     println!("Config Files:");
     println!("  ~/.rush_profile     Sourced on login shells");
@@ -743,6 +751,31 @@ fn execute_line_with_context(
     _line_num: usize,
 ) -> Result<executor::ExecutionResult> {
     execute_line(line, executor).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+/// Run compatibility check on a bash script
+fn run_compatibility_check(script_path: &str) -> ! {
+    use compat::{ScriptAnalyzer, CompatibilityReport};
+
+    // Read the script file
+    let script_content = match fs::read_to_string(script_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading script '{}': {}", script_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Analyze the script
+    let analyzer = ScriptAnalyzer::new(script_path.to_string());
+    let analysis = analyzer.analyze(&script_content);
+
+    // Generate and display report
+    let report = CompatibilityReport::generate(script_path, &analysis);
+    println!("{}", report.format_report());
+
+    // Exit with appropriate code
+    std::process::exit(report.exit_code());
 }
 
 #[cfg(test)]
