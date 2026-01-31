@@ -8,7 +8,9 @@
 //! It integrates with the Corrector module which uses Levenshtein distance
 //! and fuzzy matching to find similar commands and flags.
 
-use crate::correction::{Corrector, Suggestion, SuggestionKind};
+use crate::correction::{Corrector, Suggestion};
+#[allow(unused_imports)]
+use crate::correction::SuggestionKind;
 use std::path::Path;
 
 /// Configuration for suggestion behavior
