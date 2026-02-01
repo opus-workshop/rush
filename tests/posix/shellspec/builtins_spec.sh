@@ -230,6 +230,38 @@ Describe 'POSIX Builtin Commands'
       The output should equal "a b c"
       The status should be success
     End
+
+    It 'assigns remainder to last variable'
+      When call sh -c "echo 'one two three four' | rush -c 'read A B && echo \"\$A|\$B\"'"
+      The output should equal "one|two three four"
+      The status should be success
+    End
+
+    It 'uses REPLY when no variable given'
+      When call sh -c "echo 'default' | rush -c 'read && echo \$REPLY'"
+      The output should equal "default"
+      The status should be success
+    End
+
+    It 'uses -r flag for raw mode (preserves backslashes)'
+      When call sh -c "printf 'hello\\\\nworld\\n' | rush -c 'read -r VAR && echo \"\$VAR\"'"
+      The output should equal 'hello\nworld'
+      The status should be success
+    End
+
+    It 'processes backslashes without -r flag'
+      When call sh -c "printf 'hello\\\\nworld\\n' | rush -c 'read VAR && echo \"\$VAR\"'"
+      The output should equal "hellonworld"
+      The status should be success
+    End
+
+    It 'returns 1 on EOF'
+      When call sh -c "printf '' | rush -c 'read VAR; echo \$?'"
+      The output should equal "1"
+    End
+
+    # Note: Custom IFS is tested in unit tests (test_builtin_read_with_stdin_custom_ifs)
+    # Pipeline-based tests are tricky since read runs in subshell
   End
 
   # true and false builtins
