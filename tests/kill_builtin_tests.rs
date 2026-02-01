@@ -321,6 +321,98 @@ fn test_kill_default_signal_is_term() {
     assert!(!result.stderr.is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn test_kill_list_signals() {
+    let mut executor = Executor::new();
+
+    // Execute: kill -l
+    let stmt = Statement::Command(Command {
+        name: "kill".to_string(),
+        args: vec![Argument::Literal("-l".to_string())],
+        redirects: vec![],
+        prefix_env: vec![],
+    });
+
+    let result = executor.execute(vec![stmt]).unwrap();
+
+    // Should succeed and list signals
+    assert_eq!(result.exit_code, 0);
+    let output = result.stdout();
+    assert!(output.contains("SIGTERM"));
+    assert!(output.contains("SIGINT"));
+    assert!(output.contains("SIGKILL"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_kill_list_signal_by_number() {
+    let mut executor = Executor::new();
+
+    // Execute: kill -l 15
+    let stmt = Statement::Command(Command {
+        name: "kill".to_string(),
+        args: vec![
+            Argument::Literal("-l".to_string()),
+            Argument::Literal("15".to_string()),
+        ],
+        redirects: vec![],
+        prefix_env: vec![],
+    });
+
+    let result = executor.execute(vec![stmt]).unwrap();
+
+    // Should return TERM
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout().contains("TERM"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_kill_list_signal_by_name() {
+    let mut executor = Executor::new();
+
+    // Execute: kill -l TERM
+    let stmt = Statement::Command(Command {
+        name: "kill".to_string(),
+        args: vec![
+            Argument::Literal("-l".to_string()),
+            Argument::Literal("TERM".to_string()),
+        ],
+        redirects: vec![],
+        prefix_env: vec![],
+    });
+
+    let result = executor.execute(vec![stmt]).unwrap();
+
+    // Should return 15
+    assert_eq!(result.exit_code, 0);
+    assert!(result.stdout().contains("15"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_kill_list_invalid_signal() {
+    let mut executor = Executor::new();
+
+    // Execute: kill -l INVALID
+    let stmt = Statement::Command(Command {
+        name: "kill".to_string(),
+        args: vec![
+            Argument::Literal("-l".to_string()),
+            Argument::Literal("INVALID".to_string()),
+        ],
+        redirects: vec![],
+        prefix_env: vec![],
+    });
+
+    let result = executor.execute(vec![stmt]).unwrap();
+
+    // Should fail
+    assert_eq!(result.exit_code, 1);
+    assert!(result.stderr.contains("invalid signal"));
+}
+
 #[cfg(not(unix))]
 #[test]
 fn test_kill_not_supported_on_windows() {

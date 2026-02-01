@@ -3,7 +3,7 @@ title: 'POSIX-008: Re-enable and test kill builtin'
 status: open
 priority: 1
 created_at: 2026-01-30T18:49:24.799785Z
-updated_at: 2026-01-30T18:49:24.799785Z
+updated_at: 2026-02-01T07:50:15.205002Z
 description: |-
   Re-enable the `kill` builtin for sending signals to processes.
 
@@ -39,10 +39,14 @@ description: |-
 
   ## Estimated Effort
   35-45k tokens (re-enable, test signals, add tests)
-verify: cargo build --release && cargo test && cargo clippy -- -D warnings
+notes: |-
+  ---
+  2026-02-01T07:50:15.204999+00:00
+  Kill builtin was already enabled and working. Added kill -l support to list available signals (and translate between signal numbers and names). Added help text entry in src/builtins/help.rs. Added unit tests in src/builtins/kill.rs and integration tests in tests/kill_builtin_tests.rs. All 37 kill-related tests pass (19 unit + 18 integration).
 labels:
 - builtin
 - critical
 - posix
 - processes
 - signals
+verify: cargo build --release && cargo test && cargo clippy -- -D warnings

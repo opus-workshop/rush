@@ -7,6 +7,57 @@ use nix::sys::signal::{self, Signal};
 #[cfg(unix)]
 use nix::unistd::Pid;
 
+/// List of all supported signals with their numbers and names
+#[cfg(unix)]
+const SIGNAL_LIST: &[(i32, &str)] = &[
+    (1, "HUP"),
+    (2, "INT"),
+    (3, "QUIT"),
+    (4, "ILL"),
+    (5, "TRAP"),
+    (6, "ABRT"),
+    (7, "BUS"),
+    (8, "FPE"),
+    (9, "KILL"),
+    (10, "USR1"),
+    (11, "SEGV"),
+    (12, "USR2"),
+    (13, "PIPE"),
+    (14, "ALRM"),
+    (15, "TERM"),
+    (17, "CHLD"),
+    (18, "CONT"),
+    (19, "STOP"),
+    (20, "TSTP"),
+    (21, "TTIN"),
+    (22, "TTOU"),
+    (23, "URG"),
+    (24, "XCPU"),
+    (25, "XFSZ"),
+    (26, "VTALRM"),
+    (27, "PROF"),
+    (28, "WINCH"),
+    (29, "IO"),
+    (31, "SYS"),
+];
+
+/// List available signals (kill -l)
+#[cfg(unix)]
+fn list_signals() -> String {
+    // Display signals in a traditional format: number) name
+    let mut output = String::new();
+    for (num, name) in SIGNAL_LIST {
+        output.push_str(&format!("{:2}) SIG{}\n", num, name));
+    }
+    output
+}
+
+/// Get signal name from number (for kill -l <signum>)
+#[cfg(unix)]
+fn signal_name_from_number(num: i32) -> Option<&'static str> {
+    SIGNAL_LIST.iter().find(|(n, _)| *n == num).map(|(_, name)| *name)
+}
+
 /// Parse signal name or number to a Signal
 #[cfg(unix)]
 fn parse_signal(sig_str: &str) -> Result<Option<Signal>> {
@@ -90,6 +141,73 @@ pub fn builtin_kill(args: &[String], runtime: &mut Runtime) -> Result<ExecutionR
             exit_code: 1,
             error: None,
         });
+    }
+
+    // Handle -l (list signals)
+    if args[0] == "-l" || args[0] == "-L" {
+        if args.len() == 1 {
+            // Just list all signals
+            return Ok(ExecutionResult {
+                output: Output::Text(list_signals()),
+                stderr: String::new(),
+                exit_code: 0,
+                error: None,
+            });
+        } else {
+            // kill -l <sigspec> - translate signal spec to name or number
+            let sigspec = &args[1];
+
+            // If it's a number, return the signal name
+            if let Ok(num) = sigspec.parse::<i32>() {
+                match signal_name_from_number(num) {
+                    Some(name) => {
+                        return Ok(ExecutionResult {
+                            output: Output::Text(format!("{}\n", name)),
+                            stderr: String::new(),
+                            exit_code: 0,
+                            error: None,
+                        });
+                    }
+                    None => {
+                        return Ok(ExecutionResult {
+                            output: Output::Text(String::new()),
+                            stderr: format!("kill: {}: invalid signal specification\n", sigspec),
+                            exit_code: 1,
+                            error: None,
+                        });
+                    }
+                }
+            }
+
+            // If it's a name, return the signal number
+            match parse_signal(sigspec) {
+                Ok(Some(sig)) => {
+                    return Ok(ExecutionResult {
+                        output: Output::Text(format!("{}\n", sig as i32)),
+                        stderr: String::new(),
+                        exit_code: 0,
+                        error: None,
+                    });
+                }
+                Ok(None) => {
+                    // Signal 0
+                    return Ok(ExecutionResult {
+                        output: Output::Text("0\n".to_string()),
+                        stderr: String::new(),
+                        exit_code: 0,
+                        error: None,
+                    });
+                }
+                Err(_) => {
+                    return Ok(ExecutionResult {
+                        output: Output::Text(String::new()),
+                        stderr: format!("kill: {}: invalid signal specification\n", sigspec),
+                        exit_code: 1,
+                        error: None,
+                    });
+                }
+            }
+        }
     }
 
     // Parse signal and PIDs
@@ -430,5 +548,89 @@ mod tests {
         // Should have partial failure
         assert_eq!(result.exit_code, 1);
         assert!(!result.stderr.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_kill_list_signals() {
+        let mut runtime = Runtime::new();
+
+        // kill -l should list all signals
+        let result = builtin_kill(&["-l".to_string()], &mut runtime).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        let output = result.stdout();
+        assert!(output.contains("SIGTERM"));
+        assert!(output.contains("SIGINT"));
+        assert!(output.contains("SIGKILL"));
+        assert!(output.contains("SIGHUP"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_kill_list_signal_uppercase_l() {
+        let mut runtime = Runtime::new();
+
+        // kill -L should also work
+        let result = builtin_kill(&["-L".to_string()], &mut runtime).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout().contains("SIGTERM"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_kill_list_signal_by_number() {
+        let mut runtime = Runtime::new();
+
+        // kill -l 15 should return TERM
+        let result = builtin_kill(&["-l".to_string(), "15".to_string()], &mut runtime).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout().contains("TERM"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_kill_list_signal_by_name() {
+        let mut runtime = Runtime::new();
+
+        // kill -l TERM should return 15
+        let result = builtin_kill(&["-l".to_string(), "TERM".to_string()], &mut runtime).unwrap();
+
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout().contains("15"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_kill_list_invalid_signal() {
+        let mut runtime = Runtime::new();
+
+        // kill -l INVALID should fail
+        let result =
+            builtin_kill(&["-l".to_string(), "INVALID".to_string()], &mut runtime).unwrap();
+
+        assert_eq!(result.exit_code, 1);
+        assert!(result.stderr.contains("invalid signal"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_signal_name_from_number() {
+        assert_eq!(signal_name_from_number(1), Some("HUP"));
+        assert_eq!(signal_name_from_number(9), Some("KILL"));
+        assert_eq!(signal_name_from_number(15), Some("TERM"));
+        assert_eq!(signal_name_from_number(2), Some("INT"));
+        assert_eq!(signal_name_from_number(999), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_list_signals() {
+        let output = list_signals();
+        assert!(output.contains("1) SIGHUP"));
+        assert!(output.contains("9) SIGKILL"));
+        assert!(output.contains("15) SIGTERM"));
     }
 }
