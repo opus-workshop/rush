@@ -1298,6 +1298,6 @@ fn test_local_mixed_assigned_and_unassigned() {
     })).unwrap();
 
     assert_eq!(result.exit_code, 0);
-    // b should be empty
-    assert_eq!(result.stdout().trim(), "1 |  | 3");
+    // b should be empty - echo joins args with single space so empty var produces "| |"
+    assert_eq!(result.stdout().trim(), "1 | | 3");
 }

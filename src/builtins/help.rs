@@ -536,4 +536,16 @@ mod tests {
         assert!(result.stdout().contains("set -e"));
         assert!(result.stdout().contains("Exit on error"));
     }
+
+    #[test]
+    fn test_help_local() {
+        let mut runtime = Runtime::new();
+        let result = builtin_help(&["local".to_string()], &mut runtime).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout().contains("local"));
+        assert!(result.stdout().contains("DESCRIPTION"));
+        assert!(result.stdout().contains("function-local"));
+        assert!(result.stdout().contains("EXAMPLES"));
+        assert!(result.stdout().contains("local x=5"));
+    }
 }
