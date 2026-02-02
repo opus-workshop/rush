@@ -17,6 +17,8 @@ pub enum Statement {
     ConditionalOr(ConditionalOr),
     Subshell(Vec<Statement>),
     BackgroundCommand(Box<Statement>),
+    /// Brace group: { commands; } - executes in current shell context
+    BraceGroup(Vec<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,11 +31,13 @@ pub struct Command {
     pub prefix_env: Vec<(String, String)>,
 }
 
-/// An element in a pipeline - either a regular command or a subshell
+/// An element in a pipeline - either a regular command, subshell, or compound command
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PipelineElement {
     Command(Command),
     Subshell(Vec<Statement>),
+    /// Compound commands (while, until, for, if, case, brace groups) as pipeline elements
+    CompoundCommand(Box<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

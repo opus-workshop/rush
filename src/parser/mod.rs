@@ -133,23 +133,15 @@ impl Parser {
         }
         // Check if this is a pipeline
         else if self.match_token(&Token::Pipe) {
-            // Build elements list supporting both commands and subshells
-            let first_element = match first_statement {
-                Statement::Command(cmd) => PipelineElement::Command(cmd),
-                Statement::Subshell(stmts) => PipelineElement::Subshell(stmts),
-                _ => return Err(anyhow!("Only commands and subshells can be used in pipelines")),
-            };
+            // Build elements list supporting commands, subshells, and compound commands
+            let first_element = Self::statement_to_pipeline_element(first_statement)?;
 
             self.advance();
             let mut elements = vec![first_element];
 
             loop {
                 let stmt = self.parse_pipeline_element()?;
-                let elem = match stmt {
-                    Statement::Command(cmd) => PipelineElement::Command(cmd),
-                    Statement::Subshell(stmts) => PipelineElement::Subshell(stmts),
-                    _ => return Err(anyhow!("Only commands and subshells can be used in pipelines")),
-                };
+                let elem = Self::statement_to_pipeline_element(stmt)?;
                 elements.push(elem);
 
                 if !self.match_token(&Token::Pipe) {
@@ -180,7 +172,7 @@ impl Parser {
                 .iter()
                 .filter_map(|e| match e {
                     PipelineElement::Command(cmd) => Some(cmd.clone()),
-                    PipelineElement::Subshell(_) => None,
+                    PipelineElement::Subshell(_) | PipelineElement::CompoundCommand(_) => None,
                 })
                 .collect();
 
@@ -258,12 +250,74 @@ impl Parser {
     }
 
     fn parse_pipeline_element(&mut self) -> Result<Statement> {
-        if self.match_token(&Token::LeftParen) {
-            self.parse_subshell()
-        } else if self.is_bare_assignment() {
+        // Check for compound commands first (can appear after pipe)
+        match self.peek() {
+            Some(Token::While) => return self.parse_while_loop(),
+            Some(Token::Until) => return self.parse_until_loop(),
+            Some(Token::For) => return self.parse_for_loop(),
+            Some(Token::If) => return self.parse_if_statement(),
+            Some(Token::Case) => return self.parse_case_statement(),
+            Some(Token::LeftBrace) => return self.parse_brace_group(),
+            Some(Token::LeftParen) => return self.parse_subshell(),
+            _ => {}
+        }
+        
+        if self.is_bare_assignment() {
             self.parse_bare_assignment_or_command()
         } else {
             Ok(Statement::Command(self.parse_command()?))
+        }
+    }
+    
+    /// Parse a brace group: { commands; }
+    /// Executes in current shell context (unlike subshell which forks)
+    fn parse_brace_group(&mut self) -> Result<Statement> {
+        self.expect_token(&Token::LeftBrace)?;
+        
+        let mut statements = Vec::new();
+        
+        // Skip leading newlines
+        while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+            self.advance();
+        }
+        
+        // Parse statements until we hit a closing brace
+        while !self.match_token(&Token::RightBrace) && !self.is_at_end() {
+            // Skip newlines between statements
+            while matches!(self.peek(), Some(Token::Newline) | Some(Token::CrLf)) {
+                self.advance();
+            }
+            
+            if self.match_token(&Token::RightBrace) {
+                break;
+            }
+            
+            statements.push(self.parse_conditional_statement()?);
+            
+            // Handle statement separators (semicolon)
+            if self.match_token(&Token::Semicolon) {
+                self.advance();
+            }
+        }
+        
+        self.expect_token(&Token::RightBrace)?;
+        
+        Ok(Statement::BraceGroup(statements))
+    }
+    
+    /// Convert a parsed statement into a pipeline element
+    fn statement_to_pipeline_element(stmt: Statement) -> Result<PipelineElement> {
+        match stmt {
+            Statement::Command(cmd) => Ok(PipelineElement::Command(cmd)),
+            Statement::Subshell(stmts) => Ok(PipelineElement::Subshell(stmts)),
+            // Compound commands can be pipeline elements
+            Statement::WhileLoop(_)
+            | Statement::UntilLoop(_)
+            | Statement::ForLoop(_)
+            | Statement::IfStatement(_)
+            | Statement::CaseStatement(_)
+            | Statement::BraceGroup(_) => Ok(PipelineElement::CompoundCommand(Box::new(stmt))),
+            _ => Err(anyhow!("This statement type cannot be used in pipelines")),
         }
     }
 

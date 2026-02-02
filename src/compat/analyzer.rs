@@ -155,6 +155,9 @@ impl ScriptAnalyzer {
             Statement::ParallelExecution(_parallel) => {
                 self.add_feature("parallel_execution", 0, 0, "parallel execution", result);
             }
+            Statement::BraceGroup(_brace_group) => {
+                self.add_feature("brace_group", 0, 0, "brace group", result);
+            }
         }
     }
 

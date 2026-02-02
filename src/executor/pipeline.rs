@@ -160,10 +160,19 @@ fn execute_pipeline_elements(
             let stage_name = match element {
                 PipelineElement::Command(cmd) => cmd.name.clone(),
                 PipelineElement::Subshell(_) => "subshell".to_string(),
+                PipelineElement::CompoundCommand(stmt) => match stmt.as_ref() {
+                    Statement::WhileLoop(_) => "while".to_string(),
+                    Statement::UntilLoop(_) => "until".to_string(),
+                    Statement::ForLoop(_) => "for".to_string(),
+                    Statement::IfStatement(_) => "if".to_string(),
+                    Statement::CaseStatement(_) => "case".to_string(),
+                    Statement::BraceGroup(_) => "brace_group".to_string(),
+                    _ => "compound".to_string(),
+                },
             };
             let is_builtin = match element {
                 PipelineElement::Command(cmd) => builtins.is_builtin(&cmd.name),
-                PipelineElement::Subshell(_) => false,
+                PipelineElement::Subshell(_) | PipelineElement::CompoundCommand(_) => false,
             };
             crate::builtins::time::record_stage_timing(stage_name, is_builtin, elapsed);
         }
@@ -202,7 +211,7 @@ fn execute_pipeline_elements(
     Ok(ExecutionResult::default())
 }
 
-/// Execute a single pipeline element, which can be a command or a subshell.
+/// Execute a single pipeline element, which can be a command, subshell, or compound command.
 fn execute_element(
     element: &PipelineElement,
     runtime: &mut Runtime,
@@ -215,6 +224,58 @@ fn execute_element(
         }
         PipelineElement::Subshell(statements) => {
             execute_subshell_in_pipeline(statements, runtime, builtins, stdin)
+        }
+        PipelineElement::CompoundCommand(stmt) => {
+            execute_compound_in_pipeline(stmt, runtime, builtins, stdin)
+        }
+    }
+}
+
+/// Execute a compound command (while, until, for, if, case, brace group) as part of a pipeline.
+/// The compound command receives stdin from the pipe and its output goes to stdout.
+fn execute_compound_in_pipeline(
+    statement: &Statement,
+    runtime: &mut Runtime,
+    builtins: &Builtins,
+    stdin: Option<&[u8]>,
+) -> Result<ExecutionResult> {
+    use crate::correction::Corrector;
+    use crate::terminal::TerminalControl;
+
+    // Set up piped input as a special variable the executor can access
+    let mut child_runtime = runtime.clone();
+    if let Some(input_data) = stdin {
+        child_runtime.set_variable(
+            "_PIPE_STDIN".to_string(),
+            String::from_utf8_lossy(input_data).to_string(),
+        );
+    }
+
+    let mut child_executor = Executor {
+        runtime: child_runtime,
+        builtins: builtins.clone(),
+        corrector: Corrector::new(),
+        suggestion_engine: SuggestionEngine::new(),
+        signal_handler: None,
+        show_progress: false,
+        terminal_control: TerminalControl::new(),
+        call_stack: CallStack::new(),
+        profile_data: None,
+        enable_profiling: false,
+    };
+
+    // Execute the compound command
+    match child_executor.execute(vec![statement.clone()]) {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            if let Some(exit_signal) = e.downcast_ref::<crate::builtins::exit_builtin::ExitSignal>() {
+                Ok(ExecutionResult {
+                    exit_code: exit_signal.exit_code,
+                    ..ExecutionResult::default()
+                })
+            } else {
+                Err(e)
+            }
         }
     }
 }

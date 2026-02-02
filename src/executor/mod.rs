@@ -140,6 +140,22 @@ impl Executor {
                 }
             }
 
+            // Before executing an exec command, flush accumulated output.
+            // exec replaces the process, so any buffered output would be lost.
+            if Self::is_exec_command(&statement) {
+                use std::io::Write;
+                if !accumulated_stdout.is_empty() {
+                    print!("{}", accumulated_stdout);
+                    let _ = std::io::stdout().flush();
+                    accumulated_stdout.clear();
+                }
+                if !accumulated_stderr.is_empty() {
+                    eprint!("{}", accumulated_stderr);
+                    let _ = std::io::stderr().flush();
+                    accumulated_stderr.clear();
+                }
+            }
+
             let result = self.execute_statement(statement)?;
             accumulated_stdout.push_str(&result.stdout());
             accumulated_stderr.push_str(&result.stderr);
@@ -189,6 +205,7 @@ impl Executor {
             Statement::ConditionalOr(cond_or) => self.execute_conditional_or(cond_or),
             Statement::Subshell(statements) => self.execute_subshell(statements),
             Statement::BackgroundCommand(cmd) => self.execute_background(*cmd),
+            Statement::BraceGroup(statements) => self.execute_brace_group(statements),
         }
     }
 
@@ -1704,6 +1721,27 @@ impl Executor {
         // The subshell's runtime changes (variables, cwd) are discarded
         // Only the execution result (stdout, stderr, exit code) is returned
         Ok(result)
+    }
+
+    /// Execute a brace group { commands; }
+    /// Unlike subshells, brace groups execute in the current shell context.
+    /// Variable changes, directory changes, etc. persist after execution.
+    fn execute_brace_group(&mut self, statements: Vec<Statement>) -> Result<ExecutionResult> {
+        // Execute statements in current context (not isolated like subshell)
+        self.execute(statements)
+    }
+
+    /// Check if a statement is an exec command (which replaces the process).
+    /// This is used to flush accumulated output before exec, since exec
+    /// replaces the process and any buffered output would be lost.
+    fn is_exec_command(statement: &Statement) -> bool {
+        match statement {
+            Statement::Command(cmd) => cmd.name == "exec",
+            // Handle case where exec might be in a conditional
+            Statement::ConditionalAnd(cond) => Self::is_exec_command(&cond.right),
+            Statement::ConditionalOr(cond) => Self::is_exec_command(&cond.right),
+            _ => false,
+        }
     }
 
     fn execute_background(&mut self, statement: Statement) -> Result<ExecutionResult> {
