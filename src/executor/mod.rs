@@ -813,6 +813,13 @@ impl Executor {
                 }
             })?;
 
+        // Give terminal control to the child process group for interactive commands
+        // This is required for programs like sudo, ssh, vim that need terminal access
+        if should_inherit_io {
+            let child_pgid = nix::unistd::Pid::from_raw(child.id() as i32);
+            let _ = self.terminal_control.give_terminal_to(child_pgid);
+        }
+
         // Write heredoc body to child's stdin if present
         if let Some(body) = heredoc_body {
             if let Some(mut stdin) = child.stdin.take() {
@@ -887,6 +894,11 @@ impl Executor {
                 output.status.code().unwrap_or(1)
             )
         };
+
+        // Reclaim terminal control after child exits
+        if should_inherit_io {
+            let _ = self.terminal_control.reclaim_terminal();
+        }
 
         Ok(ExecutionResult {
             output: Output::Text(stdout_str),
