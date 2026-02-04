@@ -51,6 +51,10 @@ pub enum Message {
     Signal(Signal),
     /// Client requests daemon shutdown
     Shutdown(Shutdown),
+    /// Client requests system stats
+    StatsRequest(StatsRequest),
+    /// Daemon returns cached stats
+    StatsResponse(StatsResponse),
 }
 
 /// Session initialization request (Client → Daemon)
@@ -114,6 +118,26 @@ pub struct Shutdown {
     /// Whether to force shutdown (kill active sessions)
     pub force: bool,
 }
+
+/// Request system stats from daemon (Client → Daemon)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StatsRequest {
+    /// Which stats to fetch (empty = all cached stats)
+    pub stats: Vec<String>,
+}
+
+/// System stats response (Daemon → Client)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StatsResponse {
+    /// Built-in stats (host, os, uptime, memory, etc.)
+    pub builtin: HashMap<String, String>,
+    /// Custom stats defined by user
+    pub custom: HashMap<String, String>,
+    /// Unix timestamp (seconds) when stats were last updated
+    pub updated_at: u64,
+}
+
+
 
 /// Encode a message into the wire format
 ///
@@ -518,6 +542,86 @@ mod tests {
         let message = Message::Shutdown(Shutdown { force: true });
 
         let message_id = 47;
+        let encoded = encode_message(&message, message_id).unwrap();
+
+        let mut cursor = std::io::Cursor::new(encoded);
+        let (decoded, decoded_id) = decode_message(&mut cursor).unwrap();
+
+        assert_eq!(message, decoded);
+        assert_eq!(message_id, decoded_id);
+    }
+
+    #[test]
+    fn test_encode_decode_stats_request() {
+        // Test with specific stats
+        let message = Message::StatsRequest(StatsRequest {
+            stats: vec!["memory".to_string(), "cpu".to_string(), "uptime".to_string()],
+        });
+
+        let message_id = 48;
+        let encoded = encode_message(&message, message_id).unwrap();
+
+        let mut cursor = std::io::Cursor::new(encoded);
+        let (decoded, decoded_id) = decode_message(&mut cursor).unwrap();
+
+        assert_eq!(message, decoded);
+        assert_eq!(message_id, decoded_id);
+    }
+
+    #[test]
+    fn test_encode_decode_stats_request_empty() {
+        // Test with empty stats (meaning "all stats")
+        let message = Message::StatsRequest(StatsRequest { stats: vec![] });
+
+        let message_id = 49;
+        let encoded = encode_message(&message, message_id).unwrap();
+
+        let mut cursor = std::io::Cursor::new(encoded);
+        let (decoded, decoded_id) = decode_message(&mut cursor).unwrap();
+
+        assert_eq!(message, decoded);
+        assert_eq!(message_id, decoded_id);
+    }
+
+    #[test]
+    fn test_encode_decode_stats_response() {
+        let mut builtin = HashMap::new();
+        builtin.insert("host".to_string(), "myhost".to_string());
+        builtin.insert("os".to_string(), "darwin".to_string());
+        builtin.insert("uptime".to_string(), "3600".to_string());
+        builtin.insert("memory_total".to_string(), "16384".to_string());
+        builtin.insert("memory_used".to_string(), "8192".to_string());
+
+        let mut custom = HashMap::new();
+        custom.insert("git_branch".to_string(), "main".to_string());
+        custom.insert("node_version".to_string(), "v20.10.0".to_string());
+
+        let message = Message::StatsResponse(StatsResponse {
+            builtin,
+            custom,
+            updated_at: 1706745600, // Example Unix timestamp
+        });
+
+        let message_id = 50;
+        let encoded = encode_message(&message, message_id).unwrap();
+
+        let mut cursor = std::io::Cursor::new(encoded);
+        let (decoded, decoded_id) = decode_message(&mut cursor).unwrap();
+
+        assert_eq!(message, decoded);
+        assert_eq!(message_id, decoded_id);
+    }
+
+    #[test]
+    fn test_encode_decode_stats_response_empty() {
+        // Test with empty stats maps
+        let message = Message::StatsResponse(StatsResponse {
+            builtin: HashMap::new(),
+            custom: HashMap::new(),
+            updated_at: 0,
+        });
+
+        let message_id = 51;
         let encoded = encode_message(&message, message_id).unwrap();
 
         let mut cursor = std::io::Cursor::new(encoded);

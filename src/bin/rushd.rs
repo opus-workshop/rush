@@ -25,6 +25,7 @@ fn main() -> Result<()> {
         "stop" => stop_daemon(),
         "status" => check_status(),
         "restart" => restart_daemon(),
+        "reload" => reload_config(),
         "-h" | "--help" => {
             print_usage();
             Ok(())
@@ -193,6 +194,55 @@ fn restart_daemon() -> Result<()> {
     Ok(())
 }
 
+/// Reload daemon configuration by sending SIGHUP
+/// 
+/// This is equivalent to `kill -HUP $(cat ~/.rush/daemon.pid)` but more convenient.
+/// The daemon will re-parse .rushrc and update custom stat definitions without restart.
+fn reload_config() -> Result<()> {
+    let socket_path = DaemonServer::default_socket_path()?;
+
+    if !socket_path.exists() {
+        eprintln!("Error: Daemon is not running (socket not found).");
+        process::exit(1);
+    }
+
+    // Verify daemon is actually running
+    if std::os::unix::net::UnixStream::connect(&socket_path).is_err() {
+        eprintln!("Error: Socket exists but daemon is not responding.");
+        eprintln!("Try 'rushd restart' to restart the daemon.");
+        process::exit(1);
+    }
+
+    // Read PID from pid file
+    let pid_path = socket_path.parent()
+        .ok_or_else(|| anyhow!("Invalid socket path"))?
+        .join("daemon.pid");
+
+    if !pid_path.exists() {
+        eprintln!("Error: PID file not found at {}", pid_path.display());
+        eprintln!("Cannot send reload signal. Try 'rushd restart' instead.");
+        process::exit(1);
+    }
+
+    let pid_str = fs::read_to_string(&pid_path)?;
+    let pid: i32 = pid_str.trim().parse()
+        .map_err(|_| anyhow!("Invalid PID in daemon.pid"))?;
+
+    // Send SIGHUP to the daemon
+    let result = unsafe { libc::kill(pid, libc::SIGHUP) };
+    
+    if result == 0 {
+        println!("Sent reload signal (SIGHUP) to daemon (PID {}).", pid);
+        println!("Configuration will be reloaded from ~/.rushrc");
+    } else {
+        let err = std::io::Error::last_os_error();
+        eprintln!("Error: Failed to send signal: {}", err);
+        process::exit(1);
+    }
+
+    Ok(())
+}
+
 fn print_usage() {
     println!("Rush Daemon Server v0.1.0");
     println!();
@@ -203,10 +253,17 @@ fn print_usage() {
     println!("  stop       Stop the Rush daemon");
     println!("  status     Check daemon status");
     println!("  restart    Restart the daemon");
+    println!("  reload     Reload configuration from ~/.rushrc (via SIGHUP)");
     println!("  -h, --help Show this help message");
     println!();
     println!("Examples:");
     println!("  rushd start    # Start the daemon");
     println!("  rushd status   # Check if daemon is running");
     println!("  rushd stop     # Stop the daemon");
+    println!("  rushd reload   # Reload config without restart");
+    println!();
+    println!("Configuration:");
+    println!("  The daemon reads configuration from ~/.rushrc on startup.");
+    println!("  Use 'rushd reload' or 'kill -HUP <pid>' to reload config.");
+    println!("  See docs/design/banner-stats.md for configuration options.");
 }

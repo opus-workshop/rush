@@ -2,6 +2,7 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod arithmetic;
+mod banner;
 mod benchmark;
 mod builtins;
 mod compat;
@@ -23,6 +24,7 @@ mod parser;
 mod progress;
 mod runtime;
 mod signal;
+mod stats;
 mod terminal;
 mod undo;
 
@@ -104,6 +106,31 @@ fn main() -> Result<()> {
                         std::process::exit(1);
                     }
                     std::process::exit(0);
+                }
+                "--info" => {
+                    // Handle --info flag: show system stats
+                    // Check for optional stat name or --json flag
+                    let mut stat_name: Option<String> = None;
+                    let mut json_output = false;
+                    let mut j = i + 1;
+                    
+                    while j < args.len() {
+                        match args[j].as_str() {
+                            "--json" => {
+                                json_output = true;
+                                j += 1;
+                            }
+                            arg if !arg.starts_with('-') => {
+                                stat_name = Some(arg.to_string());
+                                j += 1;
+                                break; // Only take first non-flag arg
+                            }
+                            _ => break,
+                        }
+                    }
+                    
+                    run_info_command(stat_name, json_output);
+                    // run_info_command calls process::exit
                 }
                 "--login" | "-l" | "--no-rc" | "--norc" | "--no-config" => { i += 1; }
                 _ => { i += 1; }
@@ -516,12 +543,51 @@ fn init_runtime_variables(runtime: &mut runtime::Runtime) {
     env::set_var("SHLVL", shlvl.to_string());
 }
 
+/// Fetch stats from daemon for banner display
+/// Returns None if daemon not running or stats fetch fails (graceful degradation)
+fn fetch_banner_stats(requested_stats: &[String]) -> Option<banner::StatsData> {
+    use daemon::client::DaemonClient;
+    
+    // Try to create client and check if daemon is running
+    let mut client = match DaemonClient::new() {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    
+    if !client.is_daemon_running() {
+        return None;
+    }
+    
+    // Connect and fetch stats
+    if client.connect().is_err() {
+        return None;
+    }
+    
+    match client.try_fetch_stats(requested_stats.to_vec()) {
+        Some(response) => Some(banner::StatsData {
+            builtin: response.builtin,
+            custom: response.custom,
+        }),
+        None => None,
+    }
+}
+
 fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
-    // ASCII startup banner
-    let version = env!("CARGO_PKG_VERSION");
-    eprintln!("\x1b[36m █▀▄ █ █ █▀▀ █ █\x1b[0m");
-    eprintln!("\x1b[36m █   █ █ ▀▀█ █▀█\x1b[0m  v{}", version);
-    eprintln!("\x1b[36m ▀   ▀▀▀ ▀▀▀ ▀ ▀\x1b[0m\n");
+    // Load banner configuration from environment (set by .rushrc)
+    let banner_config = banner::BannerConfig::from_env();
+    
+    // Increment RUSH_LEVEL for nested shell detection
+    banner::increment_rush_level();
+    
+    // Fetch stats from daemon if configured and daemon is running
+    let stats_data = if !banner_config.stats.is_empty() {
+        fetch_banner_stats(&banner_config.stats)
+    } else {
+        None
+    };
+    
+    // Display the banner with optional stats
+    banner::display_banner(&banner_config, stats_data.as_ref());
 
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
@@ -752,6 +818,9 @@ fn print_help() {
     println!("  rush --profile -c <command>          Profile execution timing");
     println!("  rush --profile --json -c <command>   Profile as JSON for tooling");
     println!("  rush --benchmark <mode>              Run benchmarks (quick, full, compare)");
+    println!("  rush --info                          Show system stats");
+    println!("  rush --info <stat>                   Show single stat value (for scripting)");
+    println!("  rush --info --json                   Show stats as JSON");
     println!("  rush -h, --help                      Show this help message");
     println!();
     println!("Examples:");
@@ -766,6 +835,8 @@ fn print_help() {
     println!("  rush --login                         # Start login shell");
     println!("  rush --benchmark quick               # Run quick benchmark");
     println!("  rush --benchmark full                # Run comprehensive benchmark");
+    println!("  rush --info memory                   # Get single stat value");
+    println!("  rush --info --json                   # Get all stats as JSON");
     println!();
     println!("Config Files:");
     println!("  ~/.rush_profile     Sourced on login shells");
@@ -931,6 +1002,273 @@ fn run_compatibility_check(script_path: &str, show_migrate: bool, apply_fix: boo
 
     // Exit with appropriate code
     std::process::exit(report.exit_code());
+}
+
+/// Run --info command to show system stats
+///
+/// - `rush --info` - show all stats
+/// - `rush --info <stat>` - show single stat value (for scripting)
+/// - `rush --info --json` - machine-readable output
+fn run_info_command(stat_name: Option<String>, json_output: bool) -> ! {
+    use stats::StatsCollector;
+    use std::collections::HashMap;
+    
+    // Type aliases for clarity
+    type BuiltinStats = HashMap<String, String>;
+    type CustomStats = HashMap<String, String>;
+    type DaemonInfo = Option<serde_json::Value>;
+    
+    // Try to get stats from daemon first (instant)
+    let (builtin_stats, custom_stats, daemon_info): (BuiltinStats, CustomStats, DaemonInfo) = 
+        if let Ok(mut client) = rush::daemon::DaemonClient::new() {
+            if client.is_daemon_running() {
+                // Try to fetch from daemon cache
+                match fetch_stats_from_daemon(&mut client, stat_name.as_deref()) {
+                    Ok((builtin, custom, daemon)) => (builtin, custom, Some(daemon)),
+                    Err(_) => {
+                        // Fallback to on-demand collection
+                        (StatsCollector::collect_builtins(), HashMap::new(), None)
+                    }
+                }
+            } else {
+                // No daemon - collect on-demand, skip custom
+                (StatsCollector::collect_builtins(), HashMap::new(), None)
+            }
+        } else {
+            // Can't create client - collect on-demand
+            (StatsCollector::collect_builtins(), HashMap::new(), None)
+        };
+    
+    // Single stat mode
+    if let Some(name) = stat_name {
+        if let Some(value) = builtin_stats.get(&name) {
+            if json_output {
+                println!("{}", serde_json::json!({ &name: value }));
+            } else {
+                println!("{}", value);
+            }
+            std::process::exit(0);
+        } else if let Some(value) = custom_stats.get(&name) {
+            if json_output {
+                println!("{}", serde_json::json!({ &name: value }));
+            } else {
+                println!("{}", value);
+            }
+            std::process::exit(0);
+        } else {
+            eprintln!("Unknown stat: {}", name);
+            eprintln!("Available built-in stats: {}", StatsCollector::builtin_names().join(", "));
+            std::process::exit(1);
+        }
+    }
+    
+    // Full output mode
+    if json_output {
+        // JSON output
+        let mut output = serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "builtin": builtin_stats,
+        });
+        
+        if !custom_stats.is_empty() {
+            output["custom"] = serde_json::json!(custom_stats);
+        }
+        
+        if let Some(daemon) = daemon_info {
+            output["daemon"] = daemon;
+        } else {
+            output["daemon"] = serde_json::json!({ "running": false });
+        }
+        
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        // Human-readable output with pretty 2-column table
+        let cyan = "\x1b[36m";
+        let bold = "\x1b[1m";
+        let dim = "\x1b[2m";
+        let reset = "\x1b[0m";
+        
+        // Column width (content only, not including border and padding)
+        const COL_W: usize = 28; // Width of each column
+        const FULL_W: usize = 57; // Full width = COL_W * 2 + 1 (for middle border)
+        
+        // Helper to format a stat, returns None if empty/N/A
+        let fmt_stat = |name: &str| -> Option<String> {
+            builtin_stats.get(name).and_then(|v| {
+                if v.is_empty() || v == "N/A" || v == "unknown" {
+                    None
+                } else {
+                    Some(v.clone())
+                }
+            })
+        };
+        
+        // Helper to make a cell with name and value, padded to exact width
+        let make_cell = |name: &str, val: &str| -> String {
+            let content = format!("{:<8} {}", name, val);
+            // Truncate if too long, pad if too short
+            if content.len() >= COL_W {
+                content[..COL_W].to_string()
+            } else {
+                format!("{:<w$}", content, w = COL_W)
+            }
+        };
+        
+        // Helper for empty cell
+        let empty_cell = || " ".repeat(COL_W);
+        
+        // Parse load into separate values
+        let (load1, load5, load15) = if let Some(load) = builtin_stats.get("load") {
+            let parts: Vec<&str> = load.split_whitespace().collect();
+            (
+                parts.get(0).map(|s| s.to_string()),
+                parts.get(1).map(|s| s.to_string()),
+                parts.get(2).map(|s| s.to_string()),
+            )
+        } else {
+            (None, None, None)
+        };
+        
+        // Header - manually pad to account for invisible ANSI codes
+        let version = env!("CARGO_PKG_VERSION");
+        let left_hdr = format!("{}rush{} v{}", bold, reset, version);
+        let left_visible = format!("rush v{}", version);
+        let left_pad = COL_W.saturating_sub(left_visible.len());
+        
+        let right_hdr = format!("{}Resources{}", bold, reset);
+        let right_pad = COL_W.saturating_sub(9);
+        
+        println!("{}╭{:─<w$}┬{:─<w$}╮{}", cyan, "", "", reset, w = COL_W);
+        println!("{}│{}{}{:pad_l$}{}│{}{}{:pad_r$}{}│{}", 
+            cyan, reset, left_hdr, "", cyan, reset, right_hdr, "", cyan, reset,
+            pad_l = left_pad, pad_r = right_pad);
+        println!("{}├{:─<w$}┼{:─<w$}┤{}", cyan, "", "", reset, w = COL_W);
+        
+        // Build rows for left column (System) and right column (Resources)
+        let left_stats: Vec<(&str, Option<String>)> = vec![
+            ("host", fmt_stat("host")),
+            ("os", fmt_stat("os")),
+            ("kernel", fmt_stat("kernel")),
+            ("arch", fmt_stat("arch")),
+            ("cpu", fmt_stat("cpu")),
+            ("cores", fmt_stat("cores")),
+            ("uptime", fmt_stat("uptime")),
+        ];
+        
+        let right_stats: Vec<(&str, Option<String>)> = vec![
+            ("memory", fmt_stat("memory")),
+            ("swap", fmt_stat("swap")),
+            ("disk", fmt_stat("disk")),
+            ("load 1m", load1),
+            ("load 5m", load5),
+            ("load 15m", load15),
+            ("procs", fmt_stat("procs")),
+        ];
+        
+        // Print paired rows
+        let max_rows = left_stats.len().max(right_stats.len());
+        for i in 0..max_rows {
+            let left_cell = left_stats.get(i)
+                .and_then(|(n, v)| v.as_ref().map(|val| make_cell(n, val)))
+                .unwrap_or_else(empty_cell);
+            let right_cell = right_stats.get(i)
+                .and_then(|(n, v)| v.as_ref().map(|val| make_cell(n, val)))
+                .unwrap_or_else(empty_cell);
+            
+            println!("{}│{}{}{}│{}{}{}│{}", cyan, reset, left_cell, cyan, reset, right_cell, cyan, reset);
+        }
+        
+        // Network & Time section
+        let net_hdr = format!("{}Network{}", bold, reset);
+        let net_pad = COL_W.saturating_sub(7);
+        let time_hdr = format!("{}Time{}", bold, reset);
+        let time_pad = COL_W.saturating_sub(4);
+        
+        println!("{}├{:─<w$}┼{:─<w$}┤{}", cyan, "", "", reset, w = COL_W);
+        println!("{}│{}{}{:pn$}{}│{}{}{:pt$}{}│{}", 
+            cyan, reset, net_hdr, "", cyan, reset, time_hdr, "", cyan, reset,
+            pn = net_pad, pt = time_pad);
+        println!("{}├{:─<w$}┼{:─<w$}┤{}", cyan, "", "", reset, w = COL_W);
+        
+        let net_stats: Vec<(&str, Option<String>)> = vec![
+            ("ip", fmt_stat("ip")),
+            ("wifi", fmt_stat("wifi")),
+            ("power", fmt_stat("power")),
+            ("battery", fmt_stat("battery")),
+        ];
+        
+        let time_stats: Vec<(&str, Option<String>)> = vec![
+            ("time", fmt_stat("time")),
+            ("date", fmt_stat("date")),
+        ];
+        
+        let net_filtered: Vec<_> = net_stats.iter().filter(|(_, v)| v.is_some()).collect();
+        let time_filtered: Vec<_> = time_stats.iter().filter(|(_, v)| v.is_some()).collect();
+        let max_rows2 = net_filtered.len().max(time_filtered.len());
+        
+        for i in 0..max_rows2 {
+            let left_cell = net_filtered.get(i)
+                .map(|(n, v)| make_cell(n, v.as_ref().unwrap()))
+                .unwrap_or_else(empty_cell);
+            let right_cell = time_filtered.get(i)
+                .map(|(n, v)| make_cell(n, v.as_ref().unwrap()))
+                .unwrap_or_else(empty_cell);
+            
+            println!("{}│{}{}{}│{}{}{}│{}", cyan, reset, left_cell, cyan, reset, right_cell, cyan, reset);
+        }
+        
+        // Custom stats (if any)
+        if !custom_stats.is_empty() {
+            let custom_hdr = format!("{}Custom{}", bold, reset);
+            let custom_pad = FULL_W.saturating_sub(6);
+            
+            println!("{}├{:─<w$}┤{}", cyan, "", reset, w = FULL_W);
+            println!("{}│{}{}{:p$}{}│{}", 
+                cyan, reset, custom_hdr, "", cyan, reset, p = custom_pad);
+            println!("{}├{:─<w$}┤{}", cyan, "", reset, w = FULL_W);
+            for (name, value) in &custom_stats {
+                let content = format!("{:<8} {}", name, value);
+                let content = if content.len() >= FULL_W {
+                    content[..FULL_W].to_string()
+                } else {
+                    format!("{:<w$}", content, w = FULL_W)
+                };
+                println!("{}│{}{}{}│{}", cyan, reset, content, cyan, reset);
+            }
+        }
+        
+        // Daemon status
+        println!("{}├{:─<w$}┤{}", cyan, "", reset, w = FULL_W);
+        let daemon_status = if let Some(daemon) = daemon_info {
+            daemon.get("status").and_then(|v| v.as_str()).unwrap_or("unknown").to_string()
+        } else {
+            "not running".to_string()
+        };
+        let daemon_content = format!("{:<8} {}", "daemon", daemon_status);
+        let daemon_content = if daemon_content.len() >= FULL_W {
+            daemon_content[..FULL_W].to_string()
+        } else {
+            format!("{:<w$}", daemon_content, w = FULL_W)
+        };
+        println!("{}│{}{}{}│{}", cyan, reset, daemon_content, cyan, reset);
+        
+        println!("{}╰{:─<w$}╯{}", cyan, "", reset, w = FULL_W);
+    }
+    
+    std::process::exit(0);
+}
+
+/// Fetch stats from daemon cache
+fn fetch_stats_from_daemon(
+    client: &mut rush::daemon::DaemonClient,
+    _stat_name: Option<&str>,
+) -> Result<(std::collections::HashMap<String, String>, std::collections::HashMap<String, String>, serde_json::Value)> {
+    // Connect to daemon
+    client.connect()?;
+    
+    // For now, return an error to trigger fallback to on-demand collection
+    // TODO: Implement full daemon stats fetching when daemon StatsCache is ready (bean 5.3)
+    Err(anyhow::anyhow!("Daemon stats not yet implemented"))
 }
 
 #[cfg(test)]
