@@ -519,9 +519,9 @@ fn init_runtime_variables(runtime: &mut runtime::Runtime) {
 fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
     // ASCII startup banner
     let version = env!("CARGO_PKG_VERSION");
-    eprintln!("\x1b[36m ┏━  ╻ ╻ ┏━┓ ╻ ╻\x1b[0m");
-    eprintln!("\x1b[36m ┃   ┃ ┃ ┗━┓ ┣━┫\x1b[0m  v{}", version);
-    eprintln!("\x1b[36m ╹   ┗━┛ ┗━┛ ╹ ╹\x1b[0m\n");
+    eprintln!("\x1b[36m █▀▄ █ █ █▀▀ █ █\x1b[0m");
+    eprintln!("\x1b[36m █   █ █ ▀▀█ █▀█\x1b[0m  v{}", version);
+    eprintln!("\x1b[36m ▀   ▀▀▀ ▀▀▀ ▀ ▀\x1b[0m\n");
 
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
