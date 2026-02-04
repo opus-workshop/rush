@@ -50,6 +50,8 @@ pub struct Runtime {
     last_arg: String,         // Track last argument of previous command ($_)
     // Directory stack for pushd/popd/dirs builtins
     dir_stack: Vec<PathBuf>,
+    // Piped stdin data for compound commands in pipelines
+    piped_stdin: Option<Vec<u8>>,
 }
 
 impl Default for Runtime {
@@ -86,6 +88,7 @@ impl Runtime {
             last_bg_pid: None,
             last_arg: String::new(),
             dir_stack: Vec::new(),
+            piped_stdin: None,
         };
 
         // Initialize $? to 0
@@ -462,6 +465,9 @@ impl Runtime {
 
         match &expansion.operator {
             VarExpansionOp::Simple => Ok(var_value.unwrap_or_default()),
+            VarExpansionOp::StringLength => {
+                Ok(var_value.map(|v| v.len().to_string()).unwrap_or_else(|| "0".to_string()))
+            }
             VarExpansionOp::UseDefault(default) => Ok(var_value.unwrap_or_else(|| default.clone())),
             VarExpansionOp::AssignDefault(default) => {
                 if let Some(value) = var_value {
@@ -472,7 +478,17 @@ impl Runtime {
                 }
             }
             VarExpansionOp::ErrorIfUnset(error_msg) => {
-                var_value.ok_or_else(|| anyhow!("{}: {}", expansion.name, error_msg))
+                match &var_value {
+                    Some(v) if !v.is_empty() => Ok(v.clone()),
+                    _ => Err(anyhow!("{}: {}", expansion.name, error_msg)),
+                }
+            }
+            VarExpansionOp::UseAlternate(alternate) => {
+                if var_value.as_ref().map_or(false, |v| !v.is_empty()) {
+                    Ok(alternate.clone())
+                } else {
+                    Ok(String::new())
+                }
             }
             VarExpansionOp::RemoveShortestPrefix(pattern) => {
                 let value = var_value.unwrap_or_default();
@@ -754,6 +770,21 @@ impl Runtime {
     /// Get the last argument of the previous command ($_)
     pub fn get_last_arg(&self) -> &str {
         &self.last_arg
+    }
+
+    /// Set piped stdin data for compound commands in pipelines
+    pub fn set_piped_stdin(&mut self, data: Vec<u8>) {
+        self.piped_stdin = Some(data);
+    }
+
+    /// Get piped stdin data (if any)
+    pub fn get_piped_stdin(&self) -> Option<&[u8]> {
+        self.piped_stdin.as_deref()
+    }
+
+    /// Take piped stdin data, removing it from the runtime
+    pub fn take_piped_stdin(&mut self) -> Option<Vec<u8>> {
+        self.piped_stdin.take()
     }
 
     /// Get current shell options as a flag string (for $-)

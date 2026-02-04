@@ -1,6 +1,10 @@
-//! Rush daemon protocol implementation
+//! Rush protocol implementation
 //!
-//! Message format: Length-prefixed binary messages with bincode payloads
+//! This module contains two protocols:
+//!
+//! ## 1. Daemon Protocol (Binary/Bincode)
+//!
+//! Used for Rush client ↔ Daemon communication. Length-prefixed binary messages.
 //!
 //! ```text
 //! ┌────────────┬──────────────┬──────────────────────┐
@@ -8,6 +12,18 @@
 //! │  (4 bytes) │  (4 bytes)   │  (variable length)   │
 //! └────────────┴──────────────┴──────────────────────┘
 //! ```
+//!
+//! ## 2. Rush ↔ Pi IPC Protocol (JSONL)
+//!
+//! Used for Rush shell ↔ Pi agent communication. Newline-delimited JSON.
+//!
+//! - Each message is one line
+//! - UTF-8 encoded
+//! - Tagged unions with `"type"` field
+//!
+//! Message types:
+//! - [`RushToPi`]: Messages from Rush shell to Pi agent
+//! - [`PiToRush`]: Messages from Pi agent to Rush shell
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -261,6 +277,143 @@ pub fn recv_fds<S: AsRawFd>(socket: &S, max_fds: usize) -> io::Result<Vec<RawFd>
     Ok(fds)
 }
 
+// ============================================================================
+// Rush ↔ Pi IPC Protocol (JSONL)
+// ============================================================================
+//
+// Wire format: Newline-delimited JSON (JSONL)
+// - Each message is one line
+// - UTF-8 encoded
+// ============================================================================
+
+/// Shell context passed with every query from Rush to Pi
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShellContext {
+    /// Current working directory
+    pub cwd: String,
+    /// Last command executed (if any)
+    pub last_command: Option<String>,
+    /// Exit code of the last command (if any)
+    pub last_exit_code: Option<i32>,
+    /// Recent command history (last N commands)
+    pub history: Vec<String>,
+    /// Selected environment variables
+    pub env: HashMap<String, String>,
+}
+
+/// Rush → Pi messages
+///
+/// Messages sent from the Rush shell to the Pi agent
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum RushToPi {
+    /// Query the LLM with a prompt and context
+    #[serde(rename = "query")]
+    Query {
+        /// Unique request ID for correlation
+        id: String,
+        /// User's prompt/question
+        prompt: String,
+        /// Optional stdin content piped to the query
+        stdin: Option<String>,
+        /// Current shell context
+        context: ShellContext,
+    },
+    /// Convert natural language intent to shell command(s)
+    /// 
+    /// Used by the `? <intent>` prefix. Pi returns a suggested command
+    /// that the user can accept, edit, or cancel.
+    #[serde(rename = "intent")]
+    Intent {
+        /// Unique request ID for correlation
+        id: String,
+        /// Natural language intent (e.g., "find all rust files modified today")
+        intent: String,
+        /// Current shell context
+        context: ShellContext,
+        /// Detected project type (e.g., "rust", "node", "python")
+        project_type: Option<String>,
+    },
+    /// Response to a tool call request from Pi
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        /// ID matching the original tool call
+        id: String,
+        /// Tool execution output
+        output: String,
+        /// Tool execution exit code
+        exit_code: i32,
+    },
+}
+
+/// Pi → Rush messages
+///
+/// Messages sent from the Pi agent to the Rush shell
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PiToRush {
+    /// Streaming content chunk (partial response)
+    #[serde(rename = "chunk")]
+    Chunk {
+        /// Request ID this chunk belongs to
+        id: String,
+        /// Content fragment
+        content: String,
+    },
+    /// Stream complete - no more chunks for this request
+    #[serde(rename = "done")]
+    Done {
+        /// Request ID that completed
+        id: String,
+    },
+    /// Error occurred during processing
+    #[serde(rename = "error")]
+    Error {
+        /// Request ID that failed
+        id: String,
+        /// Error description
+        message: String,
+    },
+    /// Pi wants to execute a tool/command
+    #[serde(rename = "tool_call")]
+    ToolCall {
+        /// Unique tool call ID for result correlation
+        id: String,
+        /// Tool name (e.g., "bash", "read", "write")
+        tool: String,
+        /// Tool arguments as JSON
+        args: serde_json::Value,
+    },
+    /// Suggested command(s) for an intent query
+    /// 
+    /// Response to `RushToPi::Intent`. Contains one or more shell commands
+    /// that the user can accept, edit, or cancel.
+    #[serde(rename = "suggested_command")]
+    SuggestedCommand {
+        /// Request ID this response belongs to
+        id: String,
+        /// The suggested shell command(s)
+        command: String,
+        /// Brief explanation of what the command does
+        explanation: String,
+        /// Confidence level (0.0-1.0) - lower confidence may warrant review
+        confidence: f64,
+    },
+}
+
+/// Encode a Rush ↔ Pi message to JSONL format (single line with newline)
+pub fn encode_jsonl<T: Serialize>(message: &T) -> io::Result<String> {
+    let json = serde_json::to_string(message)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(format!("{}\n", json))
+}
+
+/// Decode a Rush ↔ Pi message from a JSONL line
+pub fn decode_jsonl<T: for<'de> Deserialize<'de>>(line: &str) -> io::Result<T> {
+    serde_json::from_str(line.trim())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,5 +613,241 @@ mod tests {
             assert_eq!(*expected_msg, msg);
             assert_eq!(*expected_id, id);
         }
+    }
+
+    // =========================================================================
+    // Rush ↔ Pi JSONL Protocol Tests
+    // =========================================================================
+
+    #[test]
+    fn test_rush_to_pi_query() {
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), "/usr/bin".to_string());
+
+        let message = RushToPi::Query {
+            id: "req-123".to_string(),
+            prompt: "list all files".to_string(),
+            stdin: Some("file1.txt\nfile2.txt".to_string()),
+            context: ShellContext {
+                cwd: "/home/user/project".to_string(),
+                last_command: Some("ls".to_string()),
+                last_exit_code: Some(0),
+                history: vec!["cd project".to_string(), "ls".to_string()],
+                env,
+            },
+        };
+
+        // Encode to JSONL
+        let encoded = encode_jsonl(&message).unwrap();
+
+        // Should be single line ending with newline
+        assert!(encoded.ends_with('\n'));
+        assert_eq!(encoded.matches('\n').count(), 1);
+
+        // Should contain type tag
+        assert!(encoded.contains(r#""type":"query""#));
+
+        // Decode back
+        let decoded: RushToPi = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_rush_to_pi_tool_result() {
+        let message = RushToPi::ToolResult {
+            id: "tool-456".to_string(),
+            output: "total 32\ndrwxr-xr-x 5 user staff 160 Jan 1 12:00 .".to_string(),
+            exit_code: 0,
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"tool_result""#));
+
+        let decoded: RushToPi = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_chunk() {
+        let message = PiToRush::Chunk {
+            id: "req-123".to_string(),
+            content: "Here are the files in ".to_string(),
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"chunk""#));
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_done() {
+        let message = PiToRush::Done {
+            id: "req-123".to_string(),
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"done""#));
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_error() {
+        let message = PiToRush::Error {
+            id: "req-123".to_string(),
+            message: "Rate limit exceeded".to_string(),
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"error""#));
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_tool_call() {
+        let message = PiToRush::ToolCall {
+            id: "tool-789".to_string(),
+            tool: "bash".to_string(),
+            args: serde_json::json!({
+                "command": "ls -la",
+                "timeout": 30
+            }),
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"tool_call""#));
+        assert!(encoded.contains(r#""tool":"bash""#));
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_jsonl_multiline_content() {
+        // Content can have newlines, but the JSON itself is single line
+        let message = PiToRush::Chunk {
+            id: "req-123".to_string(),
+            content: "line1\nline2\nline3".to_string(),
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        // The JSON escapes newlines, so there's only one actual newline at the end
+        assert_eq!(encoded.matches('\n').count(), 1);
+        assert!(encoded.contains(r#"\n"#)); // escaped newlines in JSON
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_shell_context_serialization() {
+        let context = ShellContext {
+            cwd: "/home/user".to_string(),
+            last_command: None,
+            last_exit_code: None,
+            history: vec![],
+            env: HashMap::new(),
+        };
+
+        let json = serde_json::to_string(&context).unwrap();
+        let decoded: ShellContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(context, decoded);
+    }
+
+    #[test]
+    fn test_rush_to_pi_intent() {
+        let mut env = HashMap::new();
+        env.insert("PATH".to_string(), "/usr/bin".to_string());
+
+        let message = RushToPi::Intent {
+            id: "intent-123".to_string(),
+            intent: "find all rust files modified today".to_string(),
+            context: ShellContext {
+                cwd: "/home/user/project".to_string(),
+                last_command: Some("cargo build".to_string()),
+                last_exit_code: Some(0),
+                history: vec!["cargo build".to_string(), "cargo test".to_string()],
+                env,
+            },
+            project_type: Some("rust".to_string()),
+        };
+
+        // Encode to JSONL
+        let encoded = encode_jsonl(&message).unwrap();
+
+        // Should be single line ending with newline
+        assert!(encoded.ends_with('\n'));
+        assert_eq!(encoded.matches('\n').count(), 1);
+
+        // Should contain type tag
+        assert!(encoded.contains(r#""type":"intent""#));
+        assert!(encoded.contains(r#""intent":"find all rust files modified today""#));
+        assert!(encoded.contains(r#""project_type":"rust""#));
+
+        // Decode back
+        let decoded: RushToPi = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_rush_to_pi_intent_no_project_type() {
+        let message = RushToPi::Intent {
+            id: "intent-456".to_string(),
+            intent: "deploy to staging".to_string(),
+            context: ShellContext {
+                cwd: "/tmp".to_string(),
+                last_command: None,
+                last_exit_code: None,
+                history: vec![],
+                env: HashMap::new(),
+            },
+            project_type: None,
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""project_type":null"#));
+
+        let decoded: RushToPi = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_suggested_command() {
+        let message = PiToRush::SuggestedCommand {
+            id: "intent-123".to_string(),
+            command: r#"find . -name "*.rs" -mtime 0"#.to_string(),
+            explanation: "Finds all Rust files (*.rs) modified today (-mtime 0)".to_string(),
+            confidence: 0.95,
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        assert!(encoded.contains(r#""type":"suggested_command""#));
+        assert!(encoded.contains(r#"find . -name"#));
+        assert!(encoded.contains(r#""confidence":0.95"#));
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
+    }
+
+    #[test]
+    fn test_pi_to_rush_suggested_command_multi_line() {
+        let message = PiToRush::SuggestedCommand {
+            id: "intent-789".to_string(),
+            command: "git push origin main && ssh staging \"./deploy.sh\"".to_string(),
+            explanation: "Push to main branch, then deploy via SSH".to_string(),
+            confidence: 0.85,
+        };
+
+        let encoded = encode_jsonl(&message).unwrap();
+        // Should still be single line JSON
+        assert_eq!(encoded.matches('\n').count(), 1);
+
+        let decoded: PiToRush = decode_jsonl(&encoded).unwrap();
+        assert_eq!(message, decoded);
     }
 }

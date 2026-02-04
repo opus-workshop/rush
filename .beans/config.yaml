@@ -1,2 +1,3 @@
 project: rush
-next_id: 193
+next_id: 3
+auto_close_parent: true

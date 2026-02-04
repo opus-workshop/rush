@@ -273,3 +273,81 @@ fn test_no_expansion_without_braces() {
     let result = executor.execute(statements).unwrap();
     assert_eq!(result.stdout().trim(), "world");
 }
+
+#[test]
+fn test_use_alternate_with_set_variable() {
+    let mut executor = Executor::new();
+
+    // Set a variable
+    executor.runtime_mut().set_variable("VAR".to_string(), "value".to_string());
+
+    // Test ${VAR:+alternate} - should return alternate since VAR is set
+    let tokens = Lexer::tokenize("echo ${VAR:+alternate}").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+    assert_eq!(result.stdout().trim(), "alternate");
+}
+
+#[test]
+fn test_use_alternate_with_unset_variable() {
+    let mut executor = Executor::new();
+
+    // Test ${UNSET:+alternate} - should return empty since UNSET is not set
+    let tokens = Lexer::tokenize("echo \"[${UNSET:+alternate}]\"").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+    assert_eq!(result.stdout().trim(), "[]");
+}
+
+#[test]
+fn test_use_alternate_with_empty_variable() {
+    let mut executor = Executor::new();
+
+    // Set an empty variable
+    executor.runtime_mut().set_variable("EMPTY".to_string(), "".to_string());
+
+    // Test ${EMPTY:+alternate} - should return empty since EMPTY is empty
+    let tokens = Lexer::tokenize("echo \"[${EMPTY:+alternate}]\"").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+    assert_eq!(result.stdout().trim(), "[]");
+}
+
+#[test]
+fn test_use_alternate_in_double_quotes() {
+    let mut executor = Executor::new();
+
+    // Set a variable
+    executor.runtime_mut().set_variable("VAR".to_string(), "set".to_string());
+
+    // Test "${VAR:+alternate value}" in double quotes
+    let tokens = Lexer::tokenize("echo \"prefix ${VAR:+alternate value} suffix\"").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements).unwrap();
+    assert_eq!(result.stdout().trim(), "prefix alternate value suffix");
+}
+
+#[test]
+fn test_error_if_unset_with_empty_variable() {
+    let mut executor = Executor::new();
+
+    // Set an empty variable
+    executor.runtime_mut().set_variable("EMPTY".to_string(), "".to_string());
+
+    // Test ${EMPTY:?error} - should error since EMPTY is empty
+    let tokens = Lexer::tokenize("echo ${EMPTY:?variable is empty}").unwrap();
+    let mut parser = Parser::new(tokens);
+    let statements = parser.parse().unwrap();
+
+    let result = executor.execute(statements);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("variable is empty"));
+}

@@ -65,12 +65,13 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
         // JSON output mode
         let mut all_entries: Vec<FileEntry> = Vec::new();
         let mut had_error = false;
+        let mut stderr_output = String::new();
 
         for target in targets.iter() {
             match collect_entries(target, &flags) {
                 Ok(entries) => all_entries.extend(entries),
                 Err(e) => {
-                    eprintln!("ls: {}: {}", target.display(), e);
+                    stderr_output.push_str(&format!("ls: {}: {}\n", target.display(), e));
                     had_error = true;
                 }
             }
@@ -80,13 +81,14 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
 
         Ok(ExecutionResult {
             output: Output::Text(json_output + "\n"),
-            stderr: String::new(),
+            stderr: stderr_output,
             exit_code: if had_error { 1 } else { 0 },
             error: None,
         })
     } else {
         // Text output mode (existing behavior)
         let mut output = String::new();
+        let mut stderr_output = String::new();
         let mut had_error = false;
 
         for (idx, target) in targets.iter().enumerate() {
@@ -101,7 +103,7 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
                     output.push_str(&result);
                 }
                 Err(e) => {
-                    output.push_str(&format!("ls: {}: {}\n", target.display(), e));
+                    stderr_output.push_str(&format!("ls: {}: {}\n", target.display(), e));
                     had_error = true;
                 }
             }
@@ -109,7 +111,7 @@ pub fn builtin_ls(args: &[String], runtime: &mut Runtime) -> Result<ExecutionRes
 
         Ok(ExecutionResult {
             output: Output::Text(output),
-            stderr: String::new(),
+            stderr: stderr_output,
             exit_code: if had_error { 1 } else { 0 },
             error: None,
         })

@@ -8,12 +8,14 @@ mod compat;
 mod completion;
 mod context;
 mod correction;
+mod daemon;
 mod error;
 mod executor;
 #[cfg(feature = "git-builtins")]
 mod git;
 mod glob_expansion;
 mod history;
+mod intent;
 mod jobs;
 mod lexer;
 mod output;
@@ -37,6 +39,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, RwLock};
 use nix::unistd::{setpgid, getpid};
+use libc;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -112,8 +115,28 @@ fn main() -> Result<()> {
     // Put the shell in its own process group for proper job control
     let shell_pid = getpid();
     if let Err(e) = setpgid(shell_pid, shell_pid) {
-        // Non-fatal warning - continue anyway
-        eprintln!("Warning: Failed to set shell process group: {}", e);
+        // Non-fatal warning - continue anyway (may fail if already session leader)
+        // This is expected for login shells
+    }
+
+    // Take control of the terminal if we're interactive
+    // This is critical for login shells - without it, reading from stdin
+    // will cause SIGTTIN and the shell will hang
+    if atty::is(atty::Stream::Stdin) {
+        unsafe {
+            // Shells must ignore SIGTTIN/SIGTTOU so they never stop when
+            // doing terminal control operations. Keep these ignored permanently.
+            libc::signal(libc::SIGTTIN, libc::SIG_IGN);
+            libc::signal(libc::SIGTTOU, libc::SIG_IGN);
+            
+            // Take control of the terminal
+            let stdin_fd = libc::STDIN_FILENO;
+            let our_pgid = libc::getpgrp();
+            if libc::tcsetpgrp(stdin_fd, our_pgid) < 0 {
+                // Non-fatal - we may already be the foreground group
+            }
+            // Note: Do NOT restore SIGTTIN/SIGTTOU to default - shells must ignore them
+        }
     }
 
     // Setup signal handlers early
@@ -195,52 +218,57 @@ fn run_script(
         .runtime_mut()
         .set_variable("0".to_string(), script_path.to_string());
 
-    // Execute the script line by line
-    let mut last_exit_code = 0;
-    for (line_num, line) in script_content.lines().enumerate() {
-        // Check for signals
-        if signal_handler.should_shutdown() {
-            eprintln!("\nScript interrupted by signal");
-            std::process::exit(signal_handler.exit_code());
+    // Strip shebang line if present
+    let script_to_parse = if script_content.starts_with("#!") {
+        // Find the first newline and skip the shebang line
+        match script_content.find('\n') {
+            Some(pos) => &script_content[pos + 1..],
+            None => "", // Script is just a shebang line
         }
+    } else {
+        &script_content
+    };
 
-        // Check for SIGCHLD and reap any zombie processes
-        if signal_handler.sigchld_received() {
-            executor.runtime_mut().job_manager().reap_zombies();
-            signal_handler.clear_sigchld();
+    // Tokenize the entire script
+    let tokens = match Lexer::tokenize(script_to_parse) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{}: {}", script_path, e);
+            std::process::exit(2);
         }
+    };
 
-        let line = line.trim();
-
-        // Skip empty lines and comments
-        if line.is_empty() || line.starts_with('#') {
-            continue;
+    // Parse the entire script into an AST
+    let mut parser = Parser::new(tokens);
+    let statements = match parser.parse() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{}: {}", script_path, e);
+            std::process::exit(2);
         }
+    };
 
-        // Skip shebang line
-        if line_num == 0 && line.starts_with("#!") {
-            continue;
-        }
-
-        match execute_line_with_context(line, &mut executor, script_path, line_num + 1) {
-            Ok(result) => {
-                let stdout_text = result.stdout();
-                if !stdout_text.is_empty() {
-                    print!("{}", stdout_text);
-                }
-                if !result.stderr.is_empty() {
-                    eprint!("{}", result.stderr);
-                }
-                last_exit_code = result.exit_code;
+    // Execute the AST
+    match executor.execute(statements) {
+        Ok(result) => {
+            let stdout_text = result.stdout();
+            if !stdout_text.is_empty() {
+                print!("{}", stdout_text);
             }
-            Err(e) => {
-                eprintln!("{}:{}: Error: {}", script_path, line_num + 1, e);
-                std::process::exit(1);
+            if !result.stderr.is_empty() {
+                eprint!("{}", result.stderr);
             }
+            std::process::exit(result.exit_code);
+        }
+        Err(e) => {
+            // Check for exit signal (normal script termination via exit builtin)
+            if let Some(exit_signal) = e.downcast_ref::<builtins::exit_builtin::ExitSignal>() {
+                std::process::exit(exit_signal.exit_code);
+            }
+            eprintln!("{}: Error: {}", script_path, e);
+            std::process::exit(1);
         }
     }
-
-    std::process::exit(last_exit_code);
 }
 
 fn run_command(command: &str, signal_handler: SignalHandler) -> Result<()> {
@@ -489,8 +517,11 @@ fn init_runtime_variables(runtime: &mut runtime::Runtime) {
 }
 
 fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
-    println!("Rush v0.1.0 - A Modern Shell in Rust");
-    println!("Type 'exit' to quit\n");
+    // ASCII startup banner
+    let version = env!("CARGO_PKG_VERSION");
+    eprintln!("\x1b[36m ┏━  ╻ ╻ ┏━┓ ╻ ╻\x1b[0m");
+    eprintln!("\x1b[36m ┃   ┃ ┃ ┗━┓ ┣━┫\x1b[0m  v{}", version);
+    eprintln!("\x1b[36m ╹   ┗━┛ ┗━┛ ╹ ╹\x1b[0m\n");
 
     let mut executor = Executor::new_with_signal_handler(signal_handler.clone());
 
@@ -501,6 +532,12 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
 
     let mut line_editor = Reedline::create().with_completer(completer);
     let prompt = RushPrompt::new();
+
+    // Track last command and exit code for intent context
+    let mut last_command: Option<String> = None;
+    let mut last_exit_code: Option<i32> = None;
+    let mut command_history: Vec<String> = Vec::new();
+    const MAX_HISTORY_FOR_CONTEXT: usize = 20;
 
     loop {
         // Check for signals before reading next line
@@ -541,6 +578,68 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
                     continue;
                 }
 
+                // Check for intent query (? prefix)
+                if intent::is_intent_query(line) {
+                    let intent_text = intent::extract_intent(line);
+                    
+                    if intent_text.is_empty() {
+                        eprintln!("Usage: ? <natural language intent>");
+                        eprintln!("Example: ? find all rust files modified today");
+                        continue;
+                    }
+
+                    // Process the intent
+                    let result = intent::process_intent(
+                        intent_text,
+                        last_command.as_deref(),
+                        last_exit_code,
+                        command_history.clone(),
+                    );
+
+                    match result {
+                        intent::IntentResult::Accept(command) => {
+                            // Execute the suggested command
+                            println!("Executing: {}", command);
+                            match execute_line(&command, &mut executor) {
+                                Ok(exec_result) => {
+                                    let stdout_text = exec_result.stdout();
+                                    if !stdout_text.is_empty() {
+                                        print!("{}", stdout_text);
+                                    }
+                                    if !exec_result.stderr.is_empty() {
+                                        eprintln!("{}", exec_result.stderr);
+                                    }
+                                    // Update history with the executed command
+                                    last_command = Some(command.clone());
+                                    last_exit_code = Some(exec_result.exit_code);
+                                    command_history.push(command);
+                                    if command_history.len() > MAX_HISTORY_FOR_CONTEXT {
+                                        command_history.remove(0);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Error: {}", e);
+                                    last_exit_code = Some(1);
+                                }
+                            }
+                        }
+                        intent::IntentResult::Edit(command) => {
+                            // Show the command for the user to copy/edit
+                            // In a more advanced implementation, we'd pre-fill the line editor
+                            println!("Copy and edit this command:");
+                            println!("  {}", command);
+                        }
+                        intent::IntentResult::Cancel => {
+                            // User cancelled - do nothing
+                        }
+                        intent::IntentResult::Error(e) => {
+                            eprintln!("Intent error: {}", e);
+                        }
+                    }
+                    continue;
+                }
+
+                // Normal command execution
                 match execute_line(line, &mut executor) {
                     Ok(result) => {
                         let stdout_text = result.stdout();
@@ -550,9 +649,17 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
                         if !result.stderr.is_empty() {
                             eprintln!("{}", result.stderr);
                         }
+                        // Update history
+                        last_command = Some(line.to_string());
+                        last_exit_code = Some(result.exit_code);
+                        command_history.push(line.to_string());
+                        if command_history.len() > MAX_HISTORY_FOR_CONTEXT {
+                            command_history.remove(0);
+                        }
                     }
                     Err(e) => {
                         eprintln!("Error: {}", e);
+                        last_exit_code = Some(1);
                     }
                 }
             }
@@ -566,6 +673,11 @@ fn run_interactive_with_reedline(signal_handler: SignalHandler) -> Result<()> {
                 break;
             }
             Err(e) => {
+                // EINTR (interrupted system call) happens when signals arrive during read.
+                // This is normal at shell startup - just retry.
+                if e.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
                 eprintln!("Error reading line: {}", e);
                 break;
             }
@@ -580,7 +692,7 @@ fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
     let stdin = std::io::stdin();
     let reader = BufReader::new(stdin.lock());
 
-    for line in reader.lines() {
+    for line_result in reader.lines() {
         // Check for signals
         if signal_handler.should_shutdown() {
             eprintln!("\nInterrupted by signal");
@@ -593,7 +705,12 @@ fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
             signal_handler.clear_sigchld();
         }
 
-        let line = line?;
+        // Handle EINTR - retry on interrupted system call
+        let line = match line_result {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        };
         let line = line.trim();
 
         // Skip empty lines and comments
@@ -622,7 +739,7 @@ fn run_non_interactive(signal_handler: SignalHandler) -> Result<()> {
 }
 
 fn print_help() {
-    println!("Rush v0.1.0 - A Modern Shell in Rust");
+    println!("Rush v{} - A Modern Shell in Rust", env!("CARGO_PKG_VERSION"));
     println!();
     println!("Usage:");
     println!("  rush                Start interactive shell");

@@ -1,0 +1,24 @@
+{
+  "name": "@paiml/pi-rush",
+  "version": "0.2.0",
+  "description": "Pi extension for Rush shell - fast builtins, JSON output, daemon mode",
+  "keywords": ["pi-package", "rush", "shell", "ai-agent", "daemon", "ipc"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paiml/rush.git",
+    "directory": "pi-rush"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/rush.ts",
+      "./extensions/daemon.ts"
+    ],
+    "skills": ["./skills"]
+  }
+}

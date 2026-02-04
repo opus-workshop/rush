@@ -25,6 +25,39 @@ fn test_source_builtin() {
 }
 
 #[test]
+fn test_dot_builtin() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_file = temp_dir.path().join("test_config.rush");
+
+    // Create a config file
+    let mut file = fs::File::create(&config_file).unwrap();
+    writeln!(file, "echo hello_from_dot").unwrap();
+    drop(file);
+
+    // Test sourcing the file with dot command (POSIX syntax)
+    let output = Command::new(env!("CARGO_BIN_EXE_rush"))
+        .arg("-c")
+        .arg(format!(". {}", config_file.display()))
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "dot command should succeed");
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello_from_dot");
+}
+
+#[test]
+fn test_dot_nonexistent_file() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rush"))
+        .arg("-c")
+        .arg(". /nonexistent/file.rush")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("No such file"));
+}
+
+#[test]
 fn test_source_with_tilde() {
     // Create a test file in temp directory
     let home = dirs::home_dir().unwrap();

@@ -15,13 +15,16 @@ pub use stack::CallStack;
 use crate::arithmetic;
 use crate::builtins::Builtins;
 use crate::correction::Corrector;
+use crate::daemon::pi_rpc::{PiRpcManager, PiRpcError, PiEvent};
 use crate::glob_expansion;
 use crate::parser::ast::*;
 use crate::runtime::Runtime;
-use crate::progress::ProgressIndicator;
+// Progress indicator removed from interactive mode to avoid interfering with TUI apps
 use crate::signal::SignalHandler;
 use crate::terminal::TerminalControl;
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
+use std::io::Write;
 use std::process::Command as StdCommand;
 use std::sync::Arc;
 use std::thread;
@@ -206,7 +209,102 @@ impl Executor {
             Statement::Subshell(statements) => self.execute_subshell(statements),
             Statement::BackgroundCommand(cmd) => self.execute_background(*cmd),
             Statement::BraceGroup(statements) => self.execute_brace_group(statements),
+            Statement::PipeAsk(pipe_ask) => self.execute_pipe_ask(pipe_ask),
         }
+    }
+
+    fn execute_pipe_ask(&mut self, pipe_ask: PipeAsk) -> Result<ExecutionResult> {
+        // Execute the inner command and capture its output
+        let cmd_result = self.execute_statement(*pipe_ask.command)?;
+        let stdin_content = cmd_result.stdout();
+        
+        // Build the full prompt including the piped input
+        let user_prompt = if pipe_ask.prompt.is_empty() {
+            "Analyze this output".to_string()
+        } else {
+            pipe_ask.prompt.clone()
+        };
+        
+        let full_prompt = if stdin_content.is_empty() {
+            user_prompt
+        } else {
+            format!("{}\n\nInput:\n```\n{}\n```", user_prompt, stdin_content)
+        };
+        
+        // Use PiRpcManager to spawn pi --rpc subprocess
+        let mut manager = PiRpcManager::new();
+        
+        // Ensure pi subprocess is running
+        if let Err(e) = manager.ensure_running() {
+            let error_msg = match e {
+                PiRpcError::SpawnFailed(_) => {
+                    "pi not found. Install with: npm install -g @mariozechner/pi-coding-agent".to_string()
+                }
+                other => format!("Pi error: {}", other),
+            };
+            eprintln!("{}", error_msg);
+            return Ok(ExecutionResult {
+                output: Output::Text(String::new()),
+                stderr: error_msg,
+                exit_code: 1,
+                error: None,
+            });
+        }
+        
+        // Send prompt and stream responses
+        let mut response_text = String::new();
+        let mut final_exit_code = 0;
+        
+        match manager.prompt(&full_prompt) {
+            Ok(events) => {
+                for event_result in events {
+                    match event_result {
+                        Ok(PiEvent::ContentDelta { content }) => {
+                            // Print streaming text and accumulate
+                            print!("{}", content);
+                            let _ = std::io::stdout().flush();
+                            response_text.push_str(&content);
+                        }
+                        Ok(PiEvent::AgentEnd {}) => {
+                            // Response complete
+                            if !response_text.is_empty() && !response_text.ends_with('\n') {
+                                println!();
+                            }
+                            break;
+                        }
+                        Ok(PiEvent::Error { message }) => {
+                            eprintln!("Pi error: {}", message);
+                            final_exit_code = 1;
+                            break;
+                        }
+                        Ok(PiEvent::Ready {}) | Ok(PiEvent::Unknown) => {
+                            // Ignore ready signals and unknown events
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading from pi: {}", e);
+                            final_exit_code = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to send prompt to pi: {}", e);
+                return Ok(ExecutionResult {
+                    output: Output::Text(String::new()),
+                    stderr: format!("Failed to send prompt to pi: {}", e),
+                    exit_code: 1,
+                    error: None,
+                });
+            }
+        }
+        
+        Ok(ExecutionResult {
+            output: Output::Text(response_text),
+            stderr: String::new(),
+            exit_code: final_exit_code,
+            error: None,
+        })
     }
 
     fn execute_command(&mut self, command: Command) -> Result<ExecutionResult> {
@@ -283,17 +381,74 @@ impl Executor {
                 self.runtime.set_last_arg(last.clone());
             }
 
-            // Check for here-document redirects that provide stdin to builtins
-            let heredoc_stdin = self.extract_heredoc_stdin(&command.redirects)?;
-            let mut result = if let Some(ref stdin_data) = heredoc_stdin {
-                self.builtins.execute_with_stdin(
+            // Check for stdin redirects (heredoc or file) that provide stdin to builtins
+            let stdin_content = self.extract_stdin_content(&command.redirects)?;
+            // Also check for piped stdin from compound command in pipeline
+            let piped_stdin = self.runtime.get_piped_stdin().map(|s| s.to_vec());
+            
+            // Helper to convert builtin errors to stderr in result (for redirect handling)
+            let builtin_result_to_stderr = |res: Result<ExecutionResult>, cmd_name: &str| -> ExecutionResult {
+                match res {
+                    Ok(r) => r,
+                    Err(e) => ExecutionResult::error(format!("{}: {}\n", cmd_name, e)),
+                }
+            };
+            
+            let mut result = if let Some(ref stdin_data) = stdin_content {
+                builtin_result_to_stderr(
+                    self.builtins.execute_with_stdin(
+                        &command_name,
+                        args,
+                        &mut self.runtime,
+                        Some(stdin_data.as_bytes()),
+                    ),
                     &command_name,
-                    args,
-                    &mut self.runtime,
-                    Some(stdin_data.as_bytes()),
-                )?
+                )
+            } else if let Some(ref piped_data) = piped_stdin {
+                // Use piped stdin from compound command in pipeline
+                // For 'read' builtin, consume one line and keep the rest
+                if command_name == "read" {
+                    // Find the first newline to determine how much to consume
+                    let line_end = piped_data.iter().position(|&b| b == b'\n')
+                        .map(|p| p + 1)
+                        .unwrap_or(piped_data.len());
+                    
+                    // Execute read with just this portion
+                    let result = builtin_result_to_stderr(
+                        self.builtins.execute_with_stdin(
+                            &command_name,
+                            args,
+                            &mut self.runtime,
+                            Some(&piped_data[..line_end]),
+                        ),
+                        &command_name,
+                    );
+                    
+                    // Update piped_stdin to remaining data
+                    if line_end < piped_data.len() {
+                        self.runtime.set_piped_stdin(piped_data[line_end..].to_vec());
+                    } else {
+                        // All data consumed - clear it (will cause EOF on next read)
+                        let _ = self.runtime.take_piped_stdin();
+                    }
+                    
+                    result
+                } else {
+                    builtin_result_to_stderr(
+                        self.builtins.execute_with_stdin(
+                            &command_name,
+                            args,
+                            &mut self.runtime,
+                            Some(piped_data),
+                        ),
+                        &command_name,
+                    )
+                }
             } else {
-                self.builtins.execute(&command_name, args, &mut self.runtime)?
+                builtin_result_to_stderr(
+                    self.builtins.execute(&command_name, args, &mut self.runtime),
+                    &command_name,
+                )
             };
 
             // Handle redirects for builtins
@@ -383,6 +538,31 @@ impl Executor {
                             let expanded = self.expand_command_substitutions_in_string(&cmd_str)?;
                             result.push_str(&expanded);
                         }
+                        '{' => {
+                            // Braced variable ${...}
+                            chars.next(); // consume '{'
+                            let mut braced_content = String::new();
+                            let mut depth = 1;
+                            while let Some(ch) = chars.next() {
+                                if ch == '{' {
+                                    depth += 1;
+                                    braced_content.push(ch);
+                                } else if ch == '}' {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        break;
+                                    }
+                                    braced_content.push(ch);
+                                } else {
+                                    braced_content.push(ch);
+                                }
+                            }
+                            // Use parse_braced_var_expansion and expand_variable
+                            let braced_var = format!("${{{}}}", braced_content);
+                            let expansion = self.parse_braced_var_expansion(&braced_var)?;
+                            let value = self.runtime.expand_variable(&expansion)?;
+                            result.push_str(&value);
+                        }
                         // Special variables
                         '#' => {
                             chars.next();
@@ -453,6 +633,22 @@ impl Executor {
                 } else {
                     result.push(c);
                 }
+            } else if c == '`' {
+                // Backtick command substitution
+                let mut cmd_str = String::from("`");
+                while let Some(ch) = chars.next() {
+                    cmd_str.push(ch);
+                    if ch == '`' {
+                        break;
+                    } else if ch == '\\' {
+                        // Handle escaped characters inside backticks
+                        if let Some(escaped) = chars.next() {
+                            cmd_str.push(escaped);
+                        }
+                    }
+                }
+                let expanded = self.expand_command_substitutions_in_string(&cmd_str)?;
+                result.push_str(&expanded);
             } else {
                 result.push(c);
             }
@@ -849,9 +1045,8 @@ impl Executor {
 
         // Wait for command to complete
         let (stdout_str, stderr_str, exit_code) = if should_inherit_io {
-            // Interactive mode - IO is inherited, use polling with deferred progress indicator
-            let mut progress: Option<ProgressIndicator> = None;
-            let start = std::time::Instant::now();
+            // Interactive mode - IO is inherited, child has terminal control
+            // Don't show progress indicator as it would interfere with child's display
 
             loop {
                 // Check for signals
@@ -859,9 +1054,6 @@ impl Executor {
                     if handler.should_shutdown() {
                         let _ = child.kill();
                         let _ = child.wait();
-                        if let Some(prog) = progress {
-                            prog.stop();
-                        }
                         return Err(anyhow!("Command interrupted by signal"));
                     }
                 }
@@ -869,26 +1061,13 @@ impl Executor {
                 // Try to get the status
                 match child.try_wait() {
                     Ok(Some(status)) => {
-                        if let Some(prog) = progress {
-                            prog.stop();
-                        }
                         break (String::new(), String::new(), status.code().unwrap_or(1));
                     }
                     Ok(None) => {
-                        // Start progress indicator only after threshold
-                        if progress.is_none()
-                            && self.show_progress
-                            && start.elapsed().as_millis() >= crate::progress::PROGRESS_THRESHOLD_MS as u128
-                        {
-                            progress = Some(ProgressIndicator::new(format!("Running {}", command.name)));
-                        }
                         // Short sleep to avoid busy-waiting
                         thread::sleep(Duration::from_millis(1));
                     }
                     Err(e) => {
-                        if let Some(prog) = progress {
-                            prog.stop();
-                        }
                         return Err(anyhow!("Failed to check status for '{}': {}", command.name, e));
                     }
                 }
@@ -925,10 +1104,11 @@ impl Executor {
         })
     }
 
-    /// Extract heredoc stdin content from redirects, if any.
+    /// Extract stdin content from redirects, if any.
     /// For HereDoc (unquoted delimiter), performs variable expansion.
     /// For HereDocLiteral (quoted delimiter), returns body as-is.
-    fn extract_heredoc_stdin(&mut self, redirects: &[Redirect]) -> Result<Option<String>> {
+    /// For Stdin (<), reads file content.
+    fn extract_stdin_content(&mut self, redirects: &[Redirect]) -> Result<Option<String>> {
         for redirect in redirects {
             match &redirect.kind {
                 RedirectKind::HereDoc => {
@@ -939,6 +1119,19 @@ impl Executor {
                 RedirectKind::HereDocLiteral => {
                     if let Some(body) = &redirect.target {
                         return Ok(Some(body.clone()));
+                    }
+                }
+                RedirectKind::Stdin => {
+                    if let Some(target) = &redirect.target {
+                        let path = std::path::Path::new(target);
+                        let resolved = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else {
+                            self.runtime.get_cwd().join(target)
+                        };
+                        let content = std::fs::read_to_string(&resolved)
+                            .map_err(|e| anyhow!("Failed to read '{}': {}", target, e))?;
+                        return Ok(Some(content));
                     }
                 }
                 _ => {}
@@ -1065,6 +1258,14 @@ impl Executor {
     }
 
     fn expand_braced_variable(&self, expr: &str) -> String {
+        // String length: ${#var}
+        if expr.starts_with('#') {
+            let var_name = &expr[1..];
+            return self.runtime
+                .get_variable(var_name)
+                .map(|v| v.len().to_string())
+                .unwrap_or_else(|| "0".to_string());
+        }
         if expr.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return self.runtime.get_variable(expr).unwrap_or_default();
         }
@@ -1084,6 +1285,53 @@ impl Executor {
                 return default_val.to_string();
             }
             return val.unwrap_or_default();
+        }
+        // Use alternate if set and non-empty
+        if let Some(pos) = expr.find(":+") {
+            let var_name = &expr[..pos];
+            let alternate = &expr[pos + 2..];
+            return self.runtime
+                .get_variable(var_name)
+                .filter(|v| !v.is_empty())
+                .map(|_| alternate.to_string())
+                .unwrap_or_default();
+        }
+        // Error if unset or empty
+        if let Some(pos) = expr.find(":?") {
+            let var_name = &expr[..pos];
+            let message = &expr[pos + 2..];
+            if self.runtime.get_variable(var_name).map_or(true, |v| v.is_empty()) {
+                eprintln!("{}: {}", var_name, message);
+            }
+            return self.runtime.get_variable(var_name).unwrap_or_default();
+        }
+        // Remove longest suffix: ${var%%pattern}
+        if let Some(pos) = expr.find("%%") {
+            let var_name = &expr[..pos];
+            let pattern = &expr[pos + 2..];
+            let value = self.runtime.get_variable(var_name).unwrap_or_default();
+            return remove_longest_suffix(&value, pattern);
+        }
+        // Remove shortest suffix: ${var%pattern}
+        if let Some(pos) = expr.find('%') {
+            let var_name = &expr[..pos];
+            let pattern = &expr[pos + 1..];
+            let value = self.runtime.get_variable(var_name).unwrap_or_default();
+            return remove_shortest_suffix(&value, pattern);
+        }
+        // Remove longest prefix: ${var##pattern}
+        if let Some(pos) = expr.find("##") {
+            let var_name = &expr[..pos];
+            let pattern = &expr[pos + 2..];
+            let value = self.runtime.get_variable(var_name).unwrap_or_default();
+            return remove_longest_prefix(&value, pattern);
+        }
+        // Remove shortest prefix: ${var#pattern}
+        if let Some(pos) = expr.find('#') {
+            let var_name = &expr[..pos];
+            let pattern = &expr[pos + 1..];
+            let value = self.runtime.get_variable(var_name).unwrap_or_default();
+            return remove_shortest_prefix(&value, pattern);
         }
         self.runtime.get_variable(expr).unwrap_or_default()
     }
@@ -2112,6 +2360,15 @@ impl Executor {
         // Remove ${ and } from the string
         let inner = braced_var.trim_start_matches("${").trim_end_matches('}');
 
+        // String length: ${#var}
+        if inner.starts_with('#') && !inner.contains(':') && !inner[1..].contains('#') && !inner[1..].contains('%') {
+            let var_name = &inner[1..];
+            return Ok(VarExpansion {
+                name: var_name.to_string(),
+                operator: VarExpansionOp::StringLength,
+            });
+        }
+
         // Check for different operators in order
         if let Some(pos) = inner.find(":-") {
             let (name, default) = inner.split_at(pos);
@@ -2137,6 +2394,15 @@ impl Executor {
             return Ok(VarExpansion {
                 name: name.to_string(),
                 operator: VarExpansionOp::ErrorIfUnset(error_msg.to_string()),
+            });
+        }
+
+        if let Some(pos) = inner.find(":+") {
+            let (name, alternate) = inner.split_at(pos);
+            let alternate = &alternate[2..]; // Skip :+
+            return Ok(VarExpansion {
+                name: name.to_string(),
+                operator: VarExpansionOp::UseAlternate(alternate.to_string()),
             });
         }
 
@@ -2867,6 +3133,110 @@ impl ExecutionResult {
     pub fn push_stdout(&mut self, text: &str) {
         if let Output::Text(s) = &mut self.output {
             s.push_str(text);
+        }
+    }
+}
+
+/// Remove the shortest suffix matching the pattern from the value.
+/// Pattern supports * (match any) and ? (match single char).
+fn remove_shortest_suffix(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    // Try removing increasingly longer suffixes
+    for i in (0..=value.len()).rev() {
+        let suffix = &value[i..];
+        if pattern_matches(pattern, suffix) {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Remove the longest suffix matching the pattern from the value.
+fn remove_longest_suffix(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    // Try removing increasingly shorter suffixes (longest match first)
+    for i in 0..=value.len() {
+        let suffix = &value[i..];
+        if pattern_matches(pattern, suffix) {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Remove the shortest prefix matching the pattern from the value.
+fn remove_shortest_prefix(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    // Try removing increasingly longer prefixes
+    for i in 0..=value.len() {
+        let prefix = &value[..i];
+        if pattern_matches(pattern, prefix) {
+            return value[i..].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Remove the longest prefix matching the pattern from the value.
+fn remove_longest_prefix(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    // Try removing increasingly shorter prefixes (longest match first)
+    for i in (0..=value.len()).rev() {
+        let prefix = &value[..i];
+        if pattern_matches(pattern, prefix) {
+            return value[i..].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Match a shell pattern against a string.
+/// Supports * (match any sequence) and ? (match single char).
+fn pattern_matches(pattern: &str, text: &str) -> bool {
+    let pat_chars: Vec<char> = pattern.chars().collect();
+    let text_chars: Vec<char> = text.chars().collect();
+    pattern_matches_helper(&pat_chars, &text_chars)
+}
+
+fn pattern_matches_helper(pattern: &[char], text: &[char]) -> bool {
+    if pattern.is_empty() {
+        return text.is_empty();
+    }
+    
+    match pattern[0] {
+        '*' => {
+            // * matches zero or more characters
+            // Try matching zero chars, then one, then two, etc.
+            for i in 0..=text.len() {
+                if pattern_matches_helper(&pattern[1..], &text[i..]) {
+                    return true;
+                }
+            }
+            false
+        }
+        '?' => {
+            // ? matches exactly one character
+            if text.is_empty() {
+                false
+            } else {
+                pattern_matches_helper(&pattern[1..], &text[1..])
+            }
+        }
+        c => {
+            // Literal character must match
+            if text.is_empty() || text[0] != c {
+                false
+            } else {
+                pattern_matches_helper(&pattern[1..], &text[1..])
+            }
         }
     }
 }

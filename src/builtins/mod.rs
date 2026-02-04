@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 
 mod cat;
 mod find;
+mod getopts;
 #[cfg(feature = "git-builtins")]
 mod git_log;
 #[cfg(feature = "git-builtins")]
@@ -59,6 +60,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("exit", exit_builtin::builtin_exit);
     m.insert("export", builtin_export);
     m.insert("source", builtin_source);
+    m.insert(".", builtin_source);
     m.insert("cat", cat::builtin_cat);
     m.insert("find", find::builtin_find);
     m.insert("ls", ls::builtin_ls);
@@ -105,6 +107,7 @@ static BUILTIN_MAP: LazyLock<HashMap<&'static str, BuiltinFn>> = LazyLock::new(|
     m.insert("wait", wait::builtin_wait);
     m.insert("profile", profile::builtin_profile);
     m.insert("time", time::builtin_time);
+    m.insert("getopts", getopts::builtin_getopts);
     m
 });
 

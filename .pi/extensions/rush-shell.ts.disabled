@@ -1,0 +1,319 @@
+/**
+ * Rush Shell Override
+ *
+ * Replaces the built-in `bash` tool with Rush for this project.
+ * This allows testing Rush shell while developing it.
+ *
+ * Features:
+ * - All `bash` tool calls go through Rush instead
+ * - Automatic fallback to bash if Rush crashes/hangs
+ * - Error reporting for Rush bugs
+ * - Status indicator showing Rush mode
+ *
+ * The extension uses Rush's POSIX compatibility mode, so standard
+ * shell commands work as expected.
+ */
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { createBashTool, type BashOperations } from "@mariozechner/pi-coding-agent";
+
+// Find Rush binary - prefer local build
+function findRushBinary(cwd: string): string | null {
+  // Check for local release build first
+  const localRelease = join(cwd, "target/release/rush");
+  if (existsSync(localRelease)) return localRelease;
+
+  // Check for local debug build
+  const localDebug = join(cwd, "target/debug/rush");
+  if (existsSync(localDebug)) return localDebug;
+
+  // Fall back to PATH
+  return "rush";
+}
+
+// Track Rush execution stats for debugging
+interface RushStats {
+  executions: number;
+  successes: number;
+  failures: number;
+  crashes: number;
+  lastError?: string;
+}
+
+function createRushBashOps(
+  rushBinary: string,
+  stats: RushStats,
+  onCrash?: (command: string, error: string) => void
+): BashOperations {
+  return {
+    exec: (command, cwd, { onData, signal, timeout }) =>
+      new Promise((resolve, reject) => {
+        stats.executions++;
+
+        // Use rush -c to execute the command
+        const child: ChildProcess = spawn(rushBinary, ["-c", command], {
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            // Ensure Rush knows it's being used non-interactively
+            RUSH_NONINTERACTIVE: "1",
+            // Request JSON errors for better parsing
+            RUSH_ERROR_FORMAT: "json",
+          },
+        });
+
+        let timedOut = false;
+        let crashed = false;
+        let stderrData = "";
+
+        const timer = timeout
+          ? setTimeout(() => {
+              timedOut = true;
+              child.kill("SIGKILL");
+            }, timeout * 1000)
+          : undefined;
+
+        child.stdout?.on("data", onData);
+        child.stderr?.on("data", (data: Buffer) => {
+          stderrData += data.toString();
+          onData(data);
+        });
+
+        child.on("error", (e) => {
+          if (timer) clearTimeout(timer);
+          stats.failures++;
+          stats.lastError = e.message;
+          reject(e);
+        });
+
+        const onAbort = () => {
+          child.kill("SIGTERM");
+          // Give it a moment, then force kill
+          setTimeout(() => child.kill("SIGKILL"), 1000);
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+
+        child.on("close", (code, sig) => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+
+          if (signal?.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+
+          if (timedOut) {
+            stats.failures++;
+            reject(new Error(`timeout:${timeout}`));
+            return;
+          }
+
+          // Detect crashes (segfault, abort, etc.)
+          if (sig === "SIGSEGV" || sig === "SIGABRT" || sig === "SIGBUS") {
+            stats.crashes++;
+            crashed = true;
+            const errorMsg = `Rush crashed with ${sig} while executing: ${command}`;
+            stats.lastError = errorMsg;
+            onCrash?.(command, errorMsg);
+            // Return as a command failure rather than rejecting
+            // so the LLM sees the error
+            resolve({ exitCode: 128 + (sig === "SIGSEGV" ? 11 : sig === "SIGABRT" ? 6 : 7) });
+            return;
+          }
+
+          // Check for panic in stderr
+          if (stderrData.includes("thread 'main' panicked") || stderrData.includes("RUST_BACKTRACE")) {
+            stats.crashes++;
+            crashed = true;
+            const errorMsg = `Rush panicked while executing: ${command}\n${stderrData}`;
+            stats.lastError = errorMsg;
+            onCrash?.(command, errorMsg);
+          }
+
+          if (code === 0) {
+            stats.successes++;
+          } else {
+            stats.failures++;
+          }
+
+          resolve({ exitCode: code ?? 0 });
+        });
+      }),
+  };
+}
+
+export default function (pi: ExtensionAPI) {
+  const cwd = process.cwd();
+  const rushBinary = findRushBinary(cwd);
+
+  // Stats for monitoring Rush behavior
+  const stats: RushStats = {
+    executions: 0,
+    successes: 0,
+    failures: 0,
+    crashes: 0,
+  };
+
+  // Track crashes for potential auto-reporting
+  const crashes: Array<{ command: string; error: string; timestamp: number }> = [];
+
+  const onCrash = (command: string, error: string) => {
+    crashes.push({ command, error, timestamp: Date.now() });
+    // Keep last 10 crashes
+    if (crashes.length > 10) crashes.shift();
+  };
+
+  // Create the Rush-based bash tool
+  const rushOps = createRushBashOps(rushBinary!, stats, onCrash);
+  const rushBashTool = createBashTool(cwd, { operations: rushOps });
+
+  // Also keep a fallback bash tool for emergencies
+  const fallbackBashTool = createBashTool(cwd);
+
+  let useRush = true;
+  let rushVersion: string | undefined;
+
+  // Check Rush availability and version
+  pi.on("session_start", async (_event, ctx) => {
+    if (!rushBinary) {
+      useRush = false;
+      ctx.ui.notify("Rush binary not found - using bash", "warning");
+      return;
+    }
+
+    try {
+      const result = await pi.exec(rushBinary, ["--version"], { timeout: 5000 });
+      if (result.code === 0) {
+        rushVersion = result.stdout.trim();
+        ctx.ui.setStatus("rush", ctx.ui.theme.fg("accent", `🐚 Rush ${rushVersion}`));
+        ctx.ui.notify(`Using Rush shell: ${rushVersion}`, "info");
+      } else {
+        useRush = false;
+        ctx.ui.notify("Rush failed version check - using bash", "warning");
+      }
+    } catch (e) {
+      useRush = false;
+      ctx.ui.notify(`Rush not working: ${e} - using bash`, "warning");
+    }
+  });
+
+  // Override the bash tool
+  pi.registerTool({
+    ...rushBashTool,
+    label: "Bash (via Rush)",
+    description: rushBashTool.description + "\n\nNote: Commands are executed via Rush shell for testing.",
+
+    async execute(id, params, signal, onUpdate, ctx) {
+      if (!useRush) {
+        // Fallback to real bash
+        return fallbackBashTool.execute(id, params, signal, onUpdate);
+      }
+
+      try {
+        const result = await rushBashTool.execute(id, params, signal, onUpdate);
+
+        // Check if Rush crashed during execution
+        if (crashes.length > 0 && crashes[crashes.length - 1].timestamp > Date.now() - 5000) {
+          const crash = crashes[crashes.length - 1];
+          // Append crash info to result
+          const content = result.content || [];
+          content.push({
+            type: "text",
+            text: `\n\n⚠️ RUSH CRASH DETECTED:\n${crash.error}\n\nThis is a Rush bug that should be fixed.`,
+          });
+          return { ...result, content, isError: true };
+        }
+
+        return result;
+      } catch (e: any) {
+        // If Rush itself fails badly, fall back to bash
+        if (e.message?.includes("ENOENT") || e.message?.includes("spawn")) {
+          ctx.ui.notify("Rush execution failed, falling back to bash", "warning");
+          useRush = false;
+          return fallbackBashTool.execute(id, params, signal, onUpdate);
+        }
+        throw e;
+      }
+    },
+  });
+
+  // Also handle user ! commands through Rush
+  pi.on("user_bash", (_event) => {
+    if (!useRush) return; // Use default bash
+    return { operations: rushOps };
+  });
+
+  // Command to view Rush stats
+  pi.registerCommand("rush-stats", {
+    description: "Show Rush execution statistics",
+    handler: async (_args, ctx) => {
+      const crashRate = stats.executions > 0
+        ? ((stats.crashes / stats.executions) * 100).toFixed(1)
+        : "0";
+      const successRate = stats.executions > 0
+        ? ((stats.successes / stats.executions) * 100).toFixed(1)
+        : "0";
+
+      let msg = `Rush Stats:\n`;
+      msg += `  Executions: ${stats.executions}\n`;
+      msg += `  Successes: ${stats.successes} (${successRate}%)\n`;
+      msg += `  Failures: ${stats.failures}\n`;
+      msg += `  Crashes: ${stats.crashes} (${crashRate}%)\n`;
+      if (stats.lastError) {
+        msg += `  Last error: ${stats.lastError.slice(0, 100)}`;
+      }
+
+      ctx.ui.notify(msg, stats.crashes > 0 ? "warning" : "info");
+    },
+  });
+
+  // Command to view recent crashes
+  pi.registerCommand("rush-crashes", {
+    description: "Show recent Rush crashes",
+    handler: async (_args, ctx) => {
+      if (crashes.length === 0) {
+        ctx.ui.notify("No Rush crashes recorded", "info");
+        return;
+      }
+
+      let msg = `Recent Rush crashes (${crashes.length}):\n\n`;
+      for (const crash of crashes.slice(-5)) {
+        const time = new Date(crash.timestamp).toLocaleTimeString();
+        msg += `[${time}] ${crash.command.slice(0, 50)}...\n`;
+        msg += `  ${crash.error.slice(0, 100)}\n\n`;
+      }
+
+      ctx.ui.notify(msg, "warning");
+    },
+  });
+
+  // Command to toggle between Rush and bash
+  pi.registerCommand("rush-toggle", {
+    description: "Toggle between Rush and bash",
+    handler: async (_args, ctx) => {
+      useRush = !useRush;
+      if (useRush) {
+        ctx.ui.setStatus("rush", ctx.ui.theme.fg("accent", `🐚 Rush ${rushVersion}`));
+        ctx.ui.notify("Switched to Rush shell", "info");
+      } else {
+        ctx.ui.setStatus("rush", ctx.ui.theme.fg("muted", "🐚 bash"));
+        ctx.ui.notify("Switched to bash (fallback)", "info");
+      }
+    },
+  });
+
+  // Update system prompt to note we're using Rush
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!useRush) return;
+
+    const rushNote = `\n\nNote: This project uses Rush shell (${rushVersion}) instead of bash for command execution. Rush is a POSIX-compliant shell written in Rust. If you encounter shell errors or unexpected behavior, it may be a Rush bug that needs fixing in the codebase.`;
+
+    return {
+      systemPrompt: event.systemPrompt + rushNote,
+    };
+  });
+}

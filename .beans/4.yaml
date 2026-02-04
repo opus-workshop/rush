@@ -1,7 +1,0 @@
-id: '4'
-title: Rush HN Readiness Cleanup
-status: open
-priority: 1
-created_at: 2026-01-30T18:49:24.296367Z
-updated_at: 2026-01-30T18:49:24.296367Z
-description: 'Audit-driven cleanup to bring rush repo to professional open-source standards. Covers: junk file removal, LICENSE files, .gitignore hardening, docs reorganization, Cargo.toml metadata, README badges, and standard project files (CONTRIBUTING, CHANGELOG, etc.). Based on 5-agent audit that scored the repo 6/10 with fixes projected to reach 8.5/10.'

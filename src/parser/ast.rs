@@ -19,6 +19,8 @@ pub enum Statement {
     BackgroundCommand(Box<Statement>),
     /// Brace group: { commands; } - executes in current shell context
     BraceGroup(Vec<Statement>),
+    /// Pipe to AI: cmd |? "prompt"
+    PipeAsk(PipeAsk),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,6 +50,18 @@ pub struct Pipeline {
     /// `commands` is kept for backward compatibility.
     #[serde(default)]
     pub elements: Vec<PipelineElement>,
+    /// Whether this pipeline is negated with `!` (inverts exit code)
+    #[serde(default)]
+    pub negated: bool,
+}
+
+/// A command that pipes its output to AI for processing
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PipeAsk {
+    /// The command whose output to send to AI
+    pub command: Box<Statement>,
+    /// The prompt for the AI (empty string if omitted)
+    pub prompt: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -184,12 +198,16 @@ pub struct VarExpansion {
 pub enum VarExpansionOp {
     /// ${VAR} - Simple expansion
     Simple,
+    /// ${#VAR} - String length
+    StringLength,
     /// ${VAR:-default} - Use default if unset
     UseDefault(String),
     /// ${VAR:=default} - Assign default if unset
     AssignDefault(String),
     /// ${VAR:?error} - Error if unset
     ErrorIfUnset(String),
+    /// ${VAR:+alternate} - Use alternate if set and non-empty
+    UseAlternate(String),
     /// ${VAR#pattern} - Remove shortest prefix match
     RemoveShortestPrefix(String),
     /// ${VAR##pattern} - Remove longest prefix match

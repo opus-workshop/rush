@@ -1,8 +1,0 @@
-id: '131'
-title: Core completion engine with command and file completion
-status: open
-priority: 3
-created_at: 2026-01-30T18:49:25.053353Z
-updated_at: 2026-01-30T18:49:25.053353Z
-description: "Core completion engine - COMPLETED\n\nArchitecture: CompletionEngine module in src/completion/engine.rs with three methods:\n- complete_commands(prefix, limit) for PATH command completion\n- complete_files(prefix, limit) for file/directory completion  \n- fuzzy_filter(candidates, prefix, limit) for scoring with SkimMatcherV2\n\nPerformance: Caching (5min TTL), fuzzy matching, file scanning optimization, result limiting. Supports commands (builtin+PATH+functions), files, flags, context-aware (git/cargo/npm/rust).\n\nKey: Arc<RwLock> caching, SkimMatcherV2 scoring, Unix permission checks, tilde expansion, gitignore support.\n\nTests: All passing for builtin/command/path/flag/context completion.\n\nCommit: 495bc14"
-verify: cargo test --lib builtins

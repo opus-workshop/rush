@@ -1,7 +1,7 @@
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
-use signal_hook::consts::{SIGCHLD, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGTTIN, SIGTTOU};
+use signal_hook::consts::{SIGCHLD, SIGHUP, SIGINT, SIGTERM, SIGTSTP};
 use signal_hook::iterator::Signals;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
@@ -63,9 +63,10 @@ impl SignalHandler {
     }
 
     /// Setup signal handlers for SIGINT, SIGTERM, SIGHUP, and SIGCHLD
+    /// Note: SIGTTIN/SIGTTOU are ignored by the shell (set in main.rs) so we don't handle them here
     pub fn setup(&self) -> Result<()> {
         let mut signals =
-            Signals::new([SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP, SIGTTIN, SIGTTOU])?;
+            Signals::new([SIGINT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP])?;
         let shutdown_flag = Arc::clone(&self.shutdown_flag);
         let sigchld_flag = Arc::clone(&self.sigchld_flag);
         let interactive_mode = Arc::clone(&self.interactive_mode);
@@ -108,18 +109,7 @@ impl SignalHandler {
                         SIGNAL_NUMBER.store(SIGTSTP, Ordering::SeqCst);
                         TERMINAL_STOP.store(true, Ordering::SeqCst);
                     }
-                    SIGTTIN => {
-                        // Background process tried to read from terminal
-                        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
-                        SIGNAL_NUMBER.store(SIGTTIN, Ordering::SeqCst);
-                        TERMINAL_STOP.store(true, Ordering::SeqCst);
-                    }
-                    SIGTTOU => {
-                        // Background process tried to write to terminal
-                        SIGNAL_RECEIVED.store(true, Ordering::SeqCst);
-                        SIGNAL_NUMBER.store(SIGTTOU, Ordering::SeqCst);
-                        TERMINAL_STOP.store(true, Ordering::SeqCst);
-                    }
+                    // Note: SIGTTIN/SIGTTOU are ignored by the shell (SIG_IGN in main.rs)
                     SIGCHLD => {
                         // Set flag to indicate a child process has changed state
                         sigchld_flag.store(true, Ordering::SeqCst);
@@ -215,8 +205,7 @@ impl SignalHandler {
             SIGTERM => 143,  // Standard exit code for SIGTERM (128 + 15)
             SIGHUP => 129,   // Standard exit code for SIGHUP (128 + 1)
             SIGTSTP => 148,  // Standard exit code for SIGTSTP (128 + 20)
-            SIGTTIN => 149,  // Standard exit code for SIGTTIN (128 + 21)
-            SIGTTOU => 150,  // Standard exit code for SIGTTOU (128 + 22)
+            // Note: SIGTTIN/SIGTTOU are ignored by the shell, so they never reach here
             _ => 1,
         }
     }

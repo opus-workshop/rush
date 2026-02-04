@@ -26,22 +26,23 @@ impl ProgressIndicator {
 
         let handle = thread::spawn(move || {
             let mut frame = 0;
-            let stdout = io::stderr();
+            let stderr = io::stderr();
 
             while running_clone.load(Ordering::Relaxed) {
                 let spinner = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
 
-                // Write spinner and message, then carriage return to overwrite
-                eprint!("\r{} {}...", spinner, msg_clone);
-                let _ = stdout.lock().flush();
+                // Use carriage return to overwrite, but stay on same line
+                // \x1b[K clears from cursor to end of line to remove any leftover chars
+                eprint!("\r\x1b[K{} {}...", spinner, msg_clone);
+                let _ = stderr.lock().flush();
 
                 thread::sleep(Duration::from_millis(80));
                 frame += 1;
             }
 
-            // Clear the line when done
+            // Clear the line completely and move cursor back to start
             eprint!("\r\x1b[K");
-            let _ = stdout.lock().flush();
+            let _ = stderr.lock().flush();
         });
 
         Self {

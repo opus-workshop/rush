@@ -23,9 +23,16 @@ pub fn execute_pipeline(
     runtime: &mut Runtime,
     builtins: &Builtins,
 ) -> Result<ExecutionResult> {
+    let negated = pipeline.negated;
+    
     // Use elements if available, fall back to commands-only for backward compat
     if !pipeline.elements.is_empty() {
-        return execute_pipeline_elements(&pipeline.elements, runtime, builtins);
+        let mut result = execute_pipeline_elements(&pipeline.elements, runtime, builtins)?;
+        if negated {
+            result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
+            runtime.set_last_exit_code(result.exit_code);
+        }
+        return Ok(result);
     }
 
     if pipeline.commands.is_empty() {
@@ -34,7 +41,10 @@ pub fn execute_pipeline(
 
     if pipeline.commands.len() == 1 {
         // Single command, execute normally
-        let result = execute_single_command(&pipeline.commands[0], runtime, builtins)?;
+        let mut result = execute_single_command(&pipeline.commands[0], runtime, builtins)?;
+        if negated {
+            result.exit_code = if result.exit_code == 0 { 1 } else { 0 };
+        }
         runtime.set_last_exit_code(result.exit_code);
         // Set PIPESTATUS for single command
         runtime.set_pipestatus(vec![result.exit_code]);
@@ -88,7 +98,7 @@ pub fn execute_pipeline(
 
         if is_last {
             // Determine the exit code based on pipefail option
-            let pipeline_exit_code = if runtime.options.pipefail {
+            let mut pipeline_exit_code = if runtime.options.pipefail {
                 if let Some(code) = first_failed_exit_code {
                     code
                 } else {
@@ -97,6 +107,11 @@ pub fn execute_pipeline(
             } else {
                 result.exit_code
             };
+
+            // Apply negation if needed
+            if negated {
+                pipeline_exit_code = if pipeline_exit_code == 0 { 1 } else { 0 };
+            }
 
             // Set $? to the pipeline's exit code
             runtime.set_last_exit_code(pipeline_exit_code);
@@ -242,13 +257,10 @@ fn execute_compound_in_pipeline(
     use crate::correction::Corrector;
     use crate::terminal::TerminalControl;
 
-    // Set up piped input as a special variable the executor can access
+    // Set up piped input so builtins inside the compound command can access it
     let mut child_runtime = runtime.clone();
     if let Some(input_data) = stdin {
-        child_runtime.set_variable(
-            "_PIPE_STDIN".to_string(),
-            String::from_utf8_lossy(input_data).to_string(),
-        );
+        child_runtime.set_piped_stdin(input_data.to_vec());
     }
 
     let mut child_executor = Executor {
@@ -302,11 +314,7 @@ fn execute_subshell_in_pipeline(
     // If there's stdin data, set it as the content of stdin for the subshell
     // For builtins like `cat` that read stdin, we need to make this available
     if let Some(input_data) = stdin {
-        // Set the piped input as a special variable the executor can access
-        child_runtime.set_variable(
-            "_PIPE_STDIN".to_string(),
-            String::from_utf8_lossy(input_data).to_string(),
-        );
+        child_runtime.set_piped_stdin(input_data.to_vec());
     }
 
     let mut child_executor = Executor {
@@ -344,14 +352,42 @@ fn execute_pipeline_command(
     builtins: &Builtins,
     stdin: Option<&[u8]>,
 ) -> Result<ExecutionResult> {
+    // Expand alias if present
+    let (cmd_name, extra_args) = if let Some(alias_value) = runtime.get_alias(&command.name) {
+        let parts: Vec<&str> = alias_value.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err(anyhow!("Empty alias expansion for '{}'", command.name));
+        }
+        let alias_args: Vec<Argument> = parts[1..]
+            .iter()
+            .map(|s| Argument::Literal(s.to_string()))
+            .collect();
+        (parts[0].to_string(), alias_args)
+    } else {
+        (command.name.clone(), Vec::new())
+    };
+
+    // Combine alias args with command args
+    let combined_args: Vec<Argument> = extra_args
+        .into_iter()
+        .chain(command.args.iter().cloned())
+        .collect();
+
     // Check if it's a builtin
-    let mut result = if builtins.is_builtin(&command.name) {
-        let args = resolve_and_expand_arguments(&command.args, runtime);
+    let mut result = if builtins.is_builtin(&cmd_name) {
+        let args = resolve_and_expand_arguments(&combined_args, runtime);
 
         // Use execute_with_stdin to properly handle piped input
-        builtins.execute_with_stdin(&command.name, args, runtime, stdin)?
+        builtins.execute_with_stdin(&cmd_name, args, runtime, stdin)?
     } else {
-        execute_external_pipeline_command(command, runtime, stdin)?
+        // Create a modified command with expanded alias
+        let expanded_command = Command {
+            name: cmd_name,
+            args: combined_args,
+            redirects: command.redirects.clone(),
+            prefix_env: command.prefix_env.clone(),
+        };
+        execute_external_pipeline_command(&expanded_command, runtime, stdin)?
     };
 
     // Apply redirects to the command's result

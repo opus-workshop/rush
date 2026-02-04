@@ -102,10 +102,18 @@ impl Parser {
     }
 
     fn parse_command_or_pipeline(&mut self) -> Result<Statement> {
+        // Check for pipeline negation (! prefix)
+        let negated = if self.match_token(&Token::Bang) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        
         let first_statement = self.parse_pipeline_element()?;
 
         // Check if this is a parallel execution
-        if self.match_token(&Token::ParallelPipe) {
+        let result = if self.match_token(&Token::ParallelPipe) {
             // Only commands can be in parallel execution for now
             let first_command = match first_statement {
                 Statement::Command(cmd) => cmd,
@@ -129,7 +137,7 @@ impl Parser {
                 self.advance();
             }
 
-            Ok(Statement::ParallelExecution(ParallelExecution { commands }))
+            Statement::ParallelExecution(ParallelExecution { commands })
         }
         // Check if this is a pipeline
         else if self.match_token(&Token::Pipe) {
@@ -176,9 +184,61 @@ impl Parser {
                 })
                 .collect();
 
-            Ok(Statement::Pipeline(Pipeline { commands, elements }))
+            Statement::Pipeline(Pipeline { commands, elements, negated })
+        } else if negated {
+            // Single command with negation - wrap in a Pipeline with negated=true
+            let element = Self::statement_to_pipeline_element(first_statement)?;
+            let commands = match &element {
+                PipelineElement::Command(cmd) => vec![cmd.clone()],
+                _ => vec![],
+            };
+            Statement::Pipeline(Pipeline { commands, elements: vec![element], negated: true })
         } else {
-            Ok(first_statement)
+            first_statement
+        };
+
+        // Check for |? (pipe to AI)
+        if self.match_token(&Token::PipeAsk) {
+            self.advance();
+            let prompt = self.parse_pipe_ask_prompt()?;
+            return Ok(Statement::PipeAsk(PipeAsk {
+                command: Box::new(result),
+                prompt,
+            }));
+        }
+
+        Ok(result)
+    }
+
+    /// Parse the prompt for a |? operator.
+    /// Can be a quoted string, a word, or omitted (returns empty string).
+    fn parse_pipe_ask_prompt(&mut self) -> Result<String> {
+        match self.peek() {
+            // Quoted string prompt
+            Some(Token::String(s)) => {
+                let s = s.clone();
+                self.advance();
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                Ok(Self::process_double_quote_escapes(&unquoted))
+            }
+            Some(Token::SingleQuotedString(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Self::strip_outer_quotes(&s, '\''))
+            }
+            Some(Token::AnsiCString(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(s)
+            }
+            // Unquoted word prompt
+            Some(Token::Identifier(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(s)
+            }
+            // No prompt provided - use empty string (AI will use default behavior)
+            _ => Ok(String::new()),
         }
     }
 
@@ -424,10 +484,28 @@ impl Parser {
                     _ => unreachable!(),
                 }
             }
-            Some(Token::String(_)) | Some(Token::SingleQuotedString(_)) => {
+            Some(Token::String(_)) => {
                 match self.advance() {
-                    Some(Token::String(s)) | Some(Token::SingleQuotedString(s)) => {
-                        Ok(s.trim_matches('"').trim_matches('\'').to_string())
+                    Some(Token::String(s)) => {
+                        let unquoted = Self::strip_outer_quotes(&s, '"');
+                        Ok(Self::process_double_quote_escapes(&unquoted))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Some(Token::SingleQuotedString(_)) => {
+                match self.advance() {
+                    Some(Token::SingleQuotedString(s)) => {
+                        Ok(Self::strip_outer_quotes(&s, '\''))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Some(Token::AnsiCString(_)) => {
+                match self.advance() {
+                    Some(Token::AnsiCString(s)) => {
+                        // Already processed by lexer, return as-is
+                        Ok(s.clone())
                     }
                     _ => unreachable!(),
                 }
@@ -481,6 +559,10 @@ impl Parser {
                 self.advance();
                 Ok("-".to_string())
             }
+            Some(Token::DoubleDash) => {
+                self.advance();
+                Ok("--".to_string())
+            }
             Some(Token::ShortFlag(_)) => {
                 match self.advance() {
                     Some(Token::ShortFlag(s)) => Ok(s.clone()),
@@ -509,6 +591,7 @@ impl Parser {
 
         while !self.is_at_end()
             && !self.match_token(&Token::Pipe)
+            && !self.match_token(&Token::PipeAsk)
             && !self.match_token(&Token::ParallelPipe)
             && !self.match_token(&Token::Newline)
             && !self.match_token(&Token::Semicolon)
@@ -606,10 +689,20 @@ impl Parser {
 
     fn parse_argument(&mut self) -> Result<Argument> {
         match self.advance() {
-            Some(Token::String(s)) | Some(Token::SingleQuotedString(s)) => {
-                // Remove quotes
-                let unquoted = s.trim_matches('"').trim_matches('\'');
-                Ok(Argument::Literal(unquoted.to_string()))
+            Some(Token::String(s)) => {
+                // Double-quoted string: remove outer quotes and process escape sequences
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                let processed = Self::process_double_quote_escapes(&unquoted);
+                Ok(Argument::Literal(processed))
+            }
+            Some(Token::SingleQuotedString(s)) => {
+                // Single-quoted string: remove outer quotes, keep content literal (no escape processing)
+                let unquoted = Self::strip_outer_quotes(&s, '\'');
+                Ok(Argument::Literal(unquoted))
+            }
+            Some(Token::AnsiCString(s)) => {
+                // ANSI-C string: already processed by lexer
+                Ok(Argument::Literal(s.clone()))
             }
             Some(Token::Identifier(s)) => {
                 // Check if this is NAME=VALUE pattern (e.g., for `export FOO=bar`)
@@ -649,6 +742,7 @@ impl Parser {
             Some(Token::GreaterThan) => Ok(Argument::Literal(">".to_string())),
             Some(Token::Bang) => Ok(Argument::Literal("!".to_string())),
             Some(Token::Dash) => Ok(Argument::Literal("-".to_string())),
+            Some(Token::DoubleDash) => Ok(Argument::Literal("--".to_string())),
             Some(Token::Float(f)) => Ok(Argument::Literal(f.to_string())),
             _ => Err(anyhow!("Expected argument")),
         }
@@ -657,7 +751,12 @@ impl Parser {
     fn parse_redirect_target(&mut self) -> Result<String> {
         match self.advance() {
             Some(Token::Path(s)) | Some(Token::Identifier(s)) => Ok(s.clone()),
-            Some(Token::String(s)) => Ok(s.trim_matches('"').to_string()),
+            Some(Token::String(s)) => {
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                Ok(Self::process_double_quote_escapes(&unquoted))
+            }
+            Some(Token::SingleQuotedString(s)) => Ok(Self::strip_outer_quotes(&s, '\'')),
+            Some(Token::AnsiCString(s)) => Ok(s.clone()),
             _ => Err(anyhow!("Expected redirect target")),
         }
     }
@@ -683,9 +782,21 @@ impl Parser {
             Some(Token::String(s)) => {
                 let s = s.clone();
                 self.advance();
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                let processed = Self::process_double_quote_escapes(&unquoted);
+                Ok(Expression::Literal(Literal::String(processed)))
+            }
+            Some(Token::SingleQuotedString(s)) => {
+                let s = s.clone();
+                self.advance();
                 Ok(Expression::Literal(Literal::String(
-                    s.trim_matches('"').to_string(),
+                    Self::strip_outer_quotes(&s, '\''),
                 )))
+            }
+            Some(Token::AnsiCString(s)) => {
+                let s = s.clone();
+                self.advance();
+                Ok(Expression::Literal(Literal::String(s)))
             }
             Some(Token::Integer(n)) => {
                 let n = *n;
@@ -1379,8 +1490,19 @@ impl Parser {
                 self.advance();
                 Ok(s)
             }
-            Some(Token::String(s)) | Some(Token::SingleQuotedString(s)) => {
-                let s = s.trim_matches('"').trim_matches('\'').to_string();
+            Some(Token::String(s)) => {
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                let processed = Self::process_double_quote_escapes(&unquoted);
+                self.advance();
+                Ok(processed)
+            }
+            Some(Token::SingleQuotedString(s)) => {
+                let s = Self::strip_outer_quotes(&s, '\'');
+                self.advance();
+                Ok(s)
+            }
+            Some(Token::AnsiCString(s)) => {
+                let s = s.clone();
                 self.advance();
                 Ok(s)
             }
@@ -1420,7 +1542,17 @@ impl Parser {
     fn parse_pattern(&mut self) -> Result<Pattern> {
         match self.advance() {
             Some(Token::Identifier(s)) => Ok(Pattern::Identifier(s.clone())),
-            Some(Token::String(s)) => Ok(Pattern::Literal(Literal::String(s.clone()))),
+            Some(Token::String(s)) => {
+                let unquoted = Self::strip_outer_quotes(&s, '"');
+                let processed = Self::process_double_quote_escapes(&unquoted);
+                Ok(Pattern::Literal(Literal::String(processed)))
+            }
+            Some(Token::SingleQuotedString(s)) => {
+                Ok(Pattern::Literal(Literal::String(Self::strip_outer_quotes(&s, '\''))))
+            }
+            Some(Token::AnsiCString(s)) => {
+                Ok(Pattern::Literal(Literal::String(s.clone())))
+            }
             Some(Token::Integer(n)) => Ok(Pattern::Literal(Literal::Integer(*n))),
             _ => Ok(Pattern::Wildcard),
         }
@@ -1565,6 +1697,54 @@ impl Parser {
             name: inner.to_string(),
             operator: VarExpansionOp::Simple,
         })
+    }
+
+    /// Strip only the first and last character if they match the quote character.
+    /// Unlike trim_matches, this only removes one quote from each end.
+    fn strip_outer_quotes(s: &str, quote: char) -> String {
+        if s.len() >= 2 && s.starts_with(quote) && s.ends_with(quote) {
+            s[1..s.len() - 1].to_string()
+        } else {
+            s.to_string()
+        }
+    }
+
+    /// Process escape sequences in double-quoted strings.
+    /// Per POSIX, only `\"`, `\\`, `\$`, `\``, and `\<newline>` have special meaning.
+    /// Other `\X` sequences preserve the backslash.
+    fn process_double_quote_escapes(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    match next {
+                        '"' | '\\' | '$' | '`' => {
+                            // These characters are escaped - consume the backslash
+                            result.push(next);
+                            chars.next();
+                        }
+                        '\n' => {
+                            // Line continuation - skip both backslash and newline
+                            chars.next();
+                        }
+                        _ => {
+                            // Per POSIX, backslash before other chars is preserved
+                            result.push('\\');
+                            // Don't consume next - it will be processed in next iteration
+                        }
+                    }
+                } else {
+                    // Trailing backslash - preserve it
+                    result.push('\\');
+                }
+            } else {
+                result.push(c);
+            }
+        }
+
+        result
     }
 
     fn is_at_end(&self) -> bool {
@@ -2069,6 +2249,139 @@ mod tests {
         match &statements[1] {
             Statement::CaseStatement(_) => {} // ok
             _ => panic!("Expected CaseStatement, got {:?}", statements[1]),
+        }
+    }
+
+    #[test]
+    fn test_process_double_quote_escapes() {
+        // Test escaped quote
+        assert_eq!(Parser::process_double_quote_escapes(r#"test\""#), "test\"");
+        // Test escaped backslash
+        assert_eq!(Parser::process_double_quote_escapes(r"test\\"), "test\\");
+        // Test escaped dollar
+        assert_eq!(Parser::process_double_quote_escapes(r"test\$"), "test$");
+        // Test escaped backtick
+        assert_eq!(Parser::process_double_quote_escapes(r"test\`"), "test`");
+        // Test backslash before regular char (preserved)
+        assert_eq!(Parser::process_double_quote_escapes(r"test\n"), "test\\n");
+        // Test multiple escapes
+        assert_eq!(Parser::process_double_quote_escapes(r#"\"hello\""#), "\"hello\"");
+    }
+
+    #[test]
+    fn test_parse_escaped_quote_in_string() {
+        let input = r#"echo "test\"""#;
+        println!("Input: {:?}", input);
+        let tokens = Lexer::tokenize(input).unwrap();
+        println!("Tokens: {:?}", tokens);
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+        println!("Statements: {:?}", statements);
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::Command(cmd) => {
+                assert_eq!(cmd.name, "echo");
+                assert_eq!(cmd.args.len(), 1, "Expected 1 arg, got {:?}", cmd.args);
+                match &cmd.args[0] {
+                    Argument::Literal(s) => {
+                        assert_eq!(s, "test\"", "Expected 'test\"', got '{}'", s);
+                    }
+                    other => panic!("Expected Literal argument, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Command, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_ask_simple() {
+        let tokens = Lexer::tokenize(r#"echo hello |? "summarize""#).unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::PipeAsk(pipe_ask) => {
+                assert_eq!(pipe_ask.prompt, "summarize");
+                // The command should be "echo hello"
+                match pipe_ask.command.as_ref() {
+                    Statement::Command(cmd) => {
+                        assert_eq!(cmd.name, "echo");
+                    }
+                    other => panic!("Expected Command inside PipeAsk, got {:?}", other),
+                }
+            }
+            other => panic!("Expected PipeAsk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_ask_in_pipeline() {
+        let tokens = Lexer::tokenize(r#"cat file.txt | grep error |? "explain these errors""#).unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::PipeAsk(pipe_ask) => {
+                assert_eq!(pipe_ask.prompt, "explain these errors");
+                // The command should be a pipeline
+                match pipe_ask.command.as_ref() {
+                    Statement::Pipeline(pipeline) => {
+                        assert_eq!(pipeline.commands.len(), 2);
+                        assert_eq!(pipeline.commands[0].name, "cat");
+                        assert_eq!(pipeline.commands[1].name, "grep");
+                    }
+                    other => panic!("Expected Pipeline inside PipeAsk, got {:?}", other),
+                }
+            }
+            other => panic!("Expected PipeAsk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_ask_no_prompt() {
+        let tokens = Lexer::tokenize("echo hello |?").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::PipeAsk(pipe_ask) => {
+                assert_eq!(pipe_ask.prompt, ""); // Empty prompt when omitted
+            }
+            other => panic!("Expected PipeAsk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_ask_unquoted_prompt() {
+        let tokens = Lexer::tokenize("echo hello |? summarize").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::PipeAsk(pipe_ask) => {
+                assert_eq!(pipe_ask.prompt, "summarize");
+            }
+            other => panic!("Expected PipeAsk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_pipe_ask_single_quoted_prompt() {
+        let tokens = Lexer::tokenize("git diff |? 'write a commit message'").unwrap();
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse().unwrap();
+
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            Statement::PipeAsk(pipe_ask) => {
+                assert_eq!(pipe_ask.prompt, "write a commit message");
+            }
+            other => panic!("Expected PipeAsk, got {:?}", other),
         }
     }
 }

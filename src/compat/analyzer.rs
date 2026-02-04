@@ -158,6 +158,9 @@ impl ScriptAnalyzer {
             Statement::BraceGroup(_brace_group) => {
                 self.add_feature("brace_group", 0, 0, "brace group", result);
             }
+            Statement::PipeAsk(_pipe_ask) => {
+                self.add_feature("pipe_ask", 0, 0, "pipe to AI", result);
+            }
         }
     }
 

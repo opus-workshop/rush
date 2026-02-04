@@ -77,6 +77,9 @@ pub enum Token {
     #[token("|||")]
     ParallelPipe,
 
+    #[token("|?")]
+    PipeAsk,
+
     #[token("|")]
     Pipe,
 
@@ -138,6 +141,10 @@ pub enum Token {
     #[regex(r"'([^'\\]|\\.)*'", |lex| lex.slice().to_string())]
     SingleQuotedString(String),
 
+    // ANSI-C quoted strings $'...' - escape sequences are processed
+    #[regex(r"\$'([^'\\]|\\.)*'", parse_ansi_c_string)]
+    AnsiCString(String),
+
     // Numbers
     #[regex(r"-?[0-9]+", |lex| lex.slice().parse().ok())]
     Integer(i64),
@@ -153,8 +160,9 @@ pub enum Token {
     #[regex(r"[a-zA-Z0-9_.\-/]*\[[^\]]+\][a-zA-Z0-9_.*?\-/]+", |lex| lex.slice().to_string())]
     GlobPattern(String),
 
-    // Identifiers and commands (dots allowed so filenames like README.md tokenize as one word)
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_.\-]*", |lex| lex.slice().to_string())]
+    // Identifiers and commands (dots, colons, and tildes allowed so filenames like README.md,
+    // arguments like hello:world or http://url, and git refs like HEAD~1 tokenize as one word)
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_.\-:~]*", |lex| lex.slice().to_string())]
     Identifier(String),
 
     // Command substitution - needs custom parsing for nested cases
@@ -192,10 +200,14 @@ pub enum Token {
     #[token("-")]
     Dash,
 
+    // Double dash alone (end of options marker, e.g., set -- args)
+    #[token("--")]
+    DoubleDash,
+
     #[regex(r"-[a-zA-Z0-9]+", |lex| lex.slice().to_string())]
     ShortFlag(String),
 
-    #[regex(r"--[a-zA-Z0-9][a-zA-Z0-9-]*", |lex| lex.slice().to_string())]
+    #[regex(r"--[a-zA-Z0-9][a-zA-Z0-9-]*(=[^\s|;&()<>]+)?", |lex| lex.slice().to_string())]
     LongFlag(String),
 
     // Plus flags (for unsetting shell options like +e, +u, +x)
@@ -246,6 +258,119 @@ pub struct HereDocData {
     pub body: String,
     pub expand_vars: bool,
     pub strip_tabs: bool,
+}
+
+// Parse ANSI-C quoted string $'...' and process escape sequences
+fn parse_ansi_c_string(lex: &mut logos::Lexer<Token>) -> Option<String> {
+    let slice = lex.slice();
+    // Remove $' prefix and ' suffix
+    let content = &slice[2..slice.len() - 1];
+    
+    let mut result = String::new();
+    let mut chars = content.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('a') => result.push('\x07'),  // alert/bell
+                Some('b') => result.push('\x08'),  // backspace
+                Some('e') | Some('E') => result.push('\x1b'),  // escape
+                Some('f') => result.push('\x0c'),  // form feed
+                Some('n') => result.push('\n'),    // newline
+                Some('r') => result.push('\r'),    // carriage return
+                Some('t') => result.push('\t'),    // horizontal tab
+                Some('v') => result.push('\x0b'),  // vertical tab
+                Some('\\') => result.push('\\'),   // backslash
+                Some('\'') => result.push('\''),   // single quote
+                Some('"') => result.push('"'),     // double quote
+                Some('x') => {
+                    // Hexadecimal: \xNN
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if !hex.is_empty() {
+                        if let Ok(val) = u8::from_str_radix(&hex, 16) {
+                            result.push(val as char);
+                        }
+                    }
+                }
+                Some('u') => {
+                    // Unicode: \uNNNN
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if !hex.is_empty() {
+                        if let Ok(val) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(val) {
+                                result.push(ch);
+                            }
+                        }
+                    }
+                }
+                Some('U') => {
+                    // Unicode: \UNNNNNNNN (up to 8 hex digits)
+                    let mut hex = String::new();
+                    for _ in 0..8 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if !hex.is_empty() {
+                        if let Ok(val) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(val) {
+                                result.push(ch);
+                            }
+                        }
+                    }
+                }
+                Some(c) if c.is_ascii_digit() => {
+                    // Octal: \NNN (up to 3 octal digits)
+                    let mut octal = String::new();
+                    octal.push(c);
+                    for _ in 0..2 {
+                        if let Some(&c) = chars.peek() {
+                            if c >= '0' && c <= '7' {
+                                octal.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if let Ok(val) = u8::from_str_radix(&octal, 8) {
+                        result.push(val as char);
+                    }
+                }
+                Some(c) => {
+                    // Unknown escape, keep as-is
+                    result.push('\\');
+                    result.push(c);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    
+    Some(result)
 }
 
 // Custom parser for $(...) that handles nesting
@@ -788,5 +913,46 @@ mod tests {
         } else {
             panic!("Expected CommandSubstitution token, got {:?}", tokens[1]);
         }
+    }
+
+    #[test]
+    fn test_escaped_quote_in_double_string() {
+        // Test that escaped quotes inside double-quoted strings are handled
+        let tokens = Lexer::tokenize(r#"echo "test\"end""#).unwrap();
+        assert_eq!(tokens.len(), 2, "Expected 2 tokens, got {:?}", tokens);
+        if let Token::String(s) = &tokens[1] {
+            assert_eq!(s, r#""test\"end""#, "String token should contain the escaped quote");
+        } else {
+            panic!("Expected String token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_escaped_quote_at_end_of_string() {
+        // Test that escaped quote at end of string is handled correctly
+        let tokens = Lexer::tokenize(r#"echo "test\"""#).unwrap();
+        assert_eq!(tokens.len(), 2, "Expected 2 tokens, got {:?}", tokens);
+        if let Token::String(s) = &tokens[1] {
+            assert_eq!(s, r#""test\"""#, "String token should contain the escaped quote at end");
+        } else {
+            panic!("Expected String token, got {:?}", tokens[1]);
+        }
+    }
+
+    #[test]
+    fn test_pipe_ask_token() {
+        let tokens = Lexer::tokenize("echo hello |? \"summarize\"").unwrap();
+        assert!(tokens.contains(&Token::PipeAsk));
+    }
+
+    #[test]
+    fn test_pipe_ask_with_prompt() {
+        let tokens = Lexer::tokenize("git diff |? \"write commit message\"").unwrap();
+        // Should tokenize as: Identifier(git), Identifier(diff), PipeAsk, String
+        assert_eq!(tokens.len(), 4);
+        assert!(matches!(tokens[0], Token::Identifier(ref s) if s == "git"));
+        assert!(matches!(tokens[1], Token::Identifier(ref s) if s == "diff"));
+        assert_eq!(tokens[2], Token::PipeAsk);
+        assert!(matches!(tokens[3], Token::String(_)));
     }
 }
